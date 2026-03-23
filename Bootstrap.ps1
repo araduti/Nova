@@ -1,13 +1,14 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    AmpCloud Bootstrap - WinPE network setup and AmpCloud loader.
-
+    AmpCloud Bootstrap - Graphical WinPE loader with Fluent UI.
 .DESCRIPTION
     Runs inside WinPE via winpeshl.ini.
     - Calls wpeinit.exe to initialise the WinPE network stack and DHCP.
-    - Presents an Autopilot-style welcome screen.
-    - Offers an interactive WiFi selector when wired internet is unavailable.
+    - Shows a language selection prompt (EN / FR / ES).
+    - Presents an animated Fluent-style WinForms interface.
+    - Applies high-performance network tuning.
+    - Offers an interactive graphical WiFi selector when wired internet is unavailable.
     - Downloads and executes AmpCloud.ps1 from GitHub once connected.
 #>
 
@@ -16,57 +17,126 @@ param(
     [string]$GitHubUser   = 'araduti',
     [string]$GitHubRepo   = 'AmpCloud',
     [string]$GitHubBranch = 'main',
-    [int]$MaxWaitSeconds  = 300,
-    [int]$RetryInterval   = 5
+    [int]$MaxWaitSeconds  = 300
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-#region ── UI ────────────────────────────────────────────────────────────────────
+# ── Logging ─────────────────────────────────────────────────────────────────
+$LogPath = "X:\AmpCloud-Bootstrap.log"
+Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyContinue | Out-Null
 
-function Show-WelcomeBanner {
-    try { $Host.UI.RawUI.BackgroundColor = 'DarkBlue' } catch { }
-    Clear-Host
-    Write-Host ''
-    Write-Host '  ╔══════════════════════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
-    Write-Host '  ║                                                                              ║' -ForegroundColor Cyan
-    Write-Host '  ║                           A M P C L O U D                                   ║' -ForegroundColor White
-    Write-Host '  ║                         Cloud Imaging Engine                                 ║' -ForegroundColor Cyan
-    Write-Host '  ║                                                                              ║' -ForegroundColor Cyan
-    Write-Host '  ╠══════════════════════════════════════════════════════════════════════════════╣' -ForegroundColor Cyan
-    Write-Host "  ║                                                                              ║" -ForegroundColor Cyan
-    Write-Host "  ║    Hi there!  Let's get this device set up for cloud imaging.               ║" -ForegroundColor White
-    Write-Host "  ║    Connecting to the internet to load the imaging engine...                  ║" -ForegroundColor Gray
-    Write-Host "  ║                                                                              ║" -ForegroundColor Cyan
-    Write-Host '  ╚══════════════════════════════════════════════════════════════════════════════╝' -ForegroundColor Cyan
-    Write-Host ''
+# ── Assemblies ──────────────────────────────────────────────────────────────
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+#region ── Language System ───────────────────────────────────────────────────
+$Lang = 'EN'
+function Select-Language {
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Select Language / Choisir la langue / Seleccionar idioma"
+    $dlg.Size = New-Object System.Drawing.Size(460, 280)
+    $dlg.StartPosition = "CenterScreen"
+    $dlg.FormBorderStyle = "FixedDialog"
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "Choose your language:"
+    $lbl.Location = New-Object System.Drawing.Point(40, 40)
+    $dlg.Controls.Add($lbl)
+
+    $combo = New-Object System.Windows.Forms.ComboBox
+    $combo.Items.AddRange(@("English (EN)", "Français (FR)", "Español (ES)"))
+    $combo.SelectedIndex = 0
+    $combo.Location = New-Object System.Drawing.Point(40, 80)
+    $combo.Width = 360
+    $dlg.Controls.Add($combo)
+
+    $btn = New-Object System.Windows.Forms.Button
+    $btn.Text = "Continue"
+    $btn.Location = New-Object System.Drawing.Point(160, 160)
+    $btn.DialogResult = "OK"
+    $dlg.Controls.Add($btn)
+
+    if ($dlg.ShowDialog() -eq "OK") {
+        switch ($combo.SelectedIndex) {
+            0 { $script:Lang = 'EN' }
+            1 { $script:Lang = 'FR' }
+            2 { $script:Lang = 'ES' }
+        }
+    }
 }
+Select-Language
 
-function Write-Status {
-    param([string]$Message, [string]$Color = 'Cyan')
-    Write-Host "  » $Message" -ForegroundColor $Color
+$Strings = @{
+    EN = @{ Header="A M P C L O U D"; Step1="Network"; Step2="Connect"; Step3="Load Engine";
+            StatusInit="🌐 Initialising network stack..."; StatusNoNet="No wired internet detected`nTap below to connect via WiFi";
+            Connected="✅ Connected! Loading imaging engine..."; Download="📥 Downloading AmpCloud.ps1 ({0}%)";
+            Complete="🎉 Setup complete!"; Reboot="Reboot Now"; PowerOff="Power Off"; Shell="Drop to Shell" }
+    FR = @{ Header="A M P C L O U D"; Step1="Réseau"; Step2="Connexion"; Step3="Chargement";
+            StatusInit="🌐 Initialisation du réseau..."; StatusNoNet="Pas de connexion filaire`nAppuyez ci-dessous pour le WiFi";
+            Connected="✅ Connecté ! Lancement du moteur..."; Download="📥 Téléchargement AmpCloud.ps1 ({0}%)";
+            Complete="🎉 Configuration terminée !"; Reboot="Redémarrer maintenant"; PowerOff="Éteindre"; Shell="Ouvrir le shell" }
+    ES = @{ Header="A M P C L O U D"; Step1="Red"; Step2="Conectar"; Step3="Cargar";
+            StatusInit="🌐 Inicializando red..."; StatusNoNet="Sin internet cableado`nToque abajo para WiFi";
+            Connected="✅ ¡Conectado! Cargando motor..."; Download="📥 Descargando AmpCloud.ps1 ({0}%)";
+            Complete="🎉 ¡Configuración completa!"; Reboot="Reiniciar ahora"; PowerOff="Apagar"; Shell="Abrir shell" }
 }
-
-function Write-SectionHeader {
-    param([string]$Title)
-    Write-Host ''
-    Write-Host "  ── $Title " -NoNewline -ForegroundColor Yellow
-    Write-Host ('─' * [Math]::Max(0, 72 - $Title.Length)) -ForegroundColor DarkGray
-    Write-Host ''
-}
-
+$S = $Strings[$Lang]
 #endregion
 
-#region ── Network ───────────────────────────────────────────────────────────────
+#region ── Sound Effects ─────────────────────────────────────────────────────
+function Play-Sound {
+    param([int]$Freq = 800, [int]$Dur = 200)
+    [console]::beep($Freq, $Dur)
+}
+#endregion
+
+#region ── Fluent Theme ──────────────────────────────────────────────────────
+$LightBlue   = [System.Drawing.Color]::FromArgb(0, 120, 212)
+$DarkBlue    = [System.Drawing.Color]::FromArgb(0, 80, 160)
+$LightBg     = [System.Drawing.Color]::FromArgb(243, 243, 243)
+$DarkBg      = [System.Drawing.Color]::FromArgb(32, 32, 32)
+$LightCard   = [System.Drawing.Color]::White
+$DarkCard    = [System.Drawing.Color]::FromArgb(45, 45, 45)
+$TextLight   = [System.Drawing.Color]::FromArgb(32, 32, 32)
+$TextDark    = [System.Drawing.Color]::White
+
+$IsDarkMode  = $false
+$HeaderFont  = New-Object System.Drawing.Font("Segoe UI", 24, [System.Drawing.FontStyle]::Bold)
+$TitleFont   = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
+$BodyFont    = New-Object System.Drawing.Font("Segoe UI", 11)
+$SmallFont   = New-Object System.Drawing.Font("Segoe UI", 9.5)
+
+# Reusable pen for ring (performance win)
+$RingPen = New-Object System.Drawing.Pen($LightBlue, 12)
+$RingPen.StartCap = "Round"
+$RingPen.EndCap = "Round"
+#endregion
+
+#region ── Network + WiFi Functions ─────────────────────────────────────────
+function Optimize-WinPENetwork {
+    Write-Status "🚀 Applying high-performance network tuning..." 'Cyan'
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null | Out-Null
+        netsh int tcp set global autotuninglevel=normal    2>$null | Out-Null
+        netsh int tcp set global congestionprovider=ctcp   2>$null | Out-Null
+        netsh int tcp set global chimney=enabled           2>$null | Out-Null
+        netsh int tcp set global rss=enabled               2>$null | Out-Null
+        netsh int tcp set global rsc=enabled               2>$null | Out-Null
+        Get-NetAdapter | ForEach-Object {
+            netsh interface ipv6 set interface "$($_.Name)" admin=disabled 2>$null | Out-Null
+        }
+        ipconfig /renew 2>$null | Out-Null
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
 
 function Invoke-WpeInit {
-    <#
-    .SYNOPSIS
-        Calls wpeinit.exe to initialise the WinPE network stack and start DHCP
-        on all wired adapters.  Must be called before any network operations.
-    #>
-    Write-Status 'Initialising network stack (wpeinit.exe)...'
+    Write-Status "🌐 Initialising WinPE network stack..." 'Cyan'
     try {
         $proc = Start-Process -FilePath 'wpeinit.exe' -Wait -NoNewWindow -PassThru -ErrorAction Stop
         if ($proc.ExitCode -eq 0) {
@@ -77,60 +147,34 @@ function Invoke-WpeInit {
     } catch {
         Write-Status "wpeinit.exe unavailable: $_" 'Yellow'
     }
-    # Give DHCP a moment to acquire an address before the first connectivity test
     Start-Sleep -Seconds 4
 }
 
 function Test-InternetConnectivity {
-    $urls = @(
-        'https://www.msftconnecttest.com/connecttest.txt',
-        'https://raw.githubusercontent.com',
-        'https://clients3.google.com/generate_204'
-    )
+    $urls = @('https://www.msftconnecttest.com/connecttest.txt', 'https://clients3.google.com/generate_204')
     foreach ($url in $urls) {
-        try {
-            $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
-            if ($r.StatusCode -lt 400) { return $true }
-        } catch { }
+        try { if ((Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 6).StatusCode -eq 200) { return $true } } catch {}
     }
     return $false
 }
 
-function Wait-ForInternet {
-    param([int]$MaxWaitSeconds, [int]$RetryInterval)
-    $elapsed = 0
-    while ($elapsed -lt $MaxWaitSeconds) {
-        if (Test-InternetConnectivity) {
-            Write-Status 'Internet connectivity confirmed.' 'Green'
-            return $true
-        }
-        Write-Status "Waiting for internet... ($elapsed / $MaxWaitSeconds s)" 'Yellow'
-        Start-Sleep -Seconds $RetryInterval
-        $elapsed += $RetryInterval
+function Wait-ForConnection {
+    param([int]$Timeout = 45)
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt $Timeout) {
+        if (Test-InternetConnectivity) { return $true }
+        Start-Sleep -Seconds 3
     }
-    Write-Status "No internet after $MaxWaitSeconds s." 'Red'
     return $false
-}
-
-#endregion
-
-#region ── WiFi ──────────────────────────────────────────────────────────────────
-
-function ConvertTo-XmlSafe {
-    param([string]$Value)
-    $Value -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;' -replace '"', '&quot;'
 }
 
 function Start-WlanService {
-    try {
-        $svc = Get-Service -Name 'wlansvc' -ErrorAction SilentlyContinue
-        if ($null -eq $svc) { return $false }
-        if ($svc.Status -ne 'Running') {
-            Start-Service 'wlansvc' -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-        }
-        return $true
-    } catch { return $false }
+    if (-not (Get-Service -Name wlansvc -ErrorAction SilentlyContinue)) { return $false }
+    if ((Get-Service wlansvc).Status -ne 'Running') {
+        Start-Service wlansvc -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 3
+    }
+    return $true
 }
 
 function Get-WiFiNetworks {
@@ -141,48 +185,51 @@ function Get-WiFiNetworks {
     } finally {
         $ErrorActionPreference = $prev
     }
-
     $networks = [System.Collections.Generic.List[pscustomobject]]::new()
     $cur = $null
     foreach ($line in $raw) {
         if ($line -match '^SSID\s+\d+\s*:\s*(.+)$') {
             if ($cur) { $networks.Add($cur) }
             $cur = [pscustomobject]@{ SSID = $Matches[1].Trim(); Auth = ''; Signal = 0 }
-        } elseif ($cur -and $line -match 'Authentication\s*:\s*(.+)') {
-            $cur.Auth = $Matches[1].Trim()
-        } elseif ($cur -and $line -match 'Signal\s*:\s*(\d+)%') {
-            $cur.Signal = [int]$Matches[1]
+        } elseif ($cur) {
+            if ($line -match 'Authentication\s*:\s*(.+)') { $cur.Auth = $Matches[1].Trim() }
+            elseif ($line -match 'Signal\s*:\s*(\d+)%') { $cur.Signal = [int]$Matches[1] }
         }
     }
     if ($cur) { $networks.Add($cur) }
-    return @($networks | Where-Object { $_.SSID -ne '' } | Sort-Object Signal -Descending)
+    $unique = @{}
+    foreach ($n in $networks) {
+        if (-not $unique.ContainsKey($n.SSID) -or $n.Signal -gt $unique[$n.SSID].Signal) {
+            $unique[$n.SSID] = $n
+        }
+    }
+    return @($unique.Values | Sort-Object Signal -Descending)
 }
 
-function Get-SignalBars {
-    param([int]$Signal)
-    $filled = [Math]::Round($Signal / 20)
-    return ('█' * $filled) + ('░' * (5 - $filled))
+function Get-SignalBars { param([int]$s) ('█' * [Math]::Round($s/20)) + ('░' * (5-[Math]::Round($s/20))) }
+
+function ConvertTo-XmlSafe {
+    param([string]$Value)
+    $Value -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;' -replace '"', '&quot;'
 }
 
 function Connect-WiFiNetwork {
     param([string]$SSID, [string]$Password, [string]$Auth)
-
     $safeSsid = ConvertTo-XmlSafe $SSID
-    $safePwd  = ConvertTo-XmlSafe $Password
+    $safePwd  = if ($Password) { ConvertTo-XmlSafe $Password } else { '' }
+    $isOpen   = $Auth -match 'Open'
 
-    # Build the WLAN profile XML via string concatenation rather than here-strings.
-    # Double-quoted here-strings (@"..."@) can fail to parse in Windows PowerShell 5.1
-    # when the script file has LF-only line endings (as served from GitHub on Linux).
     $ns = 'http://www.microsoft.com/networking/WLAN/profile/v1'
-    if ($Auth -match 'Open') {
+    if ($isOpen) {
         $secBlock = '<MSM><security><authEncryption>' +
                     '<authentication>open</authentication>' +
                     '<encryption>none</encryption>' +
                     '<useOneX>false</useOneX>' +
                     '</authEncryption></security></MSM>'
     } else {
+        $authType = if ($Auth -match 'WPA3') { 'WPA3SAE' } else { 'WPA2PSK' }
         $secBlock = '<MSM><security><authEncryption>' +
-                    '<authentication>WPA2PSK</authentication>' +
+                    "<authentication>$authType</authentication>" +
                     '<encryption>AES</encryption>' +
                     '<useOneX>false</useOneX>' +
                     '</authEncryption>' +
@@ -191,8 +238,8 @@ function Connect-WiFiNetwork {
                     "<keyMaterial>$safePwd</keyMaterial>" +
                     '</sharedKey></security></MSM>'
     }
-    $xml = "<?xml version=""1.0""?>" +
-           "<WLANProfile xmlns=""$ns"">" +
+    $xml = '<?xml version="1.0"?>' +
+           "<WLANProfile xmlns=\"$ns\">" +
            "<name>$safeSsid</name>" +
            "<SSIDConfig><SSID><name>$safeSsid</name></SSID></SSIDConfig>" +
            '<connectionType>ESS</connectionType>' +
@@ -200,191 +247,408 @@ function Connect-WiFiNetwork {
            $secBlock +
            '</WLANProfile>'
 
-    $tmpXml = Join-Path $env:TEMP "ampcloud_wifi_$([System.Guid]::NewGuid().ToString('N')).xml"
+    $tmp = Join-Path $env:TEMP "ampcloud_wifi_$([guid]::NewGuid().Guid).xml"
     try {
-        $xml | Set-Content -Path $tmpXml -Encoding UTF8
+        $xml | Set-Content -Path $tmp -Encoding UTF8 -Force
         $prev = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        & netsh wlan add profile filename="`"$tmpXml`"" 2>&1 | Out-Null
+        & netsh wlan add profile filename="`"$tmp`"" 2>&1 | Out-Null
         & netsh wlan connect  name="`"$SSID`"" ssid="`"$SSID`"" 2>&1 | Out-Null
         $ErrorActionPreference = $prev
     } finally {
-        Remove-Item $tmpXml -Force -ErrorAction SilentlyContinue
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     }
 }
 
 function Show-WiFiSelector {
-    <#
-    .SYNOPSIS
-        Interactive WiFi network selector. Returns $true when internet is available.
-    #>
-    if (-not (Start-WlanService)) {
-        Write-Status 'WLAN service unavailable — wireless not supported on this device.' 'Yellow'
-        return $false
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Select WiFi Network"
+    $dlg.Size = New-Object System.Drawing.Size(720, 620)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.BackColor = if ($IsDarkMode) { $DarkCard } else { $LightCard }
+    $dlg.Font = $BodyFont
+
+    $list = New-Object System.Windows.Forms.ListView
+    $list.Dock = "Fill"
+    $list.View = "Details"
+    $list.FullRowSelect = $true
+    $list.Columns.Add("Network", 380)
+    $list.Columns.Add("Signal", 140)
+    $list.Columns.Add("Security", 160)
+    $dlg.Controls.Add($list)
+
+    function RefreshNetworks {
+        $list.Items.Clear()
+        Get-WiFiNetworks | ForEach-Object {
+            $item = New-Object System.Windows.Forms.ListViewItem($_.SSID)
+            $item.SubItems.Add((Get-SignalBars $_.Signal))
+            $item.SubItems.Add($_.Auth)
+            $list.Items.Add($item)
+        }
     }
 
-    while ($true) {
-        Write-Status 'Scanning for WiFi networks...'
-        $networks = Get-WiFiNetworks
-        Write-Host ''
+    $btnRefresh = New-Object System.Windows.Forms.Button
+    $btnRefresh.Text = "🔄 Refresh"
+    $btnRefresh.Dock = "Bottom"
+    $btnRefresh.Height = 50
+    $dlg.Controls.Add($btnRefresh)
+    $btnRefresh.Add_Click({ RefreshNetworks })
 
-        if ($networks.Count -eq 0) {
-            Write-Host '    No WiFi networks found.' -ForegroundColor Yellow
-            Write-Host ''
-            Write-Host '    [R] Refresh    [S] Skip' -ForegroundColor Gray
-        } else {
-            Write-Host '    #    Network Name                    Signal    Security' -ForegroundColor DarkGray
-            Write-Host '    ──   ──────────────────────────────  ────────  ────────' -ForegroundColor DarkGray
-            $i = 1
-            foreach ($net in $networks) {
-                $bars    = Get-SignalBars -Signal $net.Signal
-                $ssidStr = if ($net.SSID.Length -gt 30) { $net.SSID.Substring(0,27) + '...' } else { $net.SSID }
-                Write-Host ("    [{0,2}]  {1,-30}  {2}  {3,3}%  {4}" -f `
-                    $i, $ssidStr, $bars, $net.Signal, $net.Auth) -ForegroundColor White
-                $i++
-            }
-            Write-Host ''
-            Write-Host '    [R] Refresh networks    [S] Skip WiFi' -ForegroundColor Gray
-        }
+    RefreshNetworks()
 
-        Write-Host ''
-        Write-Host '  Select: ' -ForegroundColor Yellow -NoNewline
-        $choice = (Read-Host).Trim().ToUpper()
-
-        if ($choice -eq 'S') { return $false }
-        if ($choice -eq 'R') { Write-Host ''; continue }
-
-        $idx = 0
-        if ([int]::TryParse($choice, [ref]$idx) -and $idx -ge 1 -and $idx -le $networks.Count) {
-            $net = $networks[$idx - 1]
-            Write-Host ''
-
-            $password = ''
-            if ($net.Auth -notmatch 'Open') {
-                Write-Host "  Password for '$($net.SSID)': " -ForegroundColor Yellow -NoNewline
-                $bstr = [IntPtr]::Zero
-                try {
-                    $sec      = Read-Host -AsSecureString
-                    $bstr     = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
-                    $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-                } finally {
-                    if ($bstr -ne [IntPtr]::Zero) {
-                        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-                    }
+    $dlg.ShowDialog() | Out-Null
+    if ($list.SelectedItems.Count -gt 0) {
+        $selected = $list.SelectedItems[0]
+        $netSSID = $selected.Text
+        $netAuth = $selected.SubItems[2].Text
+        $password = ''
+        if ($netAuth -notmatch 'Open') {
+            $bstr = [IntPtr]::Zero
+            try {
+                $sec      = Read-Host -Prompt "Password for '$netSSID'" -AsSecureString
+                $bstr     = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+                $password = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+            } finally {
+                if ($bstr -ne [IntPtr]::Zero) {
+                    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
                 }
             }
-
-            Write-Host ''
-            Write-Status "Connecting to '$($net.SSID)'..."
-            Connect-WiFiNetwork -SSID $net.SSID -Password $password -Auth $net.Auth
-            $password = $null
-
-            Write-Status 'Waiting for IP address...' 'Yellow'
-            Start-Sleep -Seconds 6
-
-            if (Test-InternetConnectivity) {
-                Write-Status "Connected via WiFi ('$($net.SSID)')." 'Green'
-                return $true
-            }
-
-            Write-Status "No internet via '$($net.SSID)'. Check password or network." 'Red'
-            Write-Host ''
-            Write-Host '    [R] Try another network    [S] Skip' -ForegroundColor Gray
-            Write-Host '  Select: ' -ForegroundColor Yellow -NoNewline
-            $retry = (Read-Host).Trim().ToUpper()
-            if ($retry -eq 'S') { return $false }
-            Write-Host ''
         }
+        Connect-WiFiNetwork -SSID $netSSID -Password $password -Auth $netAuth
+        $password = $null
+        Write-Status 'Waiting for IP address...' 'Yellow'
+        Start-Sleep -Seconds 6
+        return (Test-InternetConnectivity)
     }
+    return $false
 }
-
 #endregion
 
-#region ── Main ──────────────────────────────────────────────────────────────────
+#region ── Main Form with OPTIMIZED Animations ───────────────────────────────
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "AmpCloud - Cloud Imaging Engine"
+$form.Size = New-Object System.Drawing.Size(900, 680)
+$form.StartPosition = "CenterScreen"
+$form.FormBorderStyle = "FixedSingle"
+$form.MaximizeBox = $false
+$form.BackColor = $LightBg
+$form.Font = $BodyFont
 
-# ── Welcome screen ────────────────────────────────────────────────────────────
-Show-WelcomeBanner
+# Header
+$header = New-Object System.Windows.Forms.Panel
+$header.Dock = "Top"
+$header.Height = 100
+$header.BackColor = $LightBlue
+$form.Controls.Add($header)
 
-# ── Step 1: Initialise WinPE network stack ────────────────────────────────────
-# wpeinit.exe is normally called by startnet.cmd, but winpeshl.ini bypasses
-# startnet.cmd when it launches PowerShell directly.  We must call it ourselves.
-Write-SectionHeader 'Network Initialisation'
-Invoke-WpeInit
+$logo = New-Object System.Windows.Forms.Label
+$logo.Text = $S.Header
+$logo.Font = $HeaderFont
+$logo.ForeColor = [System.Drawing.Color]::White
+$logo.TextAlign = "MiddleCenter"
+$logo.Dock = "Fill"
+$header.Controls.Add($logo)
 
-# ── Step 2: Fast path — wired DHCP already gave us internet ──────────────────
-$hasInternet = Test-InternetConnectivity
+# Dark mode toggle
+$btnDark = New-Object System.Windows.Forms.Button
+$btnDark.Text = "🌙"
+$btnDark.Size = New-Object System.Drawing.Size(50, 50)
+$btnDark.Location = New-Object System.Drawing.Point(820, 25)
+$btnDark.FlatStyle = "Flat"
+$btnDark.FlatAppearance.BorderSize = 0
+$btnDark.ForeColor = [System.Drawing.Color]::White
+$btnDark.BackColor = $LightBlue
+$header.Controls.Add($btnDark)
 
-if (-not $hasInternet) {
-    # ── Step 3: Offer WiFi ────────────────────────────────────────────────────
-    Write-SectionHeader 'Network Connection'
-    Write-Status 'No internet on wired connection.' 'Yellow'
-    Write-Host ''
-    Write-Host "  Would you like to connect via WiFi?  [Y/N] " -ForegroundColor Yellow -NoNewline
-    $ans = (Read-Host).Trim().ToUpper()
+# Content card (cached path)
+$content = New-Object System.Windows.Forms.Panel
+$content.Dock = "Fill"
+$content.BackColor = $LightCard
+$content.Padding = New-Object System.Windows.Forms.Padding(60, 40, 60, 40)
+$form.Controls.Add($content)
 
-    if ($ans -eq 'Y') {
-        Write-Host ''
-        Write-SectionHeader 'WiFi Setup'
-        $hasInternet = Show-WiFiSelector
+$CachedPath = $null
+$content.Add_Paint({
+    $g = $_.Graphics
+    $g.SmoothingMode = "AntiAlias"
+    if (-not $CachedPath) {
+        $rect = New-Object System.Drawing.Rectangle(0, 0, $content.Width-1, $content.Height-1)
+        $CachedPath = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $radius = 20
+        $CachedPath.AddArc(0, 0, $radius*2, $radius*2, 180, 90)
+        $CachedPath.AddArc($rect.Width - $radius*2, 0, $radius*2, $radius*2, 270, 90)
+        $CachedPath.AddArc($rect.Width - $radius*2, $rect.Height - $radius*2, $radius*2, $radius*2, 0, 90)
+        $CachedPath.AddArc(0, $rect.Height - $radius*2, $radius*2, $radius*2, 90, 90)
+        $CachedPath.CloseFigure()
     }
+    $g.FillPath((New-Object System.Drawing.SolidBrush($content.BackColor)), $CachedPath)
+    $g.DrawPath((New-Object System.Drawing.Pen([System.Drawing.Color]::LightGray, 2)), $CachedPath)
+})
 
-    # ── Step 4: Short retry loop in case DHCP is still settling ──────────────
-    if (-not $hasInternet) {
-        $hasInternet = Wait-ForInternet -MaxWaitSeconds $MaxWaitSeconds -RetryInterval $RetryInterval
-    }
+# Step indicators
+$stepPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+$stepPanel.Dock = "Top"
+$stepPanel.Height = 50
+$stepPanel.FlowDirection = "LeftToRight"
+$content.Controls.Add($stepPanel)
+
+$stepLabels = @()
+@($S.Step1, $S.Step2, $S.Step3) | ForEach-Object {
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "● $($stepLabels.Count + 1) $_"
+    $lbl.Font = $SmallFont
+    $lbl.ForeColor = [System.Drawing.Color]::Gray
+    $lbl.AutoSize = $true
+    $lbl.Margin = New-Object System.Windows.Forms.Padding(30, 0, 30, 0)
+    $stepLabels += $lbl
+    $stepPanel.Controls.Add($lbl)
 }
 
-if (-not $hasInternet) {
-    Write-Host ''
-    Write-Status 'ERROR: No internet connection available.' 'Red'
-    Write-Status 'Dropping to shell. Fix networking then run Bootstrap.ps1 again.' 'Yellow'
-    & cmd.exe /k
-    exit 1
-}
-
-# ── Step 5: Load and execute AmpCloud.ps1 ─────────────────────────────────────
-Write-SectionHeader 'Loading AmpCloud'
-
-# Prefer the pre-staged copy embedded in the WinPE image by Trigger.ps1.
-# Fall back to downloading from GitHub when the local copy is absent.
-$localAmpCloud = Join-Path $env:SystemRoot 'System32\AmpCloud.ps1'
-$ampCloudPath  = $null
-
-if (Test-Path $localAmpCloud) {
-    Write-Status 'Using pre-staged AmpCloud.ps1 from WinPE image.' 'Green'
-    $ampCloudPath = $localAmpCloud
-} else {
-    $url = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
-    Write-Status "Pre-staged AmpCloud.ps1 not found. Fetching from: $url"
-
-    $downloadDir  = Join-Path $env:SystemDrive 'AmpCloud'
-    $downloadPath = Join-Path $downloadDir 'AmpCloud.ps1'
-    New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
-
-    try {
-        Invoke-WebRequest -Uri $url -OutFile $downloadPath -UseBasicParsing -ErrorAction Stop
-        Write-Status 'AmpCloud.ps1 downloaded.' 'Green'
-        $ampCloudPath = $downloadPath
-    } catch {
-        Write-Status "Failed to download AmpCloud.ps1: $_" 'Red'
-        Write-Status 'Dropping to interactive shell for manual recovery.' 'Yellow'
-        & cmd.exe /k
-        exit 1
-    }
-}
-
-# Execute AmpCloud.ps1 as a child script (not via Invoke-Expression).
-# Using & keeps exit calls in AmpCloud.ps1 scoped to that script — they do NOT
-# terminate this PowerShell session, preventing an unintended WinPE reboot when
-# AmpCloud.ps1 encounters an error and calls exit 1 in its own catch block.
-Write-Status 'Starting imaging engine...' 'Green'
-Write-Host ''
+# Device info
+$deviceLabel = New-Object System.Windows.Forms.Label
 try {
-    & $ampCloudPath
+    $model  = (Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).Model
+    $serial = (Get-CimInstance Win32_Bios -ErrorAction SilentlyContinue).SerialNumber
+    $deviceLabel.Text = "Device: $model • $serial"
 } catch {
-    Write-Status "AmpCloud.ps1 failed: $_" 'Red'
-    Write-Status 'Dropping to interactive shell for manual recovery.' 'Yellow'
-    & cmd.exe /k
+    $deviceLabel.Text = "Device: Unknown"
+}
+$deviceLabel.Font = $SmallFont
+$deviceLabel.ForeColor = [System.Drawing.Color]::Gray
+$deviceLabel.Dock = "Top"
+$deviceLabel.Height = 30
+$content.Controls.Add($deviceLabel)
+
+# Status
+$statusLabel = New-Object System.Windows.Forms.Label
+$statusLabel.Font = $TitleFont
+$statusLabel.ForeColor = $TextLight
+$statusLabel.Dock = "Top"
+$statusLabel.Height = 90
+$statusLabel.TextAlign = "MiddleLeft"
+$content.Controls.Add($statusLabel)
+
+# OPTIMIZED Animated Progress Ring
+$ringPanel = New-Object System.Windows.Forms.Panel
+$ringPanel.Size = New-Object System.Drawing.Size(120, 120)
+$ringPanel.Location = New-Object System.Drawing.Point(370, 280)
+$ringPanel.Visible = $false
+
+# ── PERFORMANCE OPTIMIZATIONS ───────────────────────────────────────────────
+$ringPanel.DoubleBuffered = $true
+$ringPanel.SetStyle([System.Windows.Forms.ControlStyles]::OptimizedDoubleBuffer -bor 
+                    [System.Windows.Forms.ControlStyles]::AllPaintingInWmPaint -bor 
+                    [System.Windows.Forms.ControlStyles]::UserPaint, $true)
+$ringPanel.UpdateStyles()
+
+$content.Controls.Add($ringPanel)
+
+$ringAngle = 0
+$ringTimer = New-Object System.Windows.Forms.Timer
+$ringTimer.Interval = 48
+$ringTimer.Add_Tick({
+    $ringAngle = ($ringAngle + 8) % 360
+    $ringPanel.Invalidate()
+})
+$ringPanel.Add_Paint({
+    $g = $_.Graphics
+    $g.SmoothingMode = "AntiAlias"
+    $g.DrawArc($RingPen, 10, 10, 100, 100, $ringAngle, 280)
+})
+
+# Progress text
+$progressText = New-Object System.Windows.Forms.Label
+$progressText.Font = $SmallFont
+$progressText.ForeColor = [System.Drawing.Color]::Gray
+$progressText.Dock = "Top"
+$progressText.Height = 30
+$content.Controls.Add($progressText)
+
+# Buttons
+$btnWiFi = New-Object System.Windows.Forms.Button
+$btnWiFi.Text = "🌐 Connect via WiFi"
+$btnWiFi.Size = New-Object System.Drawing.Size(300, 60)
+$btnWiFi.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+$btnWiFi.BackColor = $LightBlue
+$btnWiFi.ForeColor = [System.Drawing.Color]::White
+$btnWiFi.FlatStyle = "Flat"
+$btnWiFi.FlatAppearance.BorderSize = 0
+$btnWiFi.Location = New-Object System.Drawing.Point(300, 420)
+$btnWiFi.Visible = $false
+$content.Controls.Add($btnWiFi)
+
+$btnRetry = New-Object System.Windows.Forms.Button
+$btnRetry.Text = "🔄 Retry"
+$btnRetry.Size = New-Object System.Drawing.Size(180, 50)
+$btnRetry.Font = $BodyFont
+$btnRetry.BackColor = [System.Drawing.Color]::Orange
+$btnRetry.ForeColor = [System.Drawing.Color]::White
+$btnRetry.FlatStyle = "Flat"
+$btnRetry.Visible = $false
+$btnRetry.Location = New-Object System.Drawing.Point(360, 500)
+$content.Controls.Add($btnRetry)
+
+function Write-Status {
+    param([string]$Message, [string]$Color = 'Black')
+    $statusLabel.ForeColor = switch ($Color) {
+        'Green'  { [System.Drawing.Color]::DarkGreen }
+        'Red'    { [System.Drawing.Color]::Red }
+        'Yellow' { [System.Drawing.Color]::OrangeRed }
+        default  { if ($IsDarkMode) { $TextDark } else { $TextLight } }
+    }
+    $statusLabel.Text = $Message
+    $form.Refresh()
 }
 
+function Update-Step { param([int]$s)
+    for ($i = 0; $i -lt 3; $i++) {
+        $stepLabels[$i].ForeColor = if ($i -lt $s) { $LightBlue } else { [System.Drawing.Color]::Gray }
+    }
+}
+
+function Toggle-DarkMode {
+    $script:IsDarkMode = -not $IsDarkMode
+    $form.BackColor = if ($IsDarkMode) { $DarkBg } else { $LightBg }
+    $content.BackColor = if ($IsDarkMode) { $DarkCard } else { $LightCard }
+    $header.BackColor = if ($IsDarkMode) { $DarkBlue } else { $LightBlue }
+    $statusLabel.ForeColor = if ($IsDarkMode) { $TextDark } else { $TextLight }
+    $btnDark.Text = if ($IsDarkMode) { "☀️" } else { "🌙" }
+    $form.Refresh()
+}
+$btnDark.Add_Click({ Toggle-DarkMode })
+#endregion
+
+#region ── Final Completion Screen ──────────────────────────────────────────
+function Show-CompletionScreen {
+    Play-Sound 1200 400
+    $finalForm = New-Object System.Windows.Forms.Form
+    $finalForm.Text = $S.Complete
+    $finalForm.Size = New-Object System.Drawing.Size(620, 380)
+    $finalForm.StartPosition = "CenterScreen"
+    $finalForm.BackColor = if ($IsDarkMode) { $DarkCard } else { $LightCard }
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = $S.Complete + "`n`nAmpCloud imaging engine is ready."
+    $lbl.Font = $TitleFont
+    $lbl.TextAlign = "MiddleCenter"
+    $lbl.Dock = "Fill"
+    $finalForm.Controls.Add($lbl)
+
+    $btnReboot = New-Object System.Windows.Forms.Button
+    $btnReboot.Text      = $S.Reboot
+    $btnReboot.Size      = New-Object System.Drawing.Size(180, 60)
+    $btnReboot.Location  = New-Object System.Drawing.Point(50, 260)
+    $btnReboot.BackColor = [System.Drawing.Color]::DarkGreen
+    $btnReboot.ForeColor = "White"
+    $finalForm.Controls.Add($btnReboot)
+
+    $btnPower = New-Object System.Windows.Forms.Button
+    $btnPower.Text      = $S.PowerOff
+    $btnPower.Size      = New-Object System.Drawing.Size(180, 60)
+    $btnPower.Location  = New-Object System.Drawing.Point(240, 260)
+    $btnPower.BackColor = [System.Drawing.Color]::DarkRed
+    $btnPower.ForeColor = "White"
+    $finalForm.Controls.Add($btnPower)
+
+    $btnShell = New-Object System.Windows.Forms.Button
+    $btnShell.Text     = $S.Shell
+    $btnShell.Size     = New-Object System.Drawing.Size(180, 60)
+    $btnShell.Location = New-Object System.Drawing.Point(430, 260)
+    $finalForm.Controls.Add($btnShell)
+
+    $btnReboot.Add_Click({ shutdown /r /t 0 })
+    $btnPower.Add_Click({ shutdown /s /t 0 })
+    $btnShell.Add_Click({
+        $finalForm.Close()
+        & cmd.exe /k
+    })
+
+    $finalForm.ShowDialog() | Out-Null
+}
+#endregion
+
+#region ── Main Flow ─────────────────────────────────────────────────────────
+function ProceedToEngine {
+    Update-Step 3
+    Write-Status $S.Connected 'Green'
+    Play-Sound 900 300
+    $ringPanel.Visible = $true
+    $ringTimer.Start()
+
+    # Prefer the pre-staged copy embedded in the WinPE image by Trigger.ps1.
+    # Fall back to downloading from GitHub when the local copy is absent.
+    $localAmpCloud = Join-Path $env:SystemRoot 'System32\AmpCloud.ps1'
+    if (Test-Path $localAmpCloud) {
+        & $localAmpCloud
+    } else {
+        $url    = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
+        $dlPath = 'X:\AmpCloud.ps1'
+        Write-Status ($S.Download -f 0)
+        $web = New-Object System.Net.WebClient
+        $web.add_DownloadProgressChanged({
+            param($s, $e)
+            Write-Status ($S.Download -f $e.ProgressPercentage)
+        })
+        $task = $web.DownloadFileTaskAsync($url, $dlPath)
+        while (-not $task.IsCompleted) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 100
+        }
+        if ($task.IsFaulted) { throw $task.Exception.InnerException }
+        & $dlPath
+    }
+
+    $ringTimer.Stop()
+    Stop-Transcript -ErrorAction SilentlyContinue
+    $form.Close()
+    Show-CompletionScreen
+}
+
+function Show-Failure {
+    Play-Sound 400 600
+    Write-Status "❌ Could not connect to the internet.`nPlease check your network." 'Red'
+    $btnRetry.Visible = $true
+    $btnRetry.Add_Click({
+        $btnRetry.Visible = $false
+        $hasInternet = Test-InternetConnectivity
+        if ($hasInternet) {
+            ProceedToEngine
+        } else {
+            $form.Close()
+            & cmd.exe /k
+        }
+    })
+}
+
+$form.Add_Shown({
+    Update-Step 1
+    Write-Status $S.StatusInit 'Cyan'
+    Invoke-WpeInit
+    Optimize-WinPENetwork
+
+    $hasInternet = Test-InternetConnectivity
+
+    if (-not $hasInternet) {
+        Update-Step 2
+        Write-Status $S.StatusNoNet 'Yellow'
+        $btnWiFi.Visible = $true
+        $btnWiFi.Add_Click({
+            $btnWiFi.Visible = $false
+            $ringPanel.Visible = $true
+            $ringTimer.Start()
+            $hasInternet = Show-WiFiSelector
+            $ringTimer.Stop()
+            $ringPanel.Visible = $false
+            if ($hasInternet) { ProceedToEngine } else { Show-Failure }
+        })
+        if (-not $hasInternet) { $hasInternet = Wait-ForConnection -Timeout $MaxWaitSeconds }
+    }
+
+    if ($hasInternet) { ProceedToEngine } else { Show-Failure }
+})
+
+# Launch
+[System.Windows.Forms.Application]::EnableVisualStyles()
+$form.ShowDialog() | Out-Null
+Stop-Transcript -ErrorAction SilentlyContinue
 #endregion
