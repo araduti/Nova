@@ -90,6 +90,22 @@ function New-ScratchDirectory {
     }
 }
 
+function Add-SetupCompleteEntry {
+    param(
+        [string]$FilePath,
+        [string]$Line
+    )
+    $dir = Split-Path $FilePath
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    # Batch files (.cmd) use ASCII encoding for broadest Windows compatibility
+    if (Test-Path $FilePath) {
+        $existing = (Get-Content $FilePath -Raw).TrimEnd()
+        Set-Content $FilePath "$existing`r`n$Line" -Encoding Ascii
+    } else {
+        Set-Content $FilePath $Line -Encoding Ascii
+    }
+}
+
 function Get-FileSizeReadable {
     param([long]$Bytes)
     if ($Bytes -ge 1GB) { return "{0:N2} GB" -f ($Bytes / 1GB) }
@@ -172,7 +188,7 @@ function Initialize-TargetDisk {
         # Microsoft Reserved Partition (MSR) - 16 MB
         New-Partition -DiskNumber $DiskNumber -Size 16MB -GptType '{e3c9e316-0b5c-4db8-817d-f92df00215ae}' | Out-Null
 
-        # Windows OS Partition - remaining space minus 500 MB for WinRE
+        # Windows OS Partition - all remaining space
         $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -GptType '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}'
         $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false | Out-Null
         Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
@@ -231,7 +247,7 @@ function Find-WindowsESD {
     )
 
     $arch = 'amd64'
-    $results = $Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
+    $matchedEsd = $Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
         Where-Object {
             $_.LanguageCode -eq $Language -and
             $_.Architecture -eq $arch -and
@@ -240,11 +256,11 @@ function Find-WindowsESD {
         Sort-Object -Property @{Expression={ [long]$_.Size }; Descending = $true} |
         Select-Object -First 1
 
-    if (-not $results) {
+    if (-not $matchedEsd) {
         throw "No ESD found in catalog for: Edition='$Edition', Language='$Language', Arch='$arch'"
     }
 
-    return $results
+    return $matchedEsd
 }
 
 function Get-WindowsImage {
@@ -448,11 +464,9 @@ function Install-CCMSetup {
     Invoke-DownloadWithProgress -Uri $CCMSetupUrl -OutFile $ccmExe -Description 'Downloading ccmsetup.exe'
     Copy-Item $ccmExe (Join-Path $ccmDir 'ccmsetup.exe') -Force
 
-    # Create a SetupComplete.cmd to run ccmsetup on first boot
+    # Add to SetupComplete.cmd to run ccmsetup on first boot
     $setupComplete = "${OSDriveLetter}:\Windows\Setup\Scripts\SetupComplete.cmd"
-    $existingContent = if (Test-Path $setupComplete) { Get-Content $setupComplete -Raw } else { '' }
-    $newContent = "$existingContent`r`n`"%~dp0ccmsetup.exe`" /BITSPriority:FOREGROUND"
-    Set-Content $setupComplete $newContent.Trim() -Encoding Ascii
+    Add-SetupCompleteEntry -FilePath $setupComplete -Line '"%~dp0ccmsetup.exe" /BITSPriority:FOREGROUND'
 
     Write-Success 'CCMSetup staged for first-boot execution.'
 }
@@ -546,17 +560,12 @@ function Invoke-PostScripts {
         $i++
     }
 
-    # Create/update SetupComplete.cmd to run the scripts
+    # Add each script to SetupComplete.cmd
     $setupComplete = "${OSDriveLetter}:\Windows\Setup\Scripts\SetupComplete.cmd"
-    $runBlock = ''
     for ($j = 1; $j -lt $i; $j++) {
-        $fileName  = "AmpCloud_Post_$($j.ToString('00')).ps1"
-        $runBlock += "`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$fileName`""
+        $fileName = "AmpCloud_Post_$($j.ToString('00')).ps1"
+        Add-SetupCompleteEntry -FilePath $setupComplete -Line "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$fileName`""
     }
-
-    $existingContent = if (Test-Path $setupComplete) { Get-Content $setupComplete -Raw } else { '' }
-    $newContent = "$existingContent$runBlock"
-    Set-Content $setupComplete $newContent.Trim() -Encoding Ascii
 
     Write-Success "Post-provisioning scripts staged in: $scriptDir"
 }
@@ -578,11 +587,6 @@ Write-Host @"
 "@ -ForegroundColor Cyan
 
 try {
-    # Detect firmware type if not specified
-    if (-not $FirmwareType) {
-        $fwType = (Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control' -ErrorAction SilentlyContinue).PEFirmwareType
-        $FirmwareType = if ($fwType -eq 2) { 'UEFI' } else { 'BIOS' }
-    }
     Write-Step "Firmware type: $FirmwareType"
 
     # Ensure scratch directory exists

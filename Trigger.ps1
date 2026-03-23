@@ -19,6 +19,7 @@ param(
     [string]$GitHubBranch  = 'main',
     [string]$WinPEWorkDir  = 'C:\AmpCloud\WinPE',
     [string]$RamdiskVHD    = 'C:\AmpCloud\boot.vhd',
+    [string]$ADKInstallPath = 'C:\Program Files (x86)\Windows Kits\10',
     [switch]$NoReboot
 )
 
@@ -86,10 +87,10 @@ function Install-ADKIfMissing {
     Invoke-WebRequest -Uri $adkPEUrl -OutFile $adkPESetup -UseBasicParsing
 
     Write-Step 'Installing ADK (Deployment Tools)...'
-    Start-Process -FilePath $adkSetup -ArgumentList '/quiet', '/installpath', 'C:\Program Files (x86)\Windows Kits\10', '/features', 'OptionId.DeploymentTools' -Wait -NoNewWindow
+    Start-Process -FilePath $adkSetup -ArgumentList '/quiet', '/installpath', $ADKInstallPath, '/features', 'OptionId.DeploymentTools' -Wait -NoNewWindow
 
     Write-Step 'Installing WinPE add-on...'
-    Start-Process -FilePath $adkPESetup -ArgumentList '/quiet', '/installpath', 'C:\Program Files (x86)\Windows Kits\10', '/features', 'OptionId.WindowsPreinstallationEnvironment' -Wait -NoNewWindow
+    Start-Process -FilePath $adkPESetup -ArgumentList '/quiet', '/installpath', $ADKInstallPath, '/features', 'OptionId.WindowsPreinstallationEnvironment' -Wait -NoNewWindow
 
     $adkPath = Get-ADKInstallPath
     if (-not $adkPath) { throw 'ADK installation failed or path not detected.' }
@@ -198,9 +199,13 @@ function New-BCDRamdiskEntry {
 
     $mediaDir = Join-Path $WorkDir 'media'
 
-    # Copy the WIM into the ramdisk VHD path (we boot WIM directly)
-    $bootWim = Join-Path $WorkDir 'boot.wim'
-    Copy-Item $WimPath $bootWim -Force
+    # Determine destination directory from the RamdiskVHD parameter
+    $ramdiskDir = Split-Path $RamdiskVHD
+
+    # Derive the drive letter from the ramdisk directory for BCD paths
+    $ramdiskDrive = Split-Path $ramdiskDir -Qualifier
+    # Relative path inside the ramdisk drive (e.g. \AmpCloud)
+    $ramdiskRelDir = (Split-Path $ramdiskDir -NoQualifier).TrimEnd('\')
 
     # Create the ramdisk BCD entry
     # 1. Create a new boot entry (ramdisk)
@@ -209,8 +214,8 @@ function New-BCDRamdiskEntry {
     # Use bcdedit to create the ramdisk entry
     $bcdeditCmds = @(
         "bcdedit /create $guid /d `"AmpCloud WinPE`" /application osloader",
-        "bcdedit /set $guid device ramdisk=[$env:SystemDrive]\AmpCloud\boot.wim,{ramdiskoptions}",
-        "bcdedit /set $guid osdevice ramdisk=[$env:SystemDrive]\AmpCloud\boot.wim,{ramdiskoptions}",
+        "bcdedit /set $guid device ramdisk=[$ramdiskDrive]$ramdiskRelDir\boot.wim,{ramdiskoptions}",
+        "bcdedit /set $guid osdevice ramdisk=[$ramdiskDrive]$ramdiskRelDir\boot.wim,{ramdiskoptions}",
         "bcdedit /set $guid path \Windows\System32\winload.exe",
         "bcdedit /set $guid systemroot \Windows",
         "bcdedit /set $guid detecthal yes",
@@ -222,16 +227,15 @@ function New-BCDRamdiskEntry {
     $rdGuid = [System.Guid]::NewGuid().ToString('B').ToUpper()
     $rdCmds = @(
         "bcdedit /create $rdGuid /d `"AmpCloud Ramdisk`" /device",
-        "bcdedit /set $rdGuid ramdisksdidevice partition=$env:SystemDrive",
-        "bcdedit /set $rdGuid ramdisksdipath \AmpCloud\boot.sdi"
+        "bcdedit /set $rdGuid ramdisksdidevice partition=$ramdiskDrive",
+        "bcdedit /set $rdGuid ramdisksdipath $ramdiskRelDir\boot.sdi"
     )
 
-    # Download SDI file needed for ramdisk
-    $sdiDir = Split-Path $RamdiskVHD
-    if (-not (Test-Path $sdiDir)) { New-Item -ItemType Directory -Path $sdiDir -Force | Out-Null }
+    # Ensure ramdisk directory exists
+    if (-not (Test-Path $ramdiskDir)) { New-Item -ItemType Directory -Path $ramdiskDir -Force | Out-Null }
 
     $sdiSource = Join-Path $mediaDir 'boot\boot.sdi'
-    $sdiDest   = Join-Path (Split-Path $RamdiskVHD) 'boot.sdi'
+    $sdiDest   = Join-Path $ramdiskDir 'boot.sdi'
     if (Test-Path $sdiSource) {
         Copy-Item $sdiSource $sdiDest -Force
         Write-Success "Copied boot.sdi to $sdiDest"
@@ -240,7 +244,7 @@ function New-BCDRamdiskEntry {
     }
 
     # Copy WIM to destination
-    $wimDest = Join-Path (Split-Path $RamdiskVHD) 'boot.wim'
+    $wimDest = Join-Path $ramdiskDir 'boot.wim'
     Copy-Item $WimPath $wimDest -Force
 
     # Run BCD commands

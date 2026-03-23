@@ -64,8 +64,8 @@ function Initialize-Network {
 
     # Start DHCP client service if available
     try {
-        $dhcp = Get-Service -Name 'Dhcp' -ErrorAction SilentlyContinue
-        if ($dhcp -and $dhcp.Status -ne 'Running') {
+        $dhcpService = Get-Service -Name 'Dhcp' -ErrorAction SilentlyContinue
+        if ($dhcpService -and $dhcpService.Status -ne 'Running') {
             Start-Service -Name 'Dhcp' -ErrorAction SilentlyContinue
         }
     } catch { }

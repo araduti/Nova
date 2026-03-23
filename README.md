@@ -84,6 +84,7 @@ Runs on any existing Windows installation (bare-metal or VM).
 | `GitHubBranch` | `main` | Branch to fetch scripts from |
 | `WinPEWorkDir` | `C:\AmpCloud\WinPE` | Working directory for WinPE build |
 | `RamdiskVHD` | `C:\AmpCloud\boot.vhd` | Path for BCD ramdisk files |
+| `ADKInstallPath` | `C:\Program Files (x86)\Windows Kits\10` | ADK installation path |
 | `NoReboot` | `$false` | Skip automatic reboot |
 
 ---
