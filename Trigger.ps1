@@ -151,8 +151,20 @@ function Build-WinPE {
 
     # Run DandISetEnv.bat first in the same cmd session so copype.cmd inherits
     # all required ADK environment variables (WinPERoot, Oscdimg paths, etc.).
+    # Use 'call' so batch files return control within the cmd chain, and so the
+    # command string starts with 'call' instead of a quote character — cmd.exe /c
+    # strips the first and last quote when the string begins with one, which
+    # breaks paths that contain spaces (e.g. "Program Files (x86)").
+    # Temporarily lower ErrorActionPreference so stderr output from batch files
+    # is not converted to a terminating PowerShell error.
     Write-Step "Running copype to create WinPE workspace at: $WorkDir"
-    $result = & cmd.exe /c "`"$dandISetEnv`" && `"$copype`" amd64 `"$WorkDir`"" 2>&1
+    $prevEAP = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $result = & cmd.exe /c "call `"$dandISetEnv`" && call `"$copype`" amd64 `"$WorkDir`"" 2>&1
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
     if ($LASTEXITCODE -ne 0) { throw "copype.cmd failed: $result" }
 
     # Mount WinPE WIM
