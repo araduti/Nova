@@ -263,7 +263,7 @@ function Find-WindowsESD {
     return $matchedEsd
 }
 
-function Get-WindowsImage {
+function Get-WindowsImageSource {
     param(
         [string]$ImageUrl,
         [string]$Edition,
@@ -599,7 +599,7 @@ try {
         -OSDriveLetter $OSDrive
 
     # Step 2: Download Windows image
-    $imagePath = Get-WindowsImage `
+    $imagePath = Get-WindowsImageSource `
         -ImageUrl    $WindowsImageUrl `
         -Edition     $WindowsEdition `
         -Language    $WindowsLanguage `

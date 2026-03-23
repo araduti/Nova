@@ -120,9 +120,11 @@ function Build-WinPE {
         throw "copype.cmd not found at: $copype"
     }
 
-    # Clean and recreate work directory
+    # Clean existing work directory (copype.cmd creates its own target directory)
     if (Test-Path $WorkDir) { Remove-Item $WorkDir -Recurse -Force }
-    New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
+
+    # Set WinPERoot so copype.cmd can locate the architecture files
+    $env:WinPERoot = Join-Path $ADKPath 'Assessment and Deployment Kit\Windows Preinstallation Environment'
 
     Write-Step "Running copype to create WinPE workspace at: $WorkDir"
     $result = & cmd.exe /c "`"$copype`" amd64 `"$WorkDir`"" 2>&1
