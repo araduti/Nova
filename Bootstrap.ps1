@@ -1,9 +1,9 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    AmpCloud Bootstrap - Graphical WinPE loader with Fluent UI.
+    AmpCloud Bootstrap - Graphical WinRE/WinPE loader with Fluent UI.
 .DESCRIPTION
-    Runs inside WinPE via winpeshl.ini.
+    Runs inside the WinRE/WinPE boot environment via winpeshl.ini.
     - Calls wpeinit.exe to initialise the WinPE network stack and DHCP.
     - Shows a language selection prompt (EN / FR / ES).
     - Presents an animated Fluent-style WinForms interface.
