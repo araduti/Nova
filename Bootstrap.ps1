@@ -4,9 +4,10 @@
     AmpCloud Bootstrap - Minimal WinPE network waiter and AmpCloud loader.
 
 .DESCRIPTION
-    Runs inside WinPE via winpeshl.ini. Waits for internet connectivity, then
-    downloads and executes AmpCloud.ps1 directly from GitHub raw URLs.
-    No local files beyond this script are needed.
+    Runs inside WinPE via winpeshl.ini. Executes the locally embedded AmpCloud.ps1
+    when available (pre-staged by Trigger.ps1 at build time). Falls back to waiting
+    for internet connectivity and downloading AmpCloud.ps1 from GitHub if no local
+    copy is found.
 #>
 
 [CmdletBinding()]
@@ -106,7 +107,16 @@ Write-Host @"
 # Initialize networking
 Initialize-Network
 
-# Wait for internet
+# Check for a locally embedded AmpCloud.ps1 (pre-staged by Trigger.ps1 at build time)
+$localAmpCloud = Join-Path $PSScriptRoot 'AmpCloud.ps1'
+if (Test-Path $localAmpCloud) {
+    Write-Status 'Found local AmpCloud.ps1. Executing without internet...' 'Green'
+    & $localAmpCloud
+    exit $LASTEXITCODE
+}
+
+# No local copy — fall back to downloading from GitHub
+Write-Status 'No local AmpCloud.ps1 found. Waiting for internet connectivity...'
 if (-not (Wait-ForInternet -MaxWaitSeconds $MaxWaitSeconds -RetryInterval $RetryInterval)) {
     Write-Status 'ERROR: Cannot reach internet. Dropping to shell for manual troubleshooting.' 'Red'
     # Drop to interactive shell so the user can debug

@@ -280,11 +280,16 @@ function Build-WinPE {
             }
         }
 
-        # ── 4. Embed Bootstrap.ps1 ────────────────────────────────────────────
+        # ── 4. Embed Bootstrap.ps1 and AmpCloud.ps1 ──────────────────────────
         $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
         Write-Step "Fetching Bootstrap.ps1 from $bootstrapUrl"
         Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing
+
+        $ampCloudUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
+        $ampCloudDest = Join-Path $paths.MountDir 'Windows\System32\AmpCloud.ps1'
+        Write-Step "Fetching AmpCloud.ps1 from $ampCloudUrl"
+        Invoke-WebRequest -Uri $ampCloudUrl -OutFile $ampCloudDest -UseBasicParsing
 
         # ── 5. winpeshl.ini → auto-launch Bootstrap.ps1 ───────────────────────
         $winpeshlPath = Join-Path $paths.MountDir 'Windows\System32\winpeshl.ini'
