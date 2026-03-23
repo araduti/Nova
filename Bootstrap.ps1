@@ -239,7 +239,7 @@ function Connect-WiFiNetwork {
                     '</sharedKey></security></MSM>'
     }
     $xml = '<?xml version="1.0"?>' +
-           "<WLANProfile xmlns=\"$ns\">" +
+           "<WLANProfile xmlns=`"$ns`">" +
            "<name>$safeSsid</name>" +
            "<SSIDConfig><SSID><name>$safeSsid</name></SSID></SSIDConfig>" +
            '<connectionType>ESS</connectionType>' +
@@ -294,7 +294,7 @@ function Show-WiFiSelector {
     $dlg.Controls.Add($btnRefresh)
     $btnRefresh.Add_Click({ RefreshNetworks })
 
-    RefreshNetworks()
+    RefreshNetworks
 
     $dlg.ShowDialog() | Out-Null
     if ($list.SelectedItems.Count -gt 0) {
