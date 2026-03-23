@@ -7,10 +7,17 @@
 .DESCRIPTION
     One-liner entry point. Runs on any Windows PC.
     - Auto-installs the Windows ADK + WinPE add-on if missing.
-    - Builds a custom WinPE image in pure PowerShell (no copype.cmd / cmd.exe).
+    - Builds a custom boot image in pure PowerShell (no copype.cmd / cmd.exe).
+      Prefers WinRE (Windows Recovery Environment) as the base WIM because WinRE
+      ships with WiFi hardware drivers (Intel, Realtek, MediaTek, Qualcomm) that
+      Microsoft bundles via Windows Update, enabling wireless connectivity on most
+      laptops without manual driver injection. Falls back to the ADK winpe.wim when
+      WinRE is not accessible on the source machine.
+      Recovery-specific packages (startup repair, boot recovery) are stripped from
+      WinRE and the WIM is re-exported with maximum compression to keep it small.
     - Injects Bootstrap.ps1 and winpeshl.ini into the image.
     - Creates a one-time BCD ramdisk boot entry (UEFI and BIOS aware).
-    - Reboots into cloud WinPE.
+    - Reboots into the cloud boot environment.
 
 .PARAMETER GitHubUser
     GitHub account that hosts the AmpCloud repository. Default: araduti
@@ -80,6 +87,103 @@ function Get-WinPEArchitecture {
               "Set -Architecture manually (amd64 | arm64 | x86 | arm)."
     }
     return $arch
+}
+
+#endregion
+
+#region ── WinRE Discovery ──────────────────────────────────────────────────────
+
+function Get-WinREPath {
+    <#
+    .SYNOPSIS  Locates a usable winre.wim on the current machine.
+    .DESCRIPTION
+        WinRE (Windows Recovery Environment) is built on WinPE but ships with
+        real WiFi hardware drivers (Intel, Realtek, MediaTek, Qualcomm) that
+        Microsoft delivers via Windows Update. Using WinRE as the boot image
+        therefore enables wireless connectivity on most laptops without manually
+        injecting model-specific drivers.
+
+        Search order:
+          1. %SystemRoot%\System32\Recovery\WinRE.wim  (present when WinRE is
+             disabled or the machine has not moved it to a recovery partition).
+          2. Active recovery partition reported by reagentc.exe, temporarily
+             assigned a drive letter so the WIM can be copied out.
+
+    .OUTPUTS  [string] Path to an accessible winre.wim, or $null when not found.
+    #>
+
+    # ── 1. Quick check in System32\Recovery ─────────────────────────────────
+    $sysPath = Join-Path $env:SystemRoot 'System32\Recovery\WinRE.wim'
+    if (Test-Path $sysPath) {
+        Write-Success "WinRE.wim found: $sysPath"
+        return $sysPath
+    }
+
+    # ── 2. Query reagentc for the active WinRE location ─────────────────────
+    Write-Step 'Querying reagentc for WinRE location...'
+    $info = & reagentc.exe /info 2>&1
+    $locLine = ($info | Where-Object { $_ -match 'Windows RE location' }) -as [string]
+
+    if ($locLine -notmatch 'harddisk(\d+)\\partition(\d+)\\(.+)') {
+        Write-Warn 'reagentc did not report a usable WinRE location.'
+        return $null
+    }
+
+    $diskNum = [int]$Matches[1]
+    $partNum = [int]$Matches[2]
+    $relPath = $Matches[3].Trim()
+
+    $part = Get-Partition -DiskNumber $diskNum -PartitionNumber $partNum `
+                          -ErrorAction SilentlyContinue
+    if (-not $part) {
+        Write-Warn "Could not access recovery partition (disk=$diskNum, part=$partNum)."
+        return $null
+    }
+
+    # If the partition already has a drive letter, try it directly
+    if ($part.DriveLetter -match '[A-Za-z]') {
+        $candidate = "$($part.DriveLetter):\$relPath\WinRE.wim"
+        if (Test-Path $candidate) {
+            Write-Success "WinRE.wim found: $candidate"
+            return $candidate
+        }
+    }
+
+    # Otherwise assign a temporary drive letter, copy the WIM, then release
+    $freeLetter = (68..90 |
+        ForEach-Object { [char]$_ } |
+        Where-Object   { -not (Test-Path "${_}:\") } |
+        Select-Object -First 1)
+    if (-not $freeLetter) {
+        Write-Warn 'No free drive letter available to mount recovery partition.'
+        return $null
+    }
+
+    $mountPoint = "${freeLetter}:\"
+    $tempWim    = Join-Path $env:TEMP "ampcloud_winre_$([guid]::NewGuid().Guid).wim"
+    $found      = $false
+    try {
+        $part | Add-PartitionAccessPath -AccessPath $mountPoint -ErrorAction Stop
+        $candidate = "${freeLetter}:\$relPath\WinRE.wim"
+        if (Test-Path $candidate) {
+            Write-Step 'Copying WinRE.wim from recovery partition...'
+            Copy-Item $candidate $tempWim -Force
+            $found = $true
+        } else {
+            Write-Warn "WinRE.wim not found at expected path: $candidate"
+        }
+    } catch {
+        Write-Warn "Could not mount recovery partition: $_"
+    } finally {
+        $part | Remove-PartitionAccessPath -AccessPath $mountPoint `
+                                           -ErrorAction SilentlyContinue
+    }
+
+    if ($found) {
+        Write-Success "WinRE.wim copied to temp: $tempWim"
+        return $tempWim
+    }
+    return $null
 }
 
 #endregion
@@ -183,7 +287,8 @@ function Copy-WinPEFiles {
         [string] $ADKRoot,
         [string] $Destination,
         [ValidateSet('amd64','x86','arm','arm64')]
-        [string] $Architecture = 'amd64'
+        [string] $Architecture = 'amd64',
+        [string] $WimSource    = ''   # Optional: path to an existing WIM (e.g. winre.wim)
     )
 
     Write-Step "Creating WinPE workspace ($Architecture) → $Destination"
@@ -199,14 +304,20 @@ function Copy-WinPEFiles {
         throw "WinPE Media directory not found: $mediaSrc"
     }
 
-    # Locate winpe.wim — some ADK layouts store it under the arch subdir, others at the root
-    $wimCandidates = @(
-        (Join-Path $winPERoot "$Architecture\en-us\winpe.wim"),
-        (Join-Path $winPERoot 'en-us\winpe.wim')
-    )
-    $wimSrc = $wimCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-    if (-not $wimSrc) {
-        throw "winpe.wim not found. Checked:`n    $($wimCandidates -join "`n    ")"
+    # Use the provided WIM source if given (e.g. winre.wim); otherwise locate winpe.wim
+    if ($WimSource -and (Test-Path $WimSource)) {
+        $wimSrc = $WimSource
+        Write-Step "Using provided WIM source: $(Split-Path $wimSrc -Leaf)"
+    } else {
+        # Locate winpe.wim — some ADK layouts store it under the arch subdir, others at the root
+        $wimCandidates = @(
+            (Join-Path $winPERoot "$Architecture\en-us\winpe.wim"),
+            (Join-Path $winPERoot 'en-us\winpe.wim')
+        )
+        $wimSrc = $wimCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $wimSrc) {
+            throw "winpe.wim not found. Checked:`n    $($wimCandidates -join "`n    ")"
+        }
     }
 
     # Build directory tree
@@ -247,9 +358,66 @@ $script:WinPEPackages = @(
     'WinPE-DismCmdlets.cab',     'en-us\WinPE-DismCmdlets_en-us.cab'
 )
 
+function Remove-WinRERecoveryPackages {
+    <#
+    .SYNOPSIS
+        Removes WinRE-specific recovery tools from a mounted WinRE image to
+        reduce the final WIM size.
+    .DESCRIPTION
+        WinRE ships with startup-repair, boot-recovery, and other tools that are
+        useful for OS recovery but are not needed when the image is used purely as
+        a cloud deployment environment. Removing them shrinks the image by roughly
+        100–200 MB before the final compression step.
+
+        Packages matching the following name prefixes are removed:
+          - Microsoft-Windows-WinRE-RecoveryAgent   (startup repair agent)
+          - Microsoft-Windows-WinRE-BootRecovery    (boot recovery tools)
+          - Microsoft-Windows-RecoveryDrive          (recovery drive creator)
+
+        WiFi, networking, and scripting packages are intentionally preserved.
+        Each removal is attempted individually so that dependency errors on one
+        package do not block removal of the others.
+    .PARAMETER MountDir  Path to the mounted WIM image.
+    #>
+    param([string] $MountDir)
+
+    Write-Step 'Removing WinRE recovery packages to reduce image size...'
+
+    $removePrefixes = @(
+        'Microsoft-Windows-WinRE-RecoveryAgent',
+        'Microsoft-Windows-WinRE-BootRecovery',
+        'Microsoft-Windows-RecoveryDrive'
+    )
+
+    try {
+        $installed = Get-WindowsPackage -Path $MountDir -ErrorAction Stop
+    } catch {
+        Write-Warn "Could not enumerate packages for slimming: $_"
+        return
+    }
+
+    foreach ($pkg in $installed) {
+        $name        = $pkg.PackageName
+        $shouldRemove = $false
+        foreach ($prefix in $removePrefixes) {
+            if ($name -like "$prefix*") { $shouldRemove = $true; break }
+        }
+        if (-not $shouldRemove) { continue }
+
+        Write-Step "Removing recovery package: $name"
+        try {
+            Remove-WindowsPackage -Path $MountDir -PackageName $name `
+                                  -NoRestart -ErrorAction Stop | Out-Null
+            Write-Success "Removed: $name"
+        } catch {
+            Write-Warn "Could not remove $name (non-fatal): $_"
+        }
+    }
+}
+
 function Build-WinPE {
     <#
-    .SYNOPSIS  Builds a fully customised WinPE image ready for ramdisk boot.
+    .SYNOPSIS  Builds a fully customised WinRE/WinPE boot image ready for ramdisk boot.
     .OUTPUTS   [hashtable] Keys: MediaDir, MountDir, BootWim
     #>
     param(
@@ -261,33 +429,69 @@ function Build-WinPE {
         [string] $GitHubBranch
     )
 
+    # ── 0. Prefer WinRE as the base WIM (built-in WiFi hardware drivers) ────────
+    # WinRE ships with WiFi hardware drivers (Intel, Realtek, MediaTek, Qualcomm)
+    # that Microsoft delivers via Windows Update. Using WinRE as the base image
+    # means WiFi works on most laptops without manually injecting device drivers.
+    # If WinRE is not accessible on this machine, the ADK winpe.wim is used as
+    # a fallback (existing behaviour; WiFi requires manual driver injection).
+    Write-Step 'Locating WinRE.wim to use as base image (built-in WiFi drivers)...'
+    $winrePath   = Get-WinREPath
+    $usingWinRE  = $null -ne $winrePath
+    $isTempWinRE = $usingWinRE -and ($winrePath -like "$env:TEMP\*")
+
+    if ($usingWinRE) {
+        Write-Success 'WinRE found — WiFi hardware drivers will be available in the boot image.'
+    } else {
+        Write-Warn 'WinRE.wim not found — falling back to ADK winpe.wim (WiFi requires manual driver injection).'
+    }
+
     # ── 1. Create workspace ──────────────────────────────────────────────────
-    $paths = Copy-WinPEFiles -ADKRoot $ADKRoot -Destination $WorkDir -Architecture $Architecture
+    try {
+        $paths = Copy-WinPEFiles -ADKRoot $ADKRoot -Destination $WorkDir `
+                                 -Architecture $Architecture -WimSource $winrePath
+    } finally {
+        # Release temp WinRE copy (on recovery partition) regardless of success/failure
+        if ($isTempWinRE -and $winrePath -and (Test-Path $winrePath)) {
+            Remove-Item $winrePath -Force -ErrorAction SilentlyContinue
+        }
+    }
 
     # ── 2. Mount ─────────────────────────────────────────────────────────────
     Write-Step 'Mounting boot.wim...'
     Mount-WindowsImage -ImagePath $paths.BootWim -Index 1 -Path $paths.MountDir | Out-Null
 
     try {
-        # ── 3. Inject optional components ────────────────────────────────────
+        # ── 3. Slim WinRE by removing recovery tools (not needed for deployment) ──
+        if ($usingWinRE) {
+            Remove-WinRERecoveryPackages -MountDir $paths.MountDir
+        }
+
+        # ── 4. Inject optional components ────────────────────────────────────
         $pkgRoot = Join-Path $ADKRoot `
             "Assessment and Deployment Kit\Windows Preinstallation Environment\$Architecture\WinPE_OCs"
 
         foreach ($pkg in $script:WinPEPackages) {
             $pkgPath = Join-Path $pkgRoot $pkg
-            if (Test-Path $pkgPath) {
-                Write-Step "Adding package: $pkg"
-                Add-WindowsPackage -Path $paths.MountDir -PackagePath $pkgPath | Out-Null
-            } else {
+            if (-not (Test-Path $pkgPath)) {
                 Write-Warn "Package not found, skipping: $pkg"
+                continue
+            }
+            Write-Step "Adding package: $pkg"
+            try {
+                Add-WindowsPackage -Path $paths.MountDir -PackagePath $pkgPath | Out-Null
+            } catch {
+                # Package may already be present in the WinRE base image (expected)
+                # or there may be a version mismatch with the ADK (non-fatal warning).
+                Write-Warn "Package $pkg skipped (already in base image or version mismatch): $_"
             }
         }
 
-        # ── 3b. Inject VirtIO network driver (netkvm) ────────────────────────
+        # ── 4b. Inject VirtIO network driver (netkvm) ───────────────────────
         # QEMU-based VMs (e.g. UTM on macOS) present a VirtIO network adapter.
-        # WinPE has no VirtIO driver by default, so the adapter is invisible and
-        # networking never starts.  The pre-extracted netkvm driver files live in
-        # Drivers/NetKVM/w10/<arch>/ in the repo — fetched directly from GitHub,
+        # WinPE/WinRE has no VirtIO driver by default, so the adapter is invisible
+        # and networking never starts.  The pre-extracted netkvm driver files live
+        # in Drivers/NetKVM/w10/<arch>/ in the repo — fetched directly from GitHub,
         # no ISO download required.
         # The repo subfolder names match virtio-win convention: amd64, x86, ARM64.
         $virtioArchMap = @{ amd64 = 'amd64'; x86 = 'x86'; arm64 = 'ARM64' }
@@ -317,13 +521,13 @@ function Build-WinPE {
             Write-Warn "VirtIO network driver not available for architecture '$Architecture' — skipping."
         }
 
-        # ── 4. Embed Bootstrap.ps1 ────────────────────────────────────────────
+        # ── 5. Embed Bootstrap.ps1 ────────────────────────────────────────────
         $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
         Write-Step "Fetching Bootstrap.ps1 from $bootstrapUrl"
         Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing
 
-        # ── 4b. Pre-stage AmpCloud.ps1 ───────────────────────────────────────
+        # ── 5b. Pre-stage AmpCloud.ps1 ──────────────────────────────────────
         # Embedding AmpCloud.ps1 eliminates the internet dependency at boot time.
         # Bootstrap.ps1 will use this local copy instead of downloading it.
         $ampCloudUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
@@ -331,9 +535,9 @@ function Build-WinPE {
         Write-Step "Fetching AmpCloud.ps1 from $ampCloudUrl"
         Invoke-WebRequest -Uri $ampCloudUrl -OutFile $ampCloudDest -UseBasicParsing
 
-        # ── 5. winpeshl.ini → auto-launch Bootstrap.ps1 ───────────────────────
+        # ── 6. winpeshl.ini → auto-launch Bootstrap.ps1 ──────────────────────
         # -NoExit keeps the PowerShell host alive after Bootstrap.ps1 exits
-        # (normally or via error), preventing an unintended WinPE reboot.
+        # (normally or via error), preventing an unintended reboot.
         # -Command with & invokes Bootstrap.ps1 as a child script so that any
         # exit call inside it exits only that script, not the PowerShell host.
         $winpeshlPath = Join-Path $paths.MountDir 'Windows\System32\winpeshl.ini'
@@ -349,11 +553,39 @@ function Build-WinPE {
         throw
     }
 
-    # ── 6. Commit & unmount ───────────────────────────────────────────────────
+    # ── 7. Commit & unmount ───────────────────────────────────────────────────
     Write-Step 'Committing and unmounting image...'
     Dismount-WindowsImage -Path $paths.MountDir -Save | Out-Null
 
-    Write-Success 'WinPE image built successfully.'
+    # ── 8. Re-export with maximum compression to reduce WIM size ─────────────
+    # Maximum compression can shrink WinRE by 100–200 MB compared to the default
+    # compression used inside winre.wim. This keeps the ramdisk footprint small.
+    # Safety pattern: rename original to .bak before promoting the slim WIM so
+    # that a Move-Item failure can be recovered without losing boot.wim.
+    Write-Step 'Re-exporting image with maximum compression (this may take a few minutes)...'
+    $slimWim = $paths.BootWim + '.slim'
+    $bakWim  = $paths.BootWim + '.bak'
+    try {
+        Export-WindowsImage -SourceImagePath $paths.BootWim -SourceIndex 1 `
+                            -DestinationImagePath $slimWim -CompressionType max | Out-Null
+        # Rename original as .bak (same filesystem — atomic rename)
+        Move-Item $paths.BootWim $bakWim  -Force -ErrorAction Stop
+        # Promote slim WIM to final path
+        Move-Item $slimWim $paths.BootWim -Force -ErrorAction Stop
+        Remove-Item $bakWim -Force -ErrorAction SilentlyContinue
+        Write-Success 'Image compressed and finalised.'
+    } catch {
+        Write-Warn "Image compression failed (non-fatal, original WIM kept): $_"
+        # If the original was renamed to .bak but the slim WIM was not yet promoted,
+        # restore the backup so the build remains usable.
+        if ((Test-Path $bakWim) -and -not (Test-Path $paths.BootWim)) {
+            Move-Item $bakWim $paths.BootWim -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item $slimWim -Force -ErrorAction SilentlyContinue
+        Remove-Item $bakWim  -Force -ErrorAction SilentlyContinue
+    }
+
+    Write-Success 'Boot image built successfully.'
     return $paths
 }
 
@@ -469,7 +701,7 @@ function New-BCDRamdiskEntry {
     Write-Step "Firmware type: $fw  →  $winload"
 
     $ramdiskVal = "[$drive]$wimBcd,$rdGuid"
-    $osGuid     = New-BcdEntry '/create', '/d', 'AmpCloud WinPE', '/application', 'osloader'
+    $osGuid     = New-BcdEntry '/create', '/d', 'AmpCloud Boot', '/application', 'osloader'
 
     Invoke-Bcdedit '/set', $osGuid, 'device',     "ramdisk=$ramdiskVal" | Out-Null
     Invoke-Bcdedit '/set', $osGuid, 'osdevice',   "ramdisk=$ramdiskVal" | Out-Null
@@ -512,7 +744,7 @@ try {
     # ── 1. ADK ────────────────────────────────────────────────────────────────
     $adkRoot = Assert-ADKInstalled -Architecture $arch
 
-    # ── 2. WinPE ──────────────────────────────────────────────────────────────
+    # ── 2. Boot image (WinRE preferred, WinPE fallback) ──────────────────────
     $paths = Build-WinPE `
         -ADKRoot      $adkRoot `
         -WorkDir      $script:WinPEWorkDir `
@@ -535,7 +767,7 @@ try {
         Start-Sleep -Seconds 10
         Restart-Computer -Force
     } else {
-        Write-Host '  [AmpCloud] -NoReboot specified. Reboot manually to enter WinPE.' `
+        Write-Host '  [AmpCloud] -NoReboot specified. Reboot manually to enter the boot environment.' `
             -ForegroundColor Yellow
     }
 

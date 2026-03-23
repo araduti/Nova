@@ -1,7 +1,9 @@
 # AmpCloud
 
 > **GitHub-native OSDCloud replacement.** No USB, no ISO, no local media.  
-> Stages a tiny WinPE on the C: drive, boots it via BCD ramdisk, then streams the full OSD engine directly from raw GitHub URLs.
+> Stages a tiny WinRE/WinPE image on the C: drive, boots it via BCD ramdisk, then streams the full OSD engine directly from raw GitHub URLs.
+>
+> **WiFi support:** AmpCloud uses the machine's existing **WinRE** (Windows Recovery Environment) image as its base, which ships with built-in WiFi hardware drivers (Intel, Realtek, MediaTek, Qualcomm) delivered by Microsoft via Windows Update. This means WiFi works on most laptops without manually injecting device-specific drivers. Recovery tools are stripped and the WIM is re-exported with maximum compression to keep the image small.
 
 ---
 
@@ -28,14 +30,16 @@ User runs one-liner
 │  (GitHub raw)│
 └──────┬───────┘
        │  1. Installs ADK + WinPE add-on (if missing)
-       │  2. Builds custom WinPE (with PowerShell, WMI, DISM)
-       │  3. Embeds Bootstrap.ps1 + winpeshl.ini
-       │  4. Creates BCD ramdisk entry
-       │  5. Reboots into WinPE
+       │  2. Locates WinRE.wim (built-in WiFi drivers); falls back to ADK winpe.wim
+       │  3. Slims WinRE: removes recovery tools, re-exports with max compression
+       │  4. Adds PowerShell, WMI, StorageWMI, DISM cmdlets from ADK
+       │  5. Embeds Bootstrap.ps1 + winpeshl.ini
+       │  6. Creates BCD ramdisk entry
+       │  7. Reboots into WinRE/WinPE
        ▼
 ┌────────────────┐
-│ Bootstrap.ps1  │  ← Runs inside WinPE on reboot
-│ (in WinPE)     │
+│ Bootstrap.ps1  │  ← Runs inside WinRE/WinPE on reboot
+│ (in WinRE)     │
 └──────┬─────────┘
        │  1. Detects internet connectivity (waits up to 10 min)
        │  2. Fetches AmpCloud.ps1 from GitHub raw URL
@@ -69,11 +73,14 @@ Runs on any existing Windows installation (bare-metal or VM).
 
 **What it does:**
 - Auto-detects and installs the latest **Windows ADK** and **WinPE add-on** if missing
-- Builds a custom WinPE with PowerShell, WMI, StorageWMI, and DISM cmdlets
-- Fetches `Bootstrap.ps1` from GitHub and embeds it in the WinPE image
-- Creates a `winpeshl.ini` to auto-launch `Bootstrap.ps1` on WinPE boot
-- Creates a **BCD ramdisk entry** pointing to the WinPE WIM at `C:\AmpCloud\boot.wim`
-- Reboots into WinPE (10-second countdown, can be cancelled)
+- **Prefers WinRE** (Windows Recovery Environment) as the base boot image because WinRE ships with real WiFi hardware drivers (Intel, Realtek, MediaTek, Qualcomm) that Microsoft delivers via Windows Update — enabling wireless connectivity on most laptops without any manual driver injection. Falls back to the ADK `winpe.wim` if WinRE is not accessible on the source machine.
+- Strips WinRE-specific recovery packages (startup repair, boot recovery tools) that are not needed for deployment
+- Re-exports the WIM with maximum compression to keep the ramdisk image small
+- Adds PowerShell, WMI, StorageWMI, and DISM cmdlets from the ADK (skips packages already present in WinRE)
+- Fetches `Bootstrap.ps1` from GitHub and embeds it in the boot image
+- Creates a `winpeshl.ini` to auto-launch `Bootstrap.ps1` on boot
+- Creates a **BCD ramdisk entry** pointing to the WIM at `C:\AmpCloud\boot.wim`
+- Reboots into the cloud boot environment (10-second countdown, can be cancelled)
 
 **Parameters:**
 
@@ -89,12 +96,13 @@ Runs on any existing Windows installation (bare-metal or VM).
 
 ---
 
-### `Bootstrap.ps1` — WinPE Network Waiter
+### `Bootstrap.ps1` — WinRE/WinPE Network Waiter
 
-Embedded in WinPE. Runs automatically on WinPE boot via `winpeshl.ini`.
+Embedded in the boot image. Runs automatically on boot via `winpeshl.ini`.
 
 **What it does:**
 - Enables DHCP on all network adapters
+- If no wired internet: presents a graphical WiFi selector (WiFi works out-of-the-box when booted from WinRE due to built-in hardware drivers)
 - Polls for internet connectivity (tests against GitHub raw, Microsoft, Google)
 - Waits up to 10 minutes, retrying every 5 seconds
 - Once connected, fetches `AmpCloud.ps1` via `irm` and executes it in memory
@@ -191,8 +199,8 @@ Updates to `AmpCloud.ps1` take effect **immediately** — no rebuilds, no redist
 
 ### On the target machine (where imaging happens)
 - x64 architecture
-- Network adapter with DHCP
-- Internet access from WinPE
+- Network adapter with DHCP (wired) **or** WiFi (Intel/Realtek/MediaTek/Qualcomm — supported natively by WinRE)
+- Internet access from the boot environment
 - Disk with sufficient space for Windows installation (minimum ~30 GB recommended)
 
 ---
@@ -202,6 +210,7 @@ Updates to `AmpCloud.ps1` take effect **immediately** — no rebuilds, no redist
 | Feature | Details |
 |---------|---------|
 | 🚫 Zero media required | No USB, ISO, or PXE server needed |
+| 📡 WiFi out-of-the-box | WinRE base image includes Intel, Realtek, MediaTek & Qualcomm drivers |
 | ⚡ Instant updates | Edit `AmpCloud.ps1` on GitHub — active immediately |
 | 🖥️ Bare-metal or in-place | Works on fresh hardware or existing Windows |
 | 🔁 BCD-based reboot | No external boot media |
