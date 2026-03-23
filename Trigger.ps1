@@ -1,313 +1,392 @@
 #Requires -RunAsAdministrator
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     AmpCloud Trigger - GitHub-native OSDCloud replacement entry point.
 
 .DESCRIPTION
-    One-liner entrypoint. Runs on any Windows PC. Auto-downloads/installs latest
-    ADK + WinPE add-on if missing, builds custom WinPE, injects Bootstrap.ps1 +
-    winpeshl.ini, creates BCD ramdisk entry, then reboots into cloud boot.
+    One-liner entry point. Runs on any Windows PC.
+    - Auto-installs the Windows ADK + WinPE add-on if missing.
+    - Builds a custom WinPE image in pure PowerShell (no copype.cmd / cmd.exe).
+    - Injects Bootstrap.ps1 and winpeshl.ini into the image.
+    - Creates a one-time BCD ramdisk boot entry (UEFI and BIOS aware).
+    - Reboots into cloud WinPE.
+
+.PARAMETER GitHubUser
+    GitHub account that hosts the AmpCloud repository. Default: araduti
+
+.PARAMETER GitHubRepo
+    Repository name. Default: AmpCloud
+
+.PARAMETER GitHubBranch
+    Branch to pull Bootstrap.ps1 from. Default: main
+
+.PARAMETER WorkDir
+    Root working directory for all artefacts. Default: C:\AmpCloud
+
+.PARAMETER NoReboot
+    Build everything but do NOT reboot. Useful for testing.
 
 .EXAMPLE
     irm https://raw.githubusercontent.com/araduti/AmpCloud/main/Trigger.ps1 | iex
+
+.EXAMPLE
+    .\Trigger.ps1 -NoReboot -WorkDir D:\AmpCloud
 #>
 
 [CmdletBinding()]
 param(
-    [string]$GitHubUser    = 'araduti',
-    [string]$GitHubRepo    = 'AmpCloud',
-    [string]$GitHubBranch  = 'main',
-    [string]$WinPEWorkDir  = 'C:\AmpCloud\WinPE',
-    [string]$RamdiskVHD    = 'C:\AmpCloud\boot.vhd',
-    [string]$ADKInstallPath = 'C:\Program Files (x86)\Windows Kits\10',
-    [switch]$NoReboot
+    [string] $GitHubUser   = 'araduti',
+    [string] $GitHubRepo   = 'AmpCloud',
+    [string] $GitHubBranch = 'main',
+    [string] $WorkDir      = 'C:\AmpCloud',
+    [switch] $NoReboot
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-#region ── Helpers ──────────────────────────────────────────────────────────────
+# Derived paths ─ kept out of params to avoid user confusion
+$script:WinPEWorkDir = Join-Path $WorkDir 'WinPE'
+$script:RamdiskDir   = Join-Path $WorkDir 'Boot'
 
-function Write-Step {
-    param([string]$Message)
-    Write-Host "`n[AmpCloud] $Message" -ForegroundColor Cyan
-}
+#region ── Logging ──────────────────────────────────────────────────────────────
 
-function Write-Success {
-    param([string]$Message)
-    Write-Host "[OK] $Message" -ForegroundColor Green
-}
+function Write-Step    { param([string]$Message) Write-Host "`n  [>] $Message"  -ForegroundColor Cyan    }
+function Write-Success { param([string]$Message) Write-Host "  [+] $Message"    -ForegroundColor Green   }
+function Write-Warn    { param([string]$Message) Write-Host "  [!] $Message"    -ForegroundColor Yellow  }
+function Write-Fail    { param([string]$Message) Write-Host "  [X] $Message"    -ForegroundColor Red     }
 
-function Write-Warn {
-    param([string]$Message)
-    Write-Host "[WARN] $Message" -ForegroundColor Yellow
-}
+#endregion
 
-function Test-CommandExists {
-    param([string]$Command)
-    return [bool](Get-Command $Command -ErrorAction SilentlyContinue)
-}
+#region ── ADK Detection + Install ──────────────────────────────────────────────
 
-function Get-ADKInstallPath {
-    $adkRegPaths = @(
+function Get-ADKRoot {
+    <#
+    .SYNOPSIS Returns the ADK installation root from the registry, or $null.
+    #>
+    $regPaths = @(
         'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots',
         'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots'
     )
-    foreach ($path in $adkRegPaths) {
-        if (Test-Path $path) {
-            $val = (Get-ItemProperty $path -ErrorAction SilentlyContinue).KitsRoot10
-            if ($val -and (Test-Path $val)) { return $val.TrimEnd('\') }
+    foreach ($rp in $regPaths) {
+        if (Test-Path $rp) {
+            $val = (Get-ItemProperty $rp -ErrorAction SilentlyContinue).KitsRoot10
+            if ($val -and (Test-Path $val)) {
+                return $val.TrimEnd('\')
+            }
         }
     }
     return $null
 }
 
-function Install-ADKIfMissing {
-    Write-Step 'Checking Windows ADK installation...'
+function Assert-ADKInstalled {
+    <#
+    .SYNOPSIS Ensures ADK + WinPE add-on are present. Installs them silently if not.
+    .OUTPUTS  [string] Validated ADK root path.
+    #>
+    Write-Step 'Checking Windows ADK + WinPE add-on...'
 
-    $adkPath = Get-ADKInstallPath
-    $adkPEPath = if ($adkPath) { Join-Path $adkPath 'Assessment and Deployment Kit\Windows Preinstallation Environment' } else { $null }
+    $adkRoot  = Get-ADKRoot
+    $winPEDir = if ($adkRoot) {
+        Join-Path $adkRoot 'Assessment and Deployment Kit\Windows Preinstallation Environment'
+    } else { $null }
 
-    if ($adkPath -and $adkPEPath -and (Test-Path $adkPEPath)) {
-        Write-Success "ADK found at: $adkPath"
-        return $adkPath
+    if ($adkRoot -and $winPEDir -and (Test-Path (Join-Path $winPEDir 'amd64'))) {
+        Write-Success "ADK found: $adkRoot"
+        return $adkRoot
     }
 
-    Write-Warn 'ADK or WinPE add-on not found. Downloading installer...'
+    Write-Warn 'ADK or WinPE add-on not found — downloading installers...'
 
-    $adkSetup    = Join-Path $env:TEMP 'adksetup.exe'
-    $adkPESetup  = Join-Path $env:TEMP 'adkwinpesetup.exe'
+    $installRoot = "${env:ProgramFiles(x86)}\Windows Kits\10"
+    $downloads   = @(
+        [pscustomobject]@{
+            Label = 'ADK (Deployment Tools)'
+            Uri   = 'https://go.microsoft.com/fwlink/?linkid=2196127'
+            Out   = (Join-Path $env:TEMP 'adksetup.exe')
+            Args  = "/quiet /installpath `"$installRoot`" /features OptionId.DeploymentTools"
+        }
+        [pscustomobject]@{
+            Label = 'WinPE add-on'
+            Uri   = 'https://go.microsoft.com/fwlink/?linkid=2196224'
+            Out   = (Join-Path $env:TEMP 'adkwinpesetup.exe')
+            Args  = "/quiet /installpath `"$installRoot`" /features OptionId.WindowsPreinstallationEnvironment"
+        }
+    )
 
-    $adkUrl   = 'https://go.microsoft.com/fwlink/?linkid=2196127'
-    $adkPEUrl = 'https://go.microsoft.com/fwlink/?linkid=2196224'
+    foreach ($d in $downloads) {
+        Write-Step "Downloading $($d.Label)..."
+        Invoke-WebRequest -Uri $d.Uri -OutFile $d.Out -UseBasicParsing
+    }
 
-    Write-Step 'Downloading ADK...'
-    Invoke-WebRequest -Uri $adkUrl   -OutFile $adkSetup   -UseBasicParsing
-    Write-Step 'Downloading WinPE add-on...'
-    Invoke-WebRequest -Uri $adkPEUrl -OutFile $adkPESetup -UseBasicParsing
+    foreach ($d in $downloads) {
+        Write-Step "Installing $($d.Label)..."
+        $proc = Start-Process -FilePath $d.Out -ArgumentList $d.Args -Wait -NoNewWindow -PassThru
+        if ($proc.ExitCode -notin 0, 3010) {
+            throw "$($d.Label) installer exited with code $($proc.ExitCode)."
+        }
+    }
 
-    Write-Step 'Installing ADK (Deployment Tools)...'
-    Start-Process -FilePath $adkSetup -ArgumentList "/quiet /installpath `"$ADKInstallPath`" /features OptionId.DeploymentTools" -Wait -NoNewWindow
+    $adkRoot = Get-ADKRoot
+    if (-not $adkRoot) {
+        throw 'ADK installation succeeded but registry path was not found. Try running again.'
+    }
 
-    Write-Step 'Installing WinPE add-on...'
-    Start-Process -FilePath $adkPESetup -ArgumentList "/quiet /installpath `"$ADKInstallPath`" /features OptionId.WindowsPreinstallationEnvironment" -Wait -NoNewWindow
-
-    $adkPath = Get-ADKInstallPath
-    if (-not $adkPath) { throw 'ADK installation failed or path not detected.' }
-
-    Write-Success 'ADK + WinPE add-on installed successfully.'
-    return $adkPath
+    Write-Success "ADK installed: $adkRoot"
+    return $adkRoot
 }
 
 #endregion
 
-#region ── WinPE Build ──────────────────────────────────────────────────────────
+#region ── copype — Pure PowerShell ─────────────────────────────────────────────
+
+function Copy-WinPEFiles {
+    <#
+    .SYNOPSIS
+        Pure-PowerShell replacement for copype.cmd.
+        Creates the standard WinPE working directory structure.
+    .PARAMETER ADKRoot     ADK installation root returned by Get-ADKRoot / Assert-ADKInstalled.
+    .PARAMETER Destination Target working directory (will be wiped if it exists).
+    .PARAMETER Architecture  amd64 (default), x86, arm, arm64.
+    .OUTPUTS   [hashtable] Keys: MediaDir, MountDir, BootWim
+    #>
+    param(
+        [string] $ADKRoot,
+        [string] $Destination,
+        [ValidateSet('amd64','x86','arm','arm64')]
+        [string] $Architecture = 'amd64'
+    )
+
+    Write-Step "Creating WinPE workspace ($Architecture) → $Destination"
+
+    $winPERoot  = Join-Path $ADKRoot 'Assessment and Deployment Kit\Windows Preinstallation Environment'
+    $archSrcDir = Join-Path $winPERoot $Architecture
+    $mediaSrc   = Join-Path $archSrcDir 'Media'
+
+    if (-not (Test-Path $archSrcDir)) {
+        throw "WinPE source not found for '$Architecture': $archSrcDir"
+    }
+    if (-not (Test-Path $mediaSrc)) {
+        throw "WinPE Media directory not found: $mediaSrc"
+    }
+
+    # Locate winpe.wim — some ADK layouts store it under the arch subdir, others at the root
+    $wimCandidates = @(
+        (Join-Path $winPERoot "$Architecture\en-us\winpe.wim"),
+        (Join-Path $winPERoot 'en-us\winpe.wim')
+    )
+    $wimSrc = $wimCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $wimSrc) {
+        throw "winpe.wim not found. Checked:`n    $($wimCandidates -join "`n    ")"
+    }
+
+    # Build directory tree
+    $mediaDir   = Join-Path $Destination 'media'
+    $mountDir   = Join-Path $Destination 'mount'
+    $sourcesDir = Join-Path $mediaDir    'sources'
+
+    if (Test-Path $Destination) { Remove-Item $Destination -Recurse -Force }
+    New-Item -ItemType Directory -Path $mediaDir, $mountDir, $sourcesDir -Force | Out-Null
+
+    # Mirror the arch Media tree (EFI, bootmgr, fonts, resources …)
+    Write-Step 'Copying WinPE media files...'
+    Copy-Item -Path "$mediaSrc\*" -Destination $mediaDir -Recurse -Force
+
+    # Place boot.wim, strip read-only attribute set by the ADK
+    $bootWim = Join-Path $sourcesDir 'boot.wim'
+    Copy-Item -Path $wimSrc -Destination $bootWim -Force
+    Set-ItemProperty -Path $bootWim -Name IsReadOnly -Value $false
+
+    Write-Success 'WinPE workspace created.'
+    return @{ MediaDir = $mediaDir; MountDir = $mountDir; BootWim = $bootWim }
+}
+
+#endregion
+
+#region ── WinPE Customisation ──────────────────────────────────────────────────
+
+# Packages to inject — order matters (language packs must follow their base cab)
+$script:WinPEPackages = @(
+    'WinPE-WMI.cab',             'en-us\WinPE-WMI_en-us.cab',
+    'WinPE-NetFX.cab',           'en-us\WinPE-NetFX_en-us.cab',
+    'WinPE-Scripting.cab',       'en-us\WinPE-Scripting_en-us.cab',
+    'WinPE-PowerShell.cab',      'en-us\WinPE-PowerShell_en-us.cab',
+    'WinPE-StorageWMI.cab',      'en-us\WinPE-StorageWMI_en-us.cab',
+    'WinPE-DismCmdlets.cab',     'en-us\WinPE-DismCmdlets_en-us.cab'
+)
 
 function Build-WinPE {
+    <#
+    .SYNOPSIS  Builds a fully customised WinPE image ready for ramdisk boot.
+    .OUTPUTS   [hashtable] Keys: MediaDir, MountDir, BootWim
+    #>
     param(
-        [string]$ADKPath,
-        [string]$WorkDir,
-        [string]$GitHubUser,
-        [string]$GitHubRepo,
-        [string]$GitHubBranch
+        [string] $ADKRoot,
+        [string] $WorkDir,
+        [string] $GitHubUser,
+        [string] $GitHubRepo,
+        [string] $GitHubBranch
     )
 
-    Write-Step 'Building custom WinPE...'
+    # ── 1. Create workspace ──────────────────────────────────────────────────
+    $paths = Copy-WinPEFiles -ADKRoot $ADKRoot -Destination $WorkDir
 
-    # ── Pre-flight validation ────────────────────────────────────────────────
-    $adkBase  = Join-Path $ADKPath 'Assessment and Deployment Kit'
-    $winPEDir = Join-Path $adkBase 'Windows Preinstallation Environment'
-    $deployToolsDir = Join-Path $adkBase 'Deployment Tools'
+    # ── 2. Mount ─────────────────────────────────────────────────────────────
+    Write-Step 'Mounting boot.wim...'
+    Mount-WindowsImage -ImagePath $paths.BootWim -Index 1 -Path $paths.MountDir | Out-Null
 
-    # Locate DandISetEnv.bat – the ADK environment initializer that sets
-    # WinPERoot, DISMRoot and the Oscdimg paths copype.cmd relies on.
-    $dandISetEnv = Join-Path $deployToolsDir 'DandISetEnv.bat'
-    if (-not (Test-Path $dandISetEnv)) {
-        throw "ADK Deployment Tools environment script not found at: $dandISetEnv`nPlease reinstall the ADK Deployment Tools feature."
-    }
-
-    # Locate copype.cmd
-    $copype = Join-Path $winPEDir 'copype.cmd'
-    if (-not (Test-Path $copype)) {
-        throw "copype.cmd not found at: $copype`nPlease reinstall the WinPE add-on."
-    }
-
-    # Verify WinPE source files exist for the target architecture
-    $winPEArch = Join-Path $winPEDir 'amd64'
-    if (-not (Test-Path $winPEArch)) {
-        throw "WinPE amd64 source files not found at: $winPEArch`nPlease reinstall the WinPE add-on."
-    }
-
-    # Verify oscdimg.exe is available (copype.cmd needs it for firmware files)
-    $oscdimg = Join-Path $deployToolsDir 'amd64\Oscdimg\oscdimg.exe'
-    if (-not (Test-Path $oscdimg)) {
-        throw "oscdimg.exe not found at: $oscdimg`nPlease reinstall the ADK Deployment Tools feature."
-    }
-
-    # ── Build WinPE workspace ────────────────────────────────────────────────
-
-    # Clean existing work directory (copype.cmd creates its own target directory)
-    if (Test-Path $WorkDir) { Remove-Item $WorkDir -Recurse -Force }
-
-    # Run DandISetEnv.bat first in the same cmd session so copype.cmd inherits
-    # all required ADK environment variables (WinPERoot, Oscdimg paths, etc.).
-    # Use 'call' so batch files return control within the cmd chain, and so the
-    # command string starts with 'call' instead of a quote character — cmd.exe /c
-    # strips the first and last quote when the string begins with one, which
-    # breaks paths that contain spaces (e.g. "Program Files (x86)").
-    # Temporarily lower ErrorActionPreference so stderr output from batch files
-    # is not converted to a terminating PowerShell error.
-    Write-Step "Running copype to create WinPE workspace at: $WorkDir"
-    $prevEAP = $ErrorActionPreference
     try {
-        $ErrorActionPreference = 'Continue'
-        $result = & cmd.exe /c "call `"$dandISetEnv`" && call `"$copype`" amd64 `"$WorkDir`"" 2>&1
-    } finally {
-        $ErrorActionPreference = $prevEAP
-    }
-    if ($LASTEXITCODE -ne 0) { throw "copype.cmd failed: $result" }
+        # ── 3. Inject optional components ────────────────────────────────────
+        $pkgRoot = Join-Path $ADKRoot `
+            'Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs'
 
-    # Mount WinPE WIM
-    $mountDir = Join-Path $WorkDir 'mount'
-    $wimPath  = Join-Path $WorkDir 'media\sources\boot.wim'
-    New-Item -ItemType Directory -Path $mountDir -Force | Out-Null
-
-    Write-Step 'Mounting WinPE WIM...'
-    Mount-WindowsImage -ImagePath $wimPath -Index 1 -Path $mountDir | Out-Null
-
-    # Inject optional components: WMI, PowerShell
-    $pkgDir = Join-Path $winPEDir 'amd64\WinPE_OCs'
-    $packages = @(
-        'WinPE-WMI.cab',
-        'en-us\WinPE-WMI_en-us.cab',
-        'WinPE-NetFX.cab',
-        'en-us\WinPE-NetFX_en-us.cab',
-        'WinPE-Scripting.cab',
-        'en-us\WinPE-Scripting_en-us.cab',
-        'WinPE-PowerShell.cab',
-        'en-us\WinPE-PowerShell_en-us.cab',
-        'WinPE-StorageWMI.cab',
-        'en-us\WinPE-StorageWMI_en-us.cab',
-        'WinPE-DismCmdlets.cab',
-        'en-us\WinPE-DismCmdlets_en-us.cab'
-    )
-
-    foreach ($pkg in $packages) {
-        $pkgPath = Join-Path $pkgDir $pkg
-        if (Test-Path $pkgPath) {
-            Write-Step "Adding package: $pkg"
-            Add-WindowsPackage -Path $mountDir -PackagePath $pkgPath | Out-Null
-        } else {
-            Write-Warn "Package not found, skipping: $pkg"
+        foreach ($pkg in $script:WinPEPackages) {
+            $pkgPath = Join-Path $pkgRoot $pkg
+            if (Test-Path $pkgPath) {
+                Write-Step "Adding package: $pkg"
+                Add-WindowsPackage -Path $paths.MountDir -PackagePath $pkgPath | Out-Null
+            } else {
+                Write-Warn "Package not found, skipping: $pkg"
+            }
         }
-    }
 
-    # Create Bootstrap.ps1 inside WinPE
-    $bootstrapRaw = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
-    $bootstrapDest = Join-Path $mountDir 'Windows\System32\Bootstrap.ps1'
-    Write-Step "Embedding Bootstrap.ps1 (fetching from $bootstrapRaw)..."
-    Invoke-WebRequest -Uri $bootstrapRaw -OutFile $bootstrapDest -UseBasicParsing
+        # ── 4. Embed Bootstrap.ps1 ────────────────────────────────────────────
+        $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
+        $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
+        Write-Step "Fetching Bootstrap.ps1 from $bootstrapUrl"
+        Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing
 
-    # Create winpeshl.ini to auto-launch Bootstrap.ps1
-    $winpeshlPath = Join-Path $mountDir 'Windows\System32\winpeshl.ini'
-    $winpeshlContent = @"
+        # ── 5. winpeshl.ini → auto-launch Bootstrap.ps1 ───────────────────────
+        $winpeshlPath = Join-Path $paths.MountDir 'Windows\System32\winpeshl.ini'
+        @'
 [LaunchApps]
 %SYSTEMROOT%\System32\WindowsPowerShell\v1.0\powershell.exe, -NoProfile -ExecutionPolicy Bypass -File %SYSTEMROOT%\System32\Bootstrap.ps1
-"@
-    Set-Content -Path $winpeshlPath -Value $winpeshlContent -Encoding Ascii
+'@ | Set-Content -Path $winpeshlPath -Encoding Ascii
 
-    Write-Step 'Unmounting and committing WinPE image...'
-    Dismount-WindowsImage -Path $mountDir -Save | Out-Null
+    } catch {
+        # Always clean up a dangling mount on failure
+        Write-Warn 'Customisation failed — discarding mounted image to avoid corruption.'
+        Dismount-WindowsImage -Path $paths.MountDir -Discard -ErrorAction SilentlyContinue | Out-Null
+        throw
+    }
+
+    # ── 6. Commit & unmount ───────────────────────────────────────────────────
+    Write-Step 'Committing and unmounting image...'
+    Dismount-WindowsImage -Path $paths.MountDir -Save | Out-Null
 
     Write-Success 'WinPE image built successfully.'
-    return $wimPath
+    return $paths
 }
 
 #endregion
 
 #region ── BCD Ramdisk ──────────────────────────────────────────────────────────
 
+function Invoke-Bcdedit {
+    <#
+    .SYNOPSIS  Thin wrapper around bcdedit.exe with strict error checking.
+    #>
+    param([string[]] $Arguments)
+    $output = & bcdedit.exe @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "bcdedit $($Arguments -join ' ') → exit $LASTEXITCODE`n$output"
+    }
+    return $output
+}
+
+function New-BcdEntry {
+    <#
+    .SYNOPSIS  Creates a BCD entry and returns its GUID string, e.g. {abc123…}.
+    #>
+    param([string[]] $CreateArgs)
+    $output = Invoke-Bcdedit $CreateArgs
+    if ($output -match '\{([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})\}') {
+        return "{$($Matches[1])}"
+    }
+    throw "Could not parse GUID from bcdedit output: $output"
+}
+
+function Get-FirmwareType {
+    <#
+    .SYNOPSIS  Returns 'UEFI' or 'BIOS' by reading the PEFirmwareType registry value.
+    #>
+    try {
+        $fw = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control' `
+                                -Name PEFirmwareType -ErrorAction Stop).PEFirmwareType
+        if ($fw -eq 2) { return 'UEFI' }
+    } catch { <# key absent on some systems — fall through #> }
+    return 'BIOS'
+}
+
 function New-BCDRamdiskEntry {
+    <#
+    .SYNOPSIS  Stages boot files and creates a one-time BCD ramdisk boot entry.
+    .OUTPUTS   [string] OS loader GUID.
+    #>
     param(
-        [string]$WimPath,
-        [string]$RamdiskVHD,
-        [string]$WorkDir
+        [string] $BootWim,
+        [string] $RamdiskDir,
+        [string] $MediaDir
     )
 
-    Write-Step 'Creating BCD ramdisk boot entry...'
+    Write-Step 'Staging ramdisk boot files...'
 
-    $mediaDir = Join-Path $WorkDir 'media'
+    # Ensure output directory
+    New-Item -ItemType Directory -Path $RamdiskDir -Force | Out-Null
 
-    # Determine destination directory from the RamdiskVHD parameter
-    $ramdiskDir = Split-Path $RamdiskVHD
-
-    # Derive the drive letter from the ramdisk directory for BCD paths
-    $ramdiskDrive = Split-Path $ramdiskDir -Qualifier
-    # Relative path inside the ramdisk drive (e.g. \AmpCloud)
-    $ramdiskRelDir = (Split-Path $ramdiskDir -NoQualifier).TrimEnd('\')
-
-    # Create the ramdisk BCD entry
-    # 1. Create a new boot entry (ramdisk)
-    $guid = [System.Guid]::NewGuid().ToString('B').ToUpper()
-
-    # Use bcdedit to create the ramdisk entry
-    $bcdeditCmds = @(
-        "bcdedit /create $guid /d `"AmpCloud WinPE`" /application osloader",
-        "bcdedit /set $guid device ramdisk=[$ramdiskDrive]$ramdiskRelDir\boot.wim,{ramdiskoptions}",
-        "bcdedit /set $guid osdevice ramdisk=[$ramdiskDrive]$ramdiskRelDir\boot.wim,{ramdiskoptions}",
-        "bcdedit /set $guid path \Windows\System32\winload.exe",
-        "bcdedit /set $guid systemroot \Windows",
-        "bcdedit /set $guid detecthal yes",
-        "bcdedit /set $guid winpe yes",
-        "bcdedit /set $guid ems no"
-    )
-
-    # Create ramdisk options entry
-    $rdGuid = [System.Guid]::NewGuid().ToString('B').ToUpper()
-    $rdCmds = @(
-        "bcdedit /create $rdGuid /d `"AmpCloud Ramdisk`" /device",
-        "bcdedit /set $rdGuid ramdisksdidevice partition=$ramdiskDrive",
-        "bcdedit /set $rdGuid ramdisksdipath $ramdiskRelDir\boot.sdi"
-    )
-
-    # Ensure ramdisk directory exists
-    if (-not (Test-Path $ramdiskDir)) { New-Item -ItemType Directory -Path $ramdiskDir -Force | Out-Null }
-
-    $sdiSource = Join-Path $mediaDir 'boot\boot.sdi'
-    $sdiDest   = Join-Path $ramdiskDir 'boot.sdi'
-    if (Test-Path $sdiSource) {
-        Copy-Item $sdiSource $sdiDest -Force
-        Write-Success "Copied boot.sdi to $sdiDest"
+    # Copy boot.sdi (required by the BCD ramdisk device)
+    $sdiSrc  = Join-Path $MediaDir 'boot\boot.sdi'
+    $sdiDest = Join-Path $RamdiskDir 'boot.sdi'
+    if (Test-Path $sdiSrc) {
+        Copy-Item $sdiSrc $sdiDest -Force
+        Write-Success "boot.sdi staged."
     } else {
-        Write-Warn "boot.sdi not found at $sdiSource – ramdisk boot may not work."
+        Write-Warn "boot.sdi not found at $sdiSrc — ramdisk boot will likely fail."
     }
 
-    # Copy WIM to destination
-    $wimDest = Join-Path $ramdiskDir 'boot.wim'
-    Copy-Item $WimPath $wimDest -Force
+    # Copy WIM
+    $wimDest = Join-Path $RamdiskDir 'boot.wim'
+    Copy-Item $BootWim $wimDest -Force
+    Write-Success "boot.wim staged."
 
-    # Run BCD commands
-    foreach ($cmd in $rdCmds) {
-        Write-Step "Running: $cmd"
-        $out = & cmd.exe /c $cmd 2>&1
-        if ($LASTEXITCODE -ne 0) { Write-Warn "BCD command returned non-zero: $out" }
-    }
+    # BCD path components
+    $drive  = Split-Path $RamdiskDir -Qualifier          # C:
+    $relDir = (Split-Path $RamdiskDir -NoQualifier).TrimEnd('\') # \AmpCloud\Boot
+    $wimBcd = "$relDir\boot.wim"
+    $sdiBcd = "$relDir\boot.sdi"
 
-    # Replace placeholder with real ramdisk options GUID
-    $bcdeditCmds = $bcdeditCmds | ForEach-Object { $_ -replace '\{ramdiskoptions\}', $rdGuid }
+    Write-Step 'Writing BCD entries...'
 
-    foreach ($cmd in $bcdeditCmds) {
-        Write-Step "Running: $cmd"
-        $out = & cmd.exe /c $cmd 2>&1
-        if ($LASTEXITCODE -ne 0) { Write-Warn "BCD command returned non-zero: $out" }
-    }
+    # ── Ramdisk device options ────────────────────────────────────────────────
+    $rdGuid = New-BcdEntry '/create', '/d', 'AmpCloud Ramdisk Options', '/device'
+    Invoke-Bcdedit '/set', $rdGuid, 'ramdisksdidevice', "partition=$drive" | Out-Null
+    Invoke-Bcdedit '/set', $rdGuid, 'ramdisksdipath',   $sdiBcd             | Out-Null
+    Write-Success "Ramdisk options: $rdGuid"
 
-    # Add the entry to the boot menu and set it as next boot
-    & cmd.exe /c "bcdedit /displayorder $guid /addlast" 2>&1 | Out-Null
-    & cmd.exe /c "bcdedit /bootsequence $guid" 2>&1 | Out-Null
+    # ── OS loader ─────────────────────────────────────────────────────────────
+    $fw      = Get-FirmwareType
+    $winload = if ($fw -eq 'UEFI') { '\windows\system32\winload.efi' } `
+                                   else { '\windows\system32\winload.exe' }
+    Write-Step "Firmware type: $fw  →  $winload"
 
-    Write-Success "BCD ramdisk entry created: $guid"
-    return $guid
+    $ramdiskVal = "[$drive]$wimBcd,$rdGuid"
+    $osGuid     = New-BcdEntry '/create', '/d', 'AmpCloud WinPE', '/application', 'osloader'
+
+    Invoke-Bcdedit '/set', $osGuid, 'device',     "ramdisk=$ramdiskVal" | Out-Null
+    Invoke-Bcdedit '/set', $osGuid, 'osdevice',   "ramdisk=$ramdiskVal" | Out-Null
+    Invoke-Bcdedit '/set', $osGuid, 'path',       $winload               | Out-Null
+    Invoke-Bcdedit '/set', $osGuid, 'systemroot', '\windows'             | Out-Null
+    Invoke-Bcdedit '/set', $osGuid, 'detecthal',  'yes'                  | Out-Null
+    Invoke-Bcdedit '/set', $osGuid, 'winpe',      'yes'                  | Out-Null
+    Invoke-Bcdedit '/set', $osGuid, 'ems',        'no'                   | Out-Null
+
+    # Add to menu and arm as one-time next boot
+    Invoke-Bcdedit '/displayorder', $osGuid, '/addlast' | Out-Null
+    Invoke-Bcdedit '/bootsequence', $osGuid             | Out-Null
+
+    Write-Success "OS loader entry: $osGuid (armed as one-time next boot)"
+    return $osGuid
 }
 
 #endregion
@@ -323,44 +402,41 @@ Write-Host @"
  ██║  ██║██║ ╚═╝ ██║██║     ╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝
  ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝      ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝
 
- GitHub-native OSDCloud replacement | https://github.com/$GitHubUser/$GitHubRepo
+ GitHub-native OSDCloud replacement  ·  https://github.com/$GitHubUser/$GitHubRepo
 "@ -ForegroundColor Cyan
 
-# Verify elevation
-$currentPrincipal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
-if (-not $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw 'This script must be run as Administrator.'
-}
-
 try {
-    # Step 1: Install ADK if missing
-    $adkPath = Install-ADKIfMissing
+    # ── 1. ADK ────────────────────────────────────────────────────────────────
+    $adkRoot = Assert-ADKInstalled
 
-    # Step 2: Build WinPE
-    $wimPath = Build-WinPE `
-        -ADKPath       $adkPath `
-        -WorkDir       $WinPEWorkDir `
-        -GitHubUser    $GitHubUser `
-        -GitHubRepo    $GitHubRepo `
-        -GitHubBranch  $GitHubBranch
+    # ── 2. WinPE ──────────────────────────────────────────────────────────────
+    $paths = Build-WinPE `
+        -ADKRoot      $adkRoot `
+        -WorkDir      $script:WinPEWorkDir `
+        -GitHubUser   $GitHubUser `
+        -GitHubRepo   $GitHubRepo `
+        -GitHubBranch $GitHubBranch
 
-    # Step 3: Create BCD ramdisk entry
+    # ── 3. BCD ────────────────────────────────────────────────────────────────
     New-BCDRamdiskEntry `
-        -WimPath    $wimPath `
-        -RamdiskVHD $RamdiskVHD `
-        -WorkDir    $WinPEWorkDir
+        -BootWim    $paths.BootWim `
+        -RamdiskDir $script:RamdiskDir `
+        -MediaDir   $paths.MediaDir
 
-    Write-Host "`n[AmpCloud] All done! System is prepared for cloud boot." -ForegroundColor Green
+    Write-Host "`n  [AmpCloud] All done — system is primed for cloud boot." -ForegroundColor Green
 
     if (-not $NoReboot) {
-        Write-Host '[AmpCloud] Rebooting into AmpCloud WinPE in 10 seconds... Press Ctrl+C to cancel.' -ForegroundColor Yellow
+        Write-Host '  [AmpCloud] Rebooting in 10 seconds ... Press Ctrl+C to cancel.' `
+            -ForegroundColor Yellow
         Start-Sleep -Seconds 10
         Restart-Computer -Force
     } else {
-        Write-Host '[AmpCloud] -NoReboot specified. Reboot manually to start WinPE.' -ForegroundColor Yellow
+        Write-Host '  [AmpCloud] -NoReboot specified. Reboot manually to enter WinPE.' `
+            -ForegroundColor Yellow
     }
+
 } catch {
-    Write-Host "`n[AmpCloud] ERROR: $_" -ForegroundColor Red
+    Write-Fail "Fatal: $_"
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
     exit 1
 }
