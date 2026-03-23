@@ -240,7 +240,7 @@ $script:WinPEPackages = @(
     'WinPE-NetFX.cab',           'en-us\WinPE-NetFX_en-us.cab',
     'WinPE-Scripting.cab',       'en-us\WinPE-Scripting_en-us.cab',
     'WinPE-PowerShell.cab',      'en-us\WinPE-PowerShell_en-us.cab',
-    'WinPE-Networking.cab',      'en-us\WinPE-Networking_en-us.cab',
+    'WinPE-Dot3Svc.cab',         'en-us\WinPE-Dot3Svc_en-us.cab',
     'WinPE-WiFi-Package.cab',    'en-us\WinPE-WiFi-Package_en-us.cab',
     'WinPE-StorageWMI.cab',      'en-us\WinPE-StorageWMI_en-us.cab',
     'WinPE-DismCmdlets.cab',     'en-us\WinPE-DismCmdlets_en-us.cab'
@@ -297,10 +297,14 @@ function Build-WinPE {
         Invoke-WebRequest -Uri $ampCloudUrl -OutFile $ampCloudDest -UseBasicParsing
 
         # ── 5. winpeshl.ini → auto-launch Bootstrap.ps1 ───────────────────────
+        # -NoExit keeps the PowerShell host alive after Bootstrap.ps1 exits
+        # (normally or via error), preventing an unintended WinPE reboot.
+        # -Command with & invokes Bootstrap.ps1 as a child script so that any
+        # exit call inside it exits only that script, not the PowerShell host.
         $winpeshlPath = Join-Path $paths.MountDir 'Windows\System32\winpeshl.ini'
         @'
 [LaunchApps]
-%SYSTEMROOT%\System32\WindowsPowerShell\v1.0\powershell.exe, -NoProfile -ExecutionPolicy Bypass -File %SYSTEMROOT%\System32\Bootstrap.ps1
+%SYSTEMROOT%\System32\WindowsPowerShell\v1.0\powershell.exe, -NoProfile -ExecutionPolicy Bypass -NoExit -Command "& $env:SystemRoot\System32\Bootstrap.ps1"
 '@ | Set-Content -Path $winpeshlPath -Encoding Ascii
 
     } catch {
