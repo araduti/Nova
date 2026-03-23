@@ -282,6 +282,43 @@ function Build-WinPE {
             }
         }
 
+        # ── 3b. Inject VirtIO network driver (netkvm) ────────────────────────
+        # QEMU-based VMs (e.g. UTM on macOS) present a VirtIO network adapter.
+        # WinPE has no VirtIO driver by default, so the adapter is invisible and
+        # networking never starts.  We download the official virtio-win ISO from
+        # the Fedora People mirror, mount it, and add the netkvm driver to the image.
+        # virtio-win uses 'amd64', 'x86', and 'ARM64' as subfolder names.
+        $virtioArchMap = @{ amd64 = 'amd64'; x86 = 'x86'; arm64 = 'ARM64' }
+        $virtioArch    = $virtioArchMap[$Architecture]
+        if ($virtioArch) {
+            $virtioIso = Join-Path $env:TEMP 'virtio-win.iso'
+            $virtioUrl = 'https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/stable-virtio/virtio-win.iso'
+            Write-Step 'Downloading VirtIO drivers for QEMU/UTM network support (~500 MB)...'
+            try {
+                Invoke-WebRequest -Uri $virtioUrl -OutFile $virtioIso -UseBasicParsing -TimeoutSec 1800
+                Write-Step 'Mounting VirtIO ISO and injecting netkvm network driver...'
+                $diskImage   = Mount-DiskImage -ImagePath $virtioIso -PassThru
+                $driveLetter = ($diskImage | Get-Volume).DriveLetter
+                try {
+                    $netkvmPath = "${driveLetter}:\NetKVM\w10\$virtioArch"
+                    if (Test-Path $netkvmPath) {
+                        Add-WindowsDriver -Path $paths.MountDir -Driver $netkvmPath -Recurse | Out-Null
+                        Write-Success 'VirtIO network driver (netkvm) injected.'
+                    } else {
+                        Write-Warn "VirtIO netkvm driver path not found in ISO: $netkvmPath"
+                    }
+                } finally {
+                    Dismount-DiskImage -ImagePath $virtioIso | Out-Null
+                }
+            } catch {
+                Write-Warn "Could not inject VirtIO network driver (non-fatal): $_"
+            } finally {
+                Remove-Item $virtioIso -Force -ErrorAction SilentlyContinue
+            }
+        } else {
+            Write-Warn "VirtIO network driver not available for architecture '$Architecture' — skipping."
+        }
+
         # ── 4. Embed Bootstrap.ps1 ────────────────────────────────────────────
         $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'

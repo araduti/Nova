@@ -170,42 +170,35 @@ function Connect-WiFiNetwork {
     $safeSsid = ConvertTo-XmlSafe $SSID
     $safePwd  = ConvertTo-XmlSafe $Password
 
+    # Build the WLAN profile XML via string concatenation rather than here-strings.
+    # Double-quoted here-strings (@"..."@) can fail to parse in Windows PowerShell 5.1
+    # when the script file has LF-only line endings (as served from GitHub on Linux).
+    $ns = 'http://www.microsoft.com/networking/WLAN/profile/v1'
     if ($Auth -match 'Open') {
-        $xml = @"
-<?xml version="1.0"?>
-<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
-  <name>$safeSsid</name>
-  <SSIDConfig><SSID><name>$safeSsid</name></SSID></SSIDConfig>
-  <connectionType>ESS</connectionType>
-  <connectionMode>auto</connectionMode>
-  <MSM><security><authEncryption>
-    <authentication>open</authentication>
-    <encryption>none</encryption>
-    <useOneX>false</useOneX>
-  </authEncryption></security></MSM>
-</WLANProfile>
-"@
+        $secBlock = '<MSM><security><authEncryption>' +
+                    '<authentication>open</authentication>' +
+                    '<encryption>none</encryption>' +
+                    '<useOneX>false</useOneX>' +
+                    '</authEncryption></security></MSM>'
     } else {
-        $xml = @"
-<?xml version="1.0"?>
-<WLANProfile xmlns="http://www.microsoft.com/networking/WLAN/profile/v1">
-  <name>$safeSsid</name>
-  <SSIDConfig><SSID><name>$safeSsid</name></SSID></SSIDConfig>
-  <connectionType>ESS</connectionType>
-  <connectionMode>auto</connectionMode>
-  <MSM><security><authEncryption>
-    <authentication>WPA2PSK</authentication>
-    <encryption>AES</encryption>
-    <useOneX>false</useOneX>
-  </authEncryption>
-  <sharedKey>
-    <keyType>passPhrase</keyType>
-    <protected>false</protected>
-    <keyMaterial>$safePwd</keyMaterial>
-  </sharedKey></security></MSM>
-</WLANProfile>
-"@
+        $secBlock = '<MSM><security><authEncryption>' +
+                    '<authentication>WPA2PSK</authentication>' +
+                    '<encryption>AES</encryption>' +
+                    '<useOneX>false</useOneX>' +
+                    '</authEncryption>' +
+                    "<sharedKey><keyType>passPhrase</keyType>" +
+                    "<protected>false</protected>" +
+                    "<keyMaterial>$safePwd</keyMaterial>" +
+                    '</sharedKey></security></MSM>'
     }
+    $xml = "<?xml version=""1.0""?>" +
+           "<WLANProfile xmlns=""$ns"">" +
+           "<name>$safeSsid</name>" +
+           "<SSIDConfig><SSID><name>$safeSsid</name></SSID></SSIDConfig>" +
+           '<connectionType>ESS</connectionType>' +
+           '<connectionMode>auto</connectionMode>' +
+           $secBlock +
+           '</WLANProfile>'
 
     $tmpXml = Join-Path $env:TEMP "ampcloud_wifi_$([System.Guid]::NewGuid().ToString('N')).xml"
     try {
