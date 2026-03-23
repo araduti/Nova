@@ -282,6 +282,40 @@ function Build-WinPE {
             }
         }
 
+        # ── 3b. Inject VirtIO network driver (netkvm) ────────────────────────
+        # QEMU-based VMs (e.g. UTM on macOS) present a VirtIO network adapter.
+        # WinPE has no VirtIO driver by default, so the adapter is invisible and
+        # networking never starts.  The pre-extracted netkvm driver files live in
+        # Drivers/NetKVM/w10/<arch>/ in the repo — fetched directly from GitHub,
+        # no ISO download required.
+        # The repo subfolder names match virtio-win convention: amd64, x86, ARM64.
+        $virtioArchMap = @{ amd64 = 'amd64'; x86 = 'x86'; arm64 = 'ARM64' }
+        $virtioArch    = $virtioArchMap[$Architecture]
+        if ($virtioArch) {
+            $driverRepoPath = "Drivers/NetKVM/w10/$virtioArch"
+            $apiUrl         = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/$driverRepoPath`?ref=$GitHubBranch"
+            $driverTmpDir   = Join-Path $env:TEMP "ampcloud_netkvm_$([System.Guid]::NewGuid().ToString('N'))"
+            Write-Step "Fetching VirtIO netkvm driver from repo ($driverRepoPath)..."
+            try {
+                $fileList = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
+                New-Item -ItemType Directory -Path $driverTmpDir -Force | Out-Null
+                foreach ($entry in $fileList) {
+                    if ($entry.type -eq 'file' -and $entry.download_url) {
+                        $dest = Join-Path $driverTmpDir $entry.name
+                        Invoke-WebRequest -Uri $entry.download_url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+                    }
+                }
+                Add-WindowsDriver -Path $paths.MountDir -Driver $driverTmpDir -Recurse | Out-Null
+                Write-Success 'VirtIO network driver (netkvm) injected.'
+            } catch {
+                Write-Warn "Could not inject VirtIO network driver (non-fatal): $_"
+            } finally {
+                Remove-Item $driverTmpDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        } else {
+            Write-Warn "VirtIO network driver not available for architecture '$Architecture' — skipping."
+        }
+
         # ── 4. Embed Bootstrap.ps1 ────────────────────────────────────────────
         $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
