@@ -69,6 +69,12 @@ $ErrorActionPreference = 'Stop'
 $script:WinPEWorkDir = Join-Path $WorkDir 'WinPE'
 $script:RamdiskDir   = Join-Path $WorkDir 'Boot'
 
+# Windows Image Architecture integer → ADK folder name mapping.
+# Source: MSDN — ImageArchitecture enumeration used by Get-WindowsImage
+# https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/dism/imagearchitecture-enumeration
+#   0 = x86 | 5 = arm | 9 = amd64 | 12 = arm64
+$script:WimArchIntMap = @{ 0 = 'x86'; 5 = 'arm'; 9 = 'amd64'; 12 = 'arm64' }
+
 #region ── Logging ──────────────────────────────────────────────────────────────
 
 function Write-Step    { param([string]$Message) Write-Host "`n  [>] $Message"  -ForegroundColor Cyan    }
@@ -273,7 +279,14 @@ function Get-WinREPathFromWindowsISO {
                 "ampcloud_win_iso_${Architecture}_$([System.Guid]::NewGuid().ToString('N')).iso"
             Write-Step ('Downloading Windows ISO for ' + $Architecture +
                         ' — this file is several GB and may take a while...')
-            Invoke-WebRequest -Uri $ISOUrl -OutFile $isoPath -UseBasicParsing
+            try {
+                Invoke-WebRequest -Uri $ISOUrl -OutFile $isoPath -UseBasicParsing `
+                                  -TimeoutSec 7200   # 2-hour ceiling for large ISOs
+            } catch {
+                throw ("Failed to download Windows ISO from '$ISOUrl': $_`n" +
+                       'Tip: download the ISO manually and re-run with ' +
+                       "-WindowsISOUrl '<path-to-iso>'.")
+            }
             Write-Success 'Windows ISO downloaded.'
             $isoDownloaded = $true
         }
@@ -281,9 +294,14 @@ function Get-WinREPathFromWindowsISO {
         # ── Step 2: Mount the ISO ────────────────────────────────────────────────
         Write-Step 'Mounting Windows ISO...'
         Mount-DiskImage -ImagePath $isoPath | Out-Null
-        $isoMounted   = $true
+        $isoMounted     = $true
         $isoDriveLetter = (Get-DiskImage -ImagePath $isoPath |
-                            Get-Partition | Get-Volume).DriveLetter
+                            Get-Partition | Get-Volume |
+                            Select-Object -First 1 -ExpandProperty DriveLetter)
+        if (-not $isoDriveLetter) {
+            throw ('Could not determine the drive letter of the mounted ISO. ' +
+                   'The file may be corrupted or not a valid Windows ISO.')
+        }
         $isoDrive = "${isoDriveLetter}:\"
 
         # ── Step 3: Locate the Windows installation image ─────────────────────────
@@ -301,7 +319,10 @@ function Get-WinREPathFromWindowsISO {
             "ampcloud_iso_wim_$([System.Guid]::NewGuid().ToString('N'))"
         New-Item -ItemType Directory -Path $wimMountDir -Force | Out-Null
         $imageIndex = (Get-WindowsImage -ImagePath $wimPath |
-                        Select-Object -First 1).ImageIndex
+                        Select-Object -First 1 -ExpandProperty ImageIndex)
+        if (-not $imageIndex) {
+            throw "Could not read any image index from '$wimPath' — the file may be corrupted."
+        }
         Write-Step ("Mounting $(Split-Path $wimPath -Leaf) " +
                     "(index $imageIndex — read-only)...")
         Mount-WindowsImage -ImagePath $wimPath -Index $imageIndex `
@@ -613,17 +634,25 @@ function Build-WinPE {
 
         if ($localWinRE) {
             # ── Detect the WIM's actual architecture ─────────────────────────────
-            # The Windows Image Architecture property (DISM integer) maps as:
-            #   0 = x86 | 5 = arm | 9 = amd64 | 12 = arm64
-            # Source: MSDN — Get-WindowsImage / ImageArchitecture enumeration.
-            # Applying ADK packages for arch A to a WIM built for arch B fails with
-            # 0x800f081e (CBS_E_NOT_APPLICABLE).  If the WIM arch differs from the
-            # target arch, discard this WinRE and fetch the correct one from an ISO.
-            $archIntMap = @{ 0 = 'x86'; 5 = 'arm'; 9 = 'amd64'; 12 = 'arm64' }
-            $wimArch    = $null
+            # Uses the script-level $script:WimArchIntMap (defined at the top of
+            # this file) to translate the DISM Architecture integer to an ADK folder
+            # name.  Applying ADK packages for arch A to a WIM built for arch B
+            # fails with 0x800f081e (CBS_E_NOT_APPLICABLE).  If the WIM arch differs
+            # from the target arch, discard this WinRE and fetch the correct one.
+            $wimArch = $null
             try {
                 $wimInfo = Get-WindowsImage -ImagePath $localWinRE -Index 1 -ErrorAction Stop
-                $wimArch = $archIntMap[[int]$wimInfo.Architecture]
+                $archInt = $wimInfo.Architecture -as [int]
+                if ($null -eq $archInt) {
+                    Write-Warn ("WinRE image returned a non-integer Architecture value " +
+                                "('$($wimInfo.Architecture)') — skipping arch check.")
+                } else {
+                    $wimArch = $script:WimArchIntMap[$archInt]
+                    if (-not $wimArch) {
+                        Write-Warn ("Unrecognized WinRE image architecture value " +
+                                    "($archInt) — skipping arch check.")
+                    }
+                }
             } catch {
                 Write-Warn "Could not read WinRE image metadata: $_"
             }
@@ -773,6 +802,8 @@ function Build-WinPE {
                 # ADK package set targets a different Windows build.  Set a flag so
                 # the catch block can discard this attempt, obtain a fresh WinRE from
                 # a Windows ISO (guaranteed to be the correct build), and retry.
+                # The $_ISOWinREPath guard means the retry path (where $_ISOWinREPath
+                # is set) takes the hard-error branch below — one retry maximum.
                 $retryWithISOWinRE = $true
                 throw 'PowerShell not found in WinRE image — ADK / WinRE version mismatch.'
             }
