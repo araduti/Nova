@@ -222,25 +222,17 @@ function Get-WindowsESDCatalog {
     Write-Step 'Fetching Windows ESD catalog from Microsoft...'
     $catalogUrl = "https://go.microsoft.com/fwlink/?LinkId=2156292"
     $catalogPath = Join-Path $ScratchDir 'catalog.cab'
-    $catalogXml  = Join-Path $ScratchDir 'catalog'
+    $catalogXml  = Join-Path $ScratchDir 'catalog.xml'
 
     Invoke-DownloadWithProgress -Uri $catalogUrl -OutFile $catalogPath -Description 'Downloading Windows ESD catalog'
 
-    # Extract catalog (CAB packaging); newer catalog responses may be plain XML
-    New-Item -ItemType Directory -Path $catalogXml -Force | Out-Null
+    # Extract catalog — destination is an explicit .xml file path so expand.exe
+    # renames the extracted file correctly regardless of its internal CAB name
     & expand.exe $catalogPath -F:* $catalogXml | Out-Null
 
-    $xmlFile = Get-ChildItem $catalogXml -Filter '*.xml' | Select-Object -First 1
-    if ($xmlFile) {
-        [xml]$catalog = Get-Content $xmlFile.FullName
-    } else {
-        # Catalog was served as a plain XML file rather than inside a CAB
-        try {
-            [xml]$catalog = Get-Content $catalogPath
-        } catch {
-            throw 'ESD catalog file is neither a valid CAB archive nor valid XML.'
-        }
-    }
+    if (-not (Test-Path $catalogXml)) { throw 'ESD catalog XML not found after extraction.' }
+
+    [xml]$catalog = Get-Content $catalogXml
     return $catalog
 }
 
