@@ -87,10 +87,10 @@ function Install-ADKIfMissing {
     Invoke-WebRequest -Uri $adkPEUrl -OutFile $adkPESetup -UseBasicParsing
 
     Write-Step 'Installing ADK (Deployment Tools)...'
-    Start-Process -FilePath $adkSetup -ArgumentList '/quiet', '/installpath', $ADKInstallPath, '/features', 'OptionId.DeploymentTools' -Wait -NoNewWindow
+    Start-Process -FilePath $adkSetup -ArgumentList "/quiet /installpath `"$ADKInstallPath`" /features OptionId.DeploymentTools" -Wait -NoNewWindow
 
     Write-Step 'Installing WinPE add-on...'
-    Start-Process -FilePath $adkPESetup -ArgumentList '/quiet', '/installpath', $ADKInstallPath, '/features', 'OptionId.WindowsPreinstallationEnvironment' -Wait -NoNewWindow
+    Start-Process -FilePath $adkPESetup -ArgumentList "/quiet /installpath `"$ADKInstallPath`" /features OptionId.WindowsPreinstallationEnvironment" -Wait -NoNewWindow
 
     $adkPath = Get-ADKInstallPath
     if (-not $adkPath) { throw 'ADK installation failed or path not detected.' }
