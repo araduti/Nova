@@ -59,6 +59,31 @@ function Write-Fail    { param([string]$Message) Write-Host "  [X] $Message"    
 
 #endregion
 
+#region ── Architecture Detection ───────────────────────────────────────────────
+
+function Get-WinPEArchitecture {
+    <#
+    .SYNOPSIS
+        Maps the current OS CPU architecture to the WinPE folder/package name
+        used by the ADK (amd64, arm64, x86, arm).
+    #>
+    $map = @{
+        'AMD64' = 'amd64'
+        'ARM64' = 'arm64'
+        'x86'   = 'x86'
+        'ARM'   = 'arm'
+    }
+    $proc = $env:PROCESSOR_ARCHITECTURE   # AMD64 | ARM64 | x86 | ARM
+    $arch = $map[$proc]
+    if (-not $arch) {
+        throw "Unrecognised PROCESSOR_ARCHITECTURE '$proc'. " +
+              "Set -Architecture manually (amd64 | arm64 | x86 | arm)."
+    }
+    return $arch
+}
+
+#endregion
+
 #region ── ADK Detection + Install ──────────────────────────────────────────────
 
 function Get-ADKRoot {
@@ -83,16 +108,19 @@ function Get-ADKRoot {
 function Assert-ADKInstalled {
     <#
     .SYNOPSIS Ensures ADK + WinPE add-on are present. Installs them silently if not.
+    .PARAMETER Architecture  WinPE arch string (amd64, arm64, x86, arm).
     .OUTPUTS  [string] Validated ADK root path.
     #>
-    Write-Step 'Checking Windows ADK + WinPE add-on...'
+    param([string] $Architecture)
+
+    Write-Step "Checking Windows ADK + WinPE add-on ($Architecture)..."
 
     $adkRoot  = Get-ADKRoot
     $winPEDir = if ($adkRoot) {
         Join-Path $adkRoot 'Assessment and Deployment Kit\Windows Preinstallation Environment'
     } else { $null }
 
-    if ($adkRoot -and $winPEDir -and (Test-Path (Join-Path $winPEDir 'amd64'))) {
+    if ($adkRoot -and $winPEDir -and (Test-Path (Join-Path $winPEDir $Architecture))) {
         Write-Success "ADK found: $adkRoot"
         return $adkRoot
     }
@@ -224,13 +252,14 @@ function Build-WinPE {
     param(
         [string] $ADKRoot,
         [string] $WorkDir,
+        [string] $Architecture,
         [string] $GitHubUser,
         [string] $GitHubRepo,
         [string] $GitHubBranch
     )
 
     # ── 1. Create workspace ──────────────────────────────────────────────────
-    $paths = Copy-WinPEFiles -ADKRoot $ADKRoot -Destination $WorkDir
+    $paths = Copy-WinPEFiles -ADKRoot $ADKRoot -Destination $WorkDir -Architecture $Architecture
 
     # ── 2. Mount ─────────────────────────────────────────────────────────────
     Write-Step 'Mounting boot.wim...'
@@ -239,7 +268,7 @@ function Build-WinPE {
     try {
         # ── 3. Inject optional components ────────────────────────────────────
         $pkgRoot = Join-Path $ADKRoot `
-            'Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs'
+            "Assessment and Deployment Kit\Windows Preinstallation Environment\$Architecture\WinPE_OCs"
 
         foreach ($pkg in $script:WinPEPackages) {
             $pkgPath = Join-Path $pkgRoot $pkg
@@ -406,13 +435,18 @@ Write-Host @"
 "@ -ForegroundColor Cyan
 
 try {
+    # ── 0. Detect architecture ────────────────────────────────────────────────
+    $arch = Get-WinPEArchitecture
+    Write-Step "Host architecture: $arch"
+
     # ── 1. ADK ────────────────────────────────────────────────────────────────
-    $adkRoot = Assert-ADKInstalled
+    $adkRoot = Assert-ADKInstalled -Architecture $arch
 
     # ── 2. WinPE ──────────────────────────────────────────────────────────────
     $paths = Build-WinPE `
         -ADKRoot      $adkRoot `
         -WorkDir      $script:WinPEWorkDir `
+        -Architecture $arch `
         -GitHubUser   $GitHubUser `
         -GitHubRepo   $GitHubRepo `
         -GitHubBranch $GitHubBranch
