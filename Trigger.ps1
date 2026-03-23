@@ -114,20 +114,45 @@ function Build-WinPE {
 
     Write-Step 'Building custom WinPE...'
 
-    # Locate copype.cmd
-    $copype = Join-Path $ADKPath 'Assessment and Deployment Kit\Windows Preinstallation Environment\copype.cmd'
-    if (-not (Test-Path $copype)) {
-        throw "copype.cmd not found at: $copype"
+    # ── Pre-flight validation ────────────────────────────────────────────────
+    $adkBase  = Join-Path $ADKPath 'Assessment and Deployment Kit'
+    $winPEDir = Join-Path $adkBase 'Windows Preinstallation Environment'
+    $deployToolsDir = Join-Path $adkBase 'Deployment Tools'
+
+    # Locate DandISetEnv.bat – the ADK environment initializer that sets
+    # WinPERoot, DISMRoot and the Oscdimg paths copype.cmd relies on.
+    $dandISetEnv = Join-Path $deployToolsDir 'DandISetEnv.bat'
+    if (-not (Test-Path $dandISetEnv)) {
+        throw "ADK Deployment Tools environment script not found at: $dandISetEnv`nPlease reinstall the ADK Deployment Tools feature."
     }
+
+    # Locate copype.cmd
+    $copype = Join-Path $winPEDir 'copype.cmd'
+    if (-not (Test-Path $copype)) {
+        throw "copype.cmd not found at: $copype`nPlease reinstall the WinPE add-on."
+    }
+
+    # Verify WinPE source files exist for the target architecture
+    $winPEArch = Join-Path $winPEDir 'amd64'
+    if (-not (Test-Path $winPEArch)) {
+        throw "WinPE amd64 source files not found at: $winPEArch`nPlease reinstall the WinPE add-on."
+    }
+
+    # Verify oscdimg.exe is available (copype.cmd needs it for firmware files)
+    $oscdimg = Join-Path $deployToolsDir 'amd64\Oscdimg\oscdimg.exe'
+    if (-not (Test-Path $oscdimg)) {
+        throw "oscdimg.exe not found at: $oscdimg`nPlease reinstall the ADK Deployment Tools feature."
+    }
+
+    # ── Build WinPE workspace ────────────────────────────────────────────────
 
     # Clean existing work directory (copype.cmd creates its own target directory)
     if (Test-Path $WorkDir) { Remove-Item $WorkDir -Recurse -Force }
 
-    # Set WinPERoot so copype.cmd can locate the architecture files
-    $env:WinPERoot = Join-Path $ADKPath 'Assessment and Deployment Kit\Windows Preinstallation Environment'
-
+    # Run DandISetEnv.bat first in the same cmd session so copype.cmd inherits
+    # all required ADK environment variables (WinPERoot, Oscdimg paths, etc.).
     Write-Step "Running copype to create WinPE workspace at: $WorkDir"
-    $result = & cmd.exe /c "`"$copype`" amd64 `"$WorkDir`"" 2>&1
+    $result = & cmd.exe /c "`"$dandISetEnv`" && `"$copype`" amd64 `"$WorkDir`"" 2>&1
     if ($LASTEXITCODE -ne 0) { throw "copype.cmd failed: $result" }
 
     # Mount WinPE WIM
@@ -139,7 +164,7 @@ function Build-WinPE {
     Mount-WindowsImage -ImagePath $wimPath -Index 1 -Path $mountDir | Out-Null
 
     # Inject optional components: WMI, PowerShell
-    $pkgDir = Join-Path $ADKPath 'Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs'
+    $pkgDir = Join-Path $winPEDir 'amd64\WinPE_OCs'
     $packages = @(
         'WinPE-WMI.cab',
         'en-us\WinPE-WMI_en-us.cab',
