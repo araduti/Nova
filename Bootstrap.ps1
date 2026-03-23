@@ -349,21 +349,43 @@ if (-not $hasInternet) {
     exit 1
 }
 
-# ── Step 5: Download and execute AmpCloud.ps1 ─────────────────────────────────
+# ── Step 5: Load and execute AmpCloud.ps1 ─────────────────────────────────────
 Write-SectionHeader 'Loading AmpCloud'
-$url = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
-Write-Status "Fetching AmpCloud.ps1 from: $url"
 
-try {
-    $script = Invoke-RestMethod -Uri $url -UseBasicParsing -ErrorAction Stop
-    Write-Status 'AmpCloud.ps1 downloaded. Starting imaging engine...' 'Green'
-    Write-Host ''
-    Invoke-Expression $script
-} catch {
-    Write-Status "Failed to download AmpCloud.ps1: $_" 'Red'
-    Write-Status 'Dropping to interactive shell for manual recovery.' 'Yellow'
-    & cmd.exe /k
-    exit 1
+# Prefer the pre-staged copy embedded in the WinPE image by Trigger.ps1.
+# Fall back to downloading from GitHub when the local copy is absent.
+$localAmpCloud = Join-Path $env:SystemRoot 'System32\AmpCloud.ps1'
+$ampCloudPath  = $null
+
+if (Test-Path $localAmpCloud) {
+    Write-Status 'Using pre-staged AmpCloud.ps1 from WinPE image.' 'Green'
+    $ampCloudPath = $localAmpCloud
+} else {
+    $url = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
+    Write-Status "Pre-staged AmpCloud.ps1 not found. Fetching from: $url"
+
+    $downloadDir  = Join-Path $env:SystemDrive 'AmpCloud'
+    $downloadPath = Join-Path $downloadDir 'AmpCloud.ps1'
+    New-Item -ItemType Directory -Path $downloadDir -Force | Out-Null
+
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $downloadPath -UseBasicParsing -ErrorAction Stop
+        Write-Status 'AmpCloud.ps1 downloaded.' 'Green'
+        $ampCloudPath = $downloadPath
+    } catch {
+        Write-Status "Failed to download AmpCloud.ps1: $_" 'Red'
+        Write-Status 'Dropping to interactive shell for manual recovery.' 'Yellow'
+        & cmd.exe /k
+        exit 1
+    }
 }
+
+# Execute AmpCloud.ps1 as a child script (not via Invoke-Expression).
+# Using & keeps exit calls in AmpCloud.ps1 scoped to that script — they do NOT
+# terminate this PowerShell session, preventing an unintended WinPE reboot when
+# AmpCloud.ps1 encounters an error and calls exit 1 in its own catch block.
+Write-Status 'Starting imaging engine...' 'Green'
+Write-Host ''
+& $ampCloudPath
 
 #endregion
