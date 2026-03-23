@@ -226,14 +226,21 @@ function Get-WindowsESDCatalog {
 
     Invoke-DownloadWithProgress -Uri $catalogUrl -OutFile $catalogPath -Description 'Downloading Windows ESD catalog'
 
-    # Extract catalog
+    # Extract catalog (CAB packaging); newer catalog responses may be plain XML
     New-Item -ItemType Directory -Path $catalogXml -Force | Out-Null
     & expand.exe $catalogPath -F:* $catalogXml | Out-Null
 
     $xmlFile = Get-ChildItem $catalogXml -Filter '*.xml' | Select-Object -First 1
-    if (-not $xmlFile) { throw 'ESD catalog XML not found after extraction.' }
-
-    [xml]$catalog = Get-Content $xmlFile.FullName
+    if ($xmlFile) {
+        [xml]$catalog = Get-Content $xmlFile.FullName
+    } else {
+        # Catalog was served as a plain XML file rather than inside a CAB
+        try {
+            [xml]$catalog = Get-Content $catalogPath
+        } catch {
+            throw 'ESD catalog file is neither a valid CAB archive nor valid XML.'
+        }
+    }
     return $catalog
 }
 
