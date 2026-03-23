@@ -240,6 +240,8 @@ $script:WinPEPackages = @(
     'WinPE-NetFX.cab',           'en-us\WinPE-NetFX_en-us.cab',
     'WinPE-Scripting.cab',       'en-us\WinPE-Scripting_en-us.cab',
     'WinPE-PowerShell.cab',      'en-us\WinPE-PowerShell_en-us.cab',
+    'WinPE-Networking.cab',      'en-us\WinPE-Networking_en-us.cab',
+    'WinPE-WiFi-Package.cab',    'en-us\WinPE-WiFi-Package_en-us.cab',
     'WinPE-StorageWMI.cab',      'en-us\WinPE-StorageWMI_en-us.cab',
     'WinPE-DismCmdlets.cab',     'en-us\WinPE-DismCmdlets_en-us.cab'
 )
@@ -285,6 +287,14 @@ function Build-WinPE {
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
         Write-Step "Fetching Bootstrap.ps1 from $bootstrapUrl"
         Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing
+
+        # ── 4b. Pre-stage AmpCloud.ps1 ───────────────────────────────────────
+        # Embedding AmpCloud.ps1 eliminates the internet dependency at boot time.
+        # Bootstrap.ps1 will use this local copy instead of downloading it.
+        $ampCloudUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
+        $ampCloudDest = Join-Path $paths.MountDir 'Windows\System32\AmpCloud.ps1'
+        Write-Step "Fetching AmpCloud.ps1 from $ampCloudUrl"
+        Invoke-WebRequest -Uri $ampCloudUrl -OutFile $ampCloudDest -UseBasicParsing
 
         # ── 5. winpeshl.ini → auto-launch Bootstrap.ps1 ───────────────────────
         $winpeshlPath = Join-Path $paths.MountDir 'Windows\System32\winpeshl.ini'
