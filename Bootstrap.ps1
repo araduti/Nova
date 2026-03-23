@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     AmpCloud Bootstrap - WinPE network setup and AmpCloud loader.
