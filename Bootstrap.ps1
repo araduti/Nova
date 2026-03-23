@@ -435,11 +435,23 @@ $ringPanel.Location = New-Object System.Drawing.Point(370, 280)
 $ringPanel.Visible = $false
 
 # ── PERFORMANCE OPTIMIZATIONS ───────────────────────────────────────────────
-$ringPanel.DoubleBuffered = $true
-$ringPanel.SetStyle([System.Windows.Forms.ControlStyles]::OptimizedDoubleBuffer -bor 
-                    [System.Windows.Forms.ControlStyles]::AllPaintingInWmPaint -bor 
-                    [System.Windows.Forms.ControlStyles]::UserPaint, $true)
-$ringPanel.UpdateStyles()
+# DoubleBuffered and SetStyle are protected members; use reflection so WinPE
+# doesn't throw a PropertyAssignmentException that kills the script.
+try {
+    $panelType = $ringPanel.GetType()
+    $dbProp = $panelType.GetProperty('DoubleBuffered', [System.Reflection.BindingFlags]'Instance,NonPublic')
+    if ($dbProp) { $dbProp.SetValue($ringPanel, $true, $null) }
+    $setStyleMethod = $panelType.GetMethod('SetStyle', [System.Reflection.BindingFlags]'Instance,NonPublic')
+    if ($setStyleMethod) {
+        $styles = [System.Windows.Forms.ControlStyles]::OptimizedDoubleBuffer -bor
+                  [System.Windows.Forms.ControlStyles]::AllPaintingInWmPaint -bor
+                  [System.Windows.Forms.ControlStyles]::UserPaint
+        $setStyleMethod.Invoke($ringPanel, @($styles, $true))
+    }
+    $ringPanel.UpdateStyles()
+} catch {
+    Write-Verbose "Double-buffering unavailable: $_"
+}
 
 $content.Controls.Add($ringPanel)
 
