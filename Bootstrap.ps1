@@ -23,6 +23,10 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# ── Shell path ───────────────────────────────────────────────────────────────
+# Resolved once at startup so WinPE's fixed X:\ path is used reliably.
+$script:PsBin = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+
 # ── Logging ─────────────────────────────────────────────────────────────────
 $LogPath = "X:\AmpCloud-Bootstrap.log"
 Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyContinue | Out-Null
@@ -34,29 +38,46 @@ Add-Type -AssemblyName System.Drawing
 #region ── Language System ───────────────────────────────────────────────────
 $Lang = 'EN'
 function Select-Language {
+    [System.Windows.Forms.Application]::EnableVisualStyles()
     $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "Select Language / Choisir la langue / Seleccionar idioma"
-    $dlg.Size = New-Object System.Drawing.Size(460, 280)
-    $dlg.StartPosition = "CenterScreen"
+    $dlg.Text            = "AmpCloud — Language / Langue / Idioma"
+    $dlg.Size            = New-Object System.Drawing.Size(480, 300)
+    $dlg.StartPosition   = "CenterScreen"
     $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox     = $false
+    $dlg.MinimizeBox     = $false
+    $dlg.Font            = New-Object System.Drawing.Font("Segoe UI", 10)
+    $dlg.BackColor       = [System.Drawing.Color]::White
 
     $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = "Choose your language:"
-    $lbl.Location = New-Object System.Drawing.Point(40, 40)
+    $lbl.Text      = "Choose your language / Choisissez votre langue / Elija su idioma"
+    $lbl.Location  = New-Object System.Drawing.Point(30, 30)
+    $lbl.Size      = New-Object System.Drawing.Size(400, 40)
+    $lbl.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
     $dlg.Controls.Add($lbl)
 
     $combo = New-Object System.Windows.Forms.ComboBox
     $combo.Items.AddRange(@("English (EN)", "Français (FR)", "Español (ES)"))
-    $combo.SelectedIndex = 0
-    $combo.Location = New-Object System.Drawing.Point(40, 80)
-    $combo.Width = 360
+    $combo.SelectedIndex  = 0
+    $combo.Location       = New-Object System.Drawing.Point(30, 80)
+    $combo.Width          = 400
+    $combo.Height         = 32
+    $combo.DropDownStyle  = "DropDownList"
+    $combo.FlatStyle      = "Flat"
     $dlg.Controls.Add($combo)
 
     $btn = New-Object System.Windows.Forms.Button
-    $btn.Text = "Continue"
-    $btn.Location = New-Object System.Drawing.Point(160, 160)
-    $btn.DialogResult = "OK"
+    $btn.Text             = "Continue →"
+    $btn.Location         = New-Object System.Drawing.Point(160, 180)
+    $btn.Size             = New-Object System.Drawing.Size(150, 42)
+    $btn.BackColor        = [System.Drawing.Color]::FromArgb(0, 120, 212)
+    $btn.ForeColor        = [System.Drawing.Color]::White
+    $btn.FlatStyle        = "Flat"
+    $btn.FlatAppearance.BorderSize = 0
+    $btn.Font             = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $btn.DialogResult     = "OK"
     $dlg.Controls.Add($btn)
+    $dlg.AcceptButton     = $btn
 
     if ($dlg.ShowDialog() -eq "OK") {
         switch ($combo.SelectedIndex) {
@@ -120,16 +141,50 @@ function Optimize-WinPENetwork {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
+        # Set high-performance power plan
         powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null | Out-Null
-        netsh int tcp set global autotuninglevel=normal    2>$null | Out-Null
-        netsh int tcp set global congestionprovider=ctcp   2>$null | Out-Null
-        netsh int tcp set global chimney=enabled           2>$null | Out-Null
-        netsh int tcp set global rss=enabled               2>$null | Out-Null
-        netsh int tcp set global rsc=enabled               2>$null | Out-Null
-        Get-NetAdapter | ForEach-Object {
-            netsh interface ipv6 set interface "$($_.Name)" admin=disabled 2>$null | Out-Null
+
+        # TCP auto-tuning and offload settings via PowerShell cmdlets
+        try {
+            Set-NetTCPSetting -SettingName '*' -AutoTuningLevelLocal Normal `
+                              -ErrorAction SilentlyContinue
+        } catch {}
+        try {
+            Set-NetOffloadGlobalSetting -ReceiveSideScaling Enabled `
+                                        -ReceiveSegmentCoalescing Enabled `
+                                        -ErrorAction SilentlyContinue
+        } catch {}
+
+        # Disable IPv6 on all adapters to reduce routing overhead
+        Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
+            try {
+                Disable-NetAdapterBinding -Name $_.Name -ComponentID 'ms_tcpip6' `
+                                          -ErrorAction SilentlyContinue
+            } catch {}
         }
-        ipconfig /renew 2>$null | Out-Null
+
+        # Renew DHCP leases on all connected adapters
+        Get-NetAdapter -ErrorAction SilentlyContinue |
+            Where-Object { $_.Status -eq 'Up' } |
+            ForEach-Object {
+                try {
+                    $iface = $_
+                    Get-NetIPAddress -InterfaceIndex $iface.InterfaceIndex `
+                                     -AddressFamily IPv4 `
+                                     -PrefixOrigin Dhcp `
+                                     -ErrorAction SilentlyContinue |
+                        ForEach-Object {
+                            # Re-acquire DHCP: release then allow auto-renewal
+                            Remove-NetIPAddress -InterfaceIndex $iface.InterfaceIndex `
+                                                -AddressFamily IPv4 `
+                                                -Confirm:$false `
+                                                -ErrorAction SilentlyContinue
+                        }
+                    # Trigger DHCP discovery
+                    $iface | Set-NetIPInterface -Dhcp Enabled `
+                                                -ErrorAction SilentlyContinue
+                } catch {}
+            }
     } finally {
         $ErrorActionPreference = $prev
     }
@@ -208,44 +263,50 @@ function Get-WiFiNetworks {
 
 function Get-SignalBars { param([int]$s) ('█' * [Math]::Round($s/20)) + ('░' * (5-[Math]::Round($s/20))) }
 
-function ConvertTo-XmlSafe {
-    param([string]$Value)
-    $Value -replace '&', '&amp;' -replace '<', '&lt;' -replace '>', '&gt;' -replace '"', '&quot;'
-}
-
 function Connect-WiFiNetwork {
     param([string]$SSID, [string]$Password, [string]$Auth)
-    $safeSsid = ConvertTo-XmlSafe $SSID
-    $safePwd  = if ($Password) { ConvertTo-XmlSafe $Password } else { '' }
+    $safeSsid = [System.Security.SecurityElement]::Escape($SSID)
     $isOpen   = $Auth -match 'Open'
 
     $ns = 'http://www.microsoft.com/networking/WLAN/profile/v1'
     if ($isOpen) {
-        $secBlock = '<MSM><security><authEncryption>' +
-                    '<authentication>open</authentication>' +
-                    '<encryption>none</encryption>' +
-                    '<useOneX>false</useOneX>' +
-                    '</authEncryption></security></MSM>'
+        $xml = @"
+<?xml version="1.0"?>
+<WLANProfile xmlns="$ns">
+  <name>$safeSsid</name>
+  <SSIDConfig><SSID><name>$safeSsid</name></SSID></SSIDConfig>
+  <connectionType>ESS</connectionType>
+  <connectionMode>auto</connectionMode>
+  <MSM><security><authEncryption>
+    <authentication>open</authentication>
+    <encryption>none</encryption>
+    <useOneX>false</useOneX>
+  </authEncryption></security></MSM>
+</WLANProfile>
+"@
     } else {
+        $safePwd  = if ($Password) { [System.Security.SecurityElement]::Escape($Password) } else { '' }
         $authType = if ($Auth -match 'WPA3') { 'WPA3SAE' } else { 'WPA2PSK' }
-        $secBlock = '<MSM><security><authEncryption>' +
-                    "<authentication>$authType</authentication>" +
-                    '<encryption>AES</encryption>' +
-                    '<useOneX>false</useOneX>' +
-                    '</authEncryption>' +
-                    "<sharedKey><keyType>passPhrase</keyType>" +
-                    "<protected>false</protected>" +
-                    "<keyMaterial>$safePwd</keyMaterial>" +
-                    '</sharedKey></security></MSM>'
+        $xml = @"
+<?xml version="1.0"?>
+<WLANProfile xmlns="$ns">
+  <name>$safeSsid</name>
+  <SSIDConfig><SSID><name>$safeSsid</name></SSID></SSIDConfig>
+  <connectionType>ESS</connectionType>
+  <connectionMode>auto</connectionMode>
+  <MSM><security><authEncryption>
+    <authentication>$authType</authentication>
+    <encryption>AES</encryption>
+    <useOneX>false</useOneX>
+  </authEncryption>
+  <sharedKey>
+    <keyType>passPhrase</keyType>
+    <protected>false</protected>
+    <keyMaterial>$safePwd</keyMaterial>
+  </sharedKey></security></MSM>
+</WLANProfile>
+"@
     }
-    $xml = '<?xml version="1.0"?>' +
-           "<WLANProfile xmlns=`"$ns`">" +
-           "<name>$safeSsid</name>" +
-           "<SSIDConfig><SSID><name>$safeSsid</name></SSID></SSIDConfig>" +
-           '<connectionType>ESS</connectionType>' +
-           '<connectionMode>auto</connectionMode>' +
-           $secBlock +
-           '</WLANProfile>'
 
     $tmp = Join-Path $env:TEMP "ampcloud_wifi_$([guid]::NewGuid().Guid).xml"
     try {
@@ -604,11 +665,11 @@ function Show-CompletionScreen {
     $btnShell.Font = New-Object System.Drawing.Font("Segoe UI", 11)
     $finalForm.Controls.Add($btnShell)
 
-    $btnReboot.Add_Click({ shutdown /r /t 0 })
-    $btnPower.Add_Click({ shutdown /s /t 0 })
+    $btnReboot.Add_Click({ Restart-Computer -Force })
+    $btnPower.Add_Click({ Stop-Computer -Force })
     $btnShell.Add_Click({
         $finalForm.Close()
-        & cmd.exe /k
+        & $script:PsBin -NoProfile -NoExit
     })
 
     # Center controls on resize
@@ -678,7 +739,7 @@ function Show-Failure {
             ProceedToEngine
         } else {
             $form.Close()
-            & cmd.exe /k
+            & $script:PsBin -NoProfile -NoExit
         }
     })
 }

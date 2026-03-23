@@ -61,6 +61,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Resolved once so WinPE's X:\ path is used correctly in the error handler.
+$script:PsBin = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+
 #region ── Helpers ──────────────────────────────────────────────────────────────
 
 function Write-Step {
@@ -97,7 +100,8 @@ function Add-SetupCompleteEntry {
     )
     $dir = Split-Path $FilePath
     if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    # Batch files (.cmd) use ASCII encoding for broadest Windows compatibility
+    # Windows OOBE calls SetupComplete.cmd by convention — it must be a .cmd file.
+    # ASCII encoding ensures broadest compatibility with cmd.exe's file parser.
     if (Test-Path $FilePath) {
         $existing = (Get-Content $FilePath -Raw).TrimEnd()
         Set-Content $FilePath "$existing`r`n$Line" -Encoding Ascii
@@ -226,8 +230,9 @@ function Get-WindowsESDCatalog {
 
     Invoke-DownloadWithProgress -Uri $catalogUrl -OutFile $catalogPath -Description 'Downloading Windows ESD catalog'
 
-    # Extract catalog — destination is an explicit .xml file path so expand.exe
-    # renames the extracted file correctly regardless of its internal CAB name
+    # Extract catalog.cab using expand.exe (Windows native CAB extractor).
+    # There is no pure PowerShell equivalent for CAB expansion that is reliable
+    # in WinPE; Shell.Application.CopyHere is asynchronous and not safe here.
     & expand.exe $catalogPath -F:* $catalogXml | Out-Null
 
     if (-not (Test-Path $catalogXml)) { throw 'ESD catalog XML not found after extraction.' }
@@ -582,7 +587,7 @@ Write-Host @"
  ██║  ██║██║ ╚═╝ ██║██║     ╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝
  ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝      ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝
 
- Full Cloud Imaging Engine | https://github.com/$GitHubUser/$GitHubRepo
+ Cloud-only Imaging Engine · amd64/x86 · https://github.com/$GitHubUser/$GitHubRepo
 "@ -ForegroundColor Cyan
 
 try {
@@ -663,7 +668,7 @@ try {
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
     Write-Host ''
     Write-Host '[AmpCloud] Dropping to interactive shell for troubleshooting.' -ForegroundColor Yellow
-    & cmd.exe /k
+    & $script:PsBin -NoProfile -NoExit
     exit 1
 }
 
