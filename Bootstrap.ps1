@@ -386,6 +386,12 @@ if (Test-Path $localAmpCloud) {
 # AmpCloud.ps1 encounters an error and calls exit 1 in its own catch block.
 Write-Status 'Starting imaging engine...' 'Green'
 Write-Host ''
-& $ampCloudPath
+try {
+    & $ampCloudPath
+} catch {
+    Write-Status "AmpCloud.ps1 failed: $_" 'Red'
+    Write-Status 'Dropping to interactive shell for manual recovery.' 'Yellow'
+    & cmd.exe /k
+}
 
 #endregion
