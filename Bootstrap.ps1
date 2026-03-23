@@ -549,7 +549,7 @@ function Toggle-DarkMode {
     $statusLabel.ForeColor   = $fg
     $logo.ForeColor          = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(100, 180, 255) } else { $LightBlue }
     $subtitleLabel.ForeColor = if ($script:IsDarkMode) { [System.Drawing.Color]::Silver } else { [System.Drawing.Color]::Gray }
-    $deviceLabel.ForeColor   = if ($script:IsDarkMode) { [System.Drawing.Color]::DarkGray } else { [System.Drawing.Color]::DarkGray }
+    $deviceLabel.ForeColor   = if ($script:IsDarkMode) { [System.Drawing.Color]::Silver } else { [System.Drawing.Color]::DarkGray }
     $btnDark.Text            = if ($script:IsDarkMode) { [char]0x2600 } else { [char]0x263D }
     $form.Refresh()
 }
