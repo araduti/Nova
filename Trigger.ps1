@@ -240,6 +240,8 @@ $script:WinPEPackages = @(
     'WinPE-NetFX.cab',           'en-us\WinPE-NetFX_en-us.cab',
     'WinPE-Scripting.cab',       'en-us\WinPE-Scripting_en-us.cab',
     'WinPE-PowerShell.cab',      'en-us\WinPE-PowerShell_en-us.cab',
+    'WinPE-Networking.cab',      'en-us\WinPE-Networking_en-us.cab',
+    'WinPE-WiFi-Package.cab',    'en-us\WinPE-WiFi-Package_en-us.cab',
     'WinPE-StorageWMI.cab',      'en-us\WinPE-StorageWMI_en-us.cab',
     'WinPE-DismCmdlets.cab',     'en-us\WinPE-DismCmdlets_en-us.cab'
 )
