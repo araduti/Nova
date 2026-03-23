@@ -265,7 +265,7 @@ function Show-WiFiSelector {
     $dlg.Text = "Select WiFi Network"
     $dlg.Size = New-Object System.Drawing.Size(720, 620)
     $dlg.StartPosition = "CenterParent"
-    $dlg.BackColor = if ($IsDarkMode) { $DarkCard } else { $LightCard }
+    $dlg.BackColor = if ($script:IsDarkMode) { $DarkCard } else { $LightCard }
     $dlg.Font = $BodyFont
 
     $list = New-Object System.Windows.Forms.ListView
@@ -324,117 +324,65 @@ function Show-WiFiSelector {
 }
 #endregion
 
-#region ── Main Form with OPTIMIZED Animations ───────────────────────────────
+#region ── Main Form ── Fullscreen Autopilot-style UI ─────────────────────────
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "AmpCloud - Cloud Imaging Engine"
-$form.Size = New-Object System.Drawing.Size(900, 680)
-$form.StartPosition = "CenterScreen"
-$form.FormBorderStyle = "FixedSingle"
-$form.MaximizeBox = $false
-$form.BackColor = $LightBg
+$form.FormBorderStyle = "None"
+$form.WindowState = "Maximized"
+$form.BackColor = $LightCard
 $form.Font = $BodyFont
 
-# Header
-$header = New-Object System.Windows.Forms.Panel
-$header.Dock = "Top"
-$header.Height = 100
-$header.BackColor = $LightBlue
-$form.Controls.Add($header)
-
-$logo = New-Object System.Windows.Forms.Label
-$logo.Text = $S.Header
-$logo.Font = $HeaderFont
-$logo.ForeColor = [System.Drawing.Color]::White
-$logo.TextAlign = "MiddleCenter"
-$logo.Dock = "Fill"
-$header.Controls.Add($logo)
-
-# Dark mode toggle
+# ── Dark mode toggle (top-right corner) ─────────────────────────────────────
 $btnDark = New-Object System.Windows.Forms.Button
-$btnDark.Text = "🌙"
-$btnDark.Size = New-Object System.Drawing.Size(50, 50)
-$btnDark.Location = New-Object System.Drawing.Point(820, 25)
+$btnDark.Size = New-Object System.Drawing.Size(44, 44)
 $btnDark.FlatStyle = "Flat"
 $btnDark.FlatAppearance.BorderSize = 0
-$btnDark.ForeColor = [System.Drawing.Color]::White
-$btnDark.BackColor = $LightBlue
-$header.Controls.Add($btnDark)
+$btnDark.Font = New-Object System.Drawing.Font("Segoe UI", 14)
+$btnDark.Text = [char]0x263D          # crescent moon (safe in WinPE fonts)
+$btnDark.ForeColor = [System.Drawing.Color]::Gray
+$btnDark.BackColor = $LightCard
+$btnDark.Anchor = [System.Windows.Forms.AnchorStyles]::None
+$form.Controls.Add($btnDark)
 
-# Content card (cached path)
-$content = New-Object System.Windows.Forms.Panel
-$content.Dock = "Fill"
-$content.BackColor = $LightCard
-$content.Padding = New-Object System.Windows.Forms.Padding(60, 40, 60, 40)
-$form.Controls.Add($content)
+# ── Logo ────────────────────────────────────────────────────────────────────
+$logo = New-Object System.Windows.Forms.Label
+$logo.Text = $S.Header
+$logo.Font = New-Object System.Drawing.Font("Segoe UI", 28, [System.Drawing.FontStyle]::Bold)
+$logo.ForeColor = $LightBlue
+$logo.TextAlign = "MiddleCenter"
+$logo.AutoSize = $false
+$form.Controls.Add($logo)
 
-$CachedPath = $null
-$content.Add_Paint({
-    $g = $_.Graphics
-    $g.SmoothingMode = "AntiAlias"
-    if (-not $CachedPath) {
-        $rect = New-Object System.Drawing.Rectangle(0, 0, $content.Width-1, $content.Height-1)
-        $CachedPath = New-Object System.Drawing.Drawing2D.GraphicsPath
-        $radius = 20
-        $CachedPath.AddArc(0, 0, $radius*2, $radius*2, 180, 90)
-        $CachedPath.AddArc($rect.Width - $radius*2, 0, $radius*2, $radius*2, 270, 90)
-        $CachedPath.AddArc($rect.Width - $radius*2, $rect.Height - $radius*2, $radius*2, $radius*2, 0, 90)
-        $CachedPath.AddArc(0, $rect.Height - $radius*2, $radius*2, $radius*2, 90, 90)
-        $CachedPath.CloseFigure()
-    }
-    $g.FillPath((New-Object System.Drawing.SolidBrush($content.BackColor)), $CachedPath)
-    $g.DrawPath((New-Object System.Drawing.Pen([System.Drawing.Color]::LightGray, 2)), $CachedPath)
-})
+# ── Subtitle ────────────────────────────────────────────────────────────────
+$subtitleLabel = New-Object System.Windows.Forms.Label
+$subtitleLabel.Text = "Cloud Imaging Engine"
+$subtitleLabel.Font = $BodyFont
+$subtitleLabel.ForeColor = [System.Drawing.Color]::Gray
+$subtitleLabel.TextAlign = "MiddleCenter"
+$subtitleLabel.AutoSize = $false
+$form.Controls.Add($subtitleLabel)
 
-# Step indicators
-$stepPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$stepPanel.Dock = "Top"
-$stepPanel.Height = 50
-$stepPanel.FlowDirection = "LeftToRight"
-$content.Controls.Add($stepPanel)
-
-$stepLabels = @()
-@($S.Step1, $S.Step2, $S.Step3) | ForEach-Object {
-    $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = "● $($stepLabels.Count + 1) $_"
-    $lbl.Font = $SmallFont
-    $lbl.ForeColor = [System.Drawing.Color]::Gray
-    $lbl.AutoSize = $true
-    $lbl.Margin = New-Object System.Windows.Forms.Padding(30, 0, 30, 0)
-    $stepLabels += $lbl
-    $stepPanel.Controls.Add($lbl)
-}
-
-# Device info
+# ── Device info ─────────────────────────────────────────────────────────────
 $deviceLabel = New-Object System.Windows.Forms.Label
 try {
     $model  = (Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).Model
     $serial = (Get-CimInstance Win32_Bios -ErrorAction SilentlyContinue).SerialNumber
-    $deviceLabel.Text = "Device: $model • $serial"
+    $deviceLabel.Text = "Device: $model  -  $serial"
 } catch {
     $deviceLabel.Text = "Device: Unknown"
 }
 $deviceLabel.Font = $SmallFont
-$deviceLabel.ForeColor = [System.Drawing.Color]::Gray
-$deviceLabel.Dock = "Top"
-$deviceLabel.Height = 30
-$content.Controls.Add($deviceLabel)
+$deviceLabel.ForeColor = [System.Drawing.Color]::DarkGray
+$deviceLabel.TextAlign = "MiddleCenter"
+$deviceLabel.AutoSize = $false
+$form.Controls.Add($deviceLabel)
 
-# Status
-$statusLabel = New-Object System.Windows.Forms.Label
-$statusLabel.Font = $TitleFont
-$statusLabel.ForeColor = $TextLight
-$statusLabel.Dock = "Top"
-$statusLabel.Height = 90
-$statusLabel.TextAlign = "MiddleLeft"
-$content.Controls.Add($statusLabel)
-
-# OPTIMIZED Animated Progress Ring
+# ── Animated Progress Ring ──────────────────────────────────────────────────
 $ringPanel = New-Object System.Windows.Forms.Panel
-$ringPanel.Size = New-Object System.Drawing.Size(120, 120)
-$ringPanel.Location = New-Object System.Drawing.Point(370, 280)
+$ringPanel.Size = New-Object System.Drawing.Size(80, 80)
+$ringPanel.BackColor = [System.Drawing.Color]::Transparent
 $ringPanel.Visible = $false
 
-# ── PERFORMANCE OPTIMIZATIONS ───────────────────────────────────────────────
 # DoubleBuffered and SetStyle are protected members; use reflection so WinPE
 # doesn't throw a PropertyAssignmentException that kills the script.
 try {
@@ -452,120 +400,208 @@ try {
 } catch {
     Write-Verbose "Double-buffering unavailable: $_"
 }
+$form.Controls.Add($ringPanel)
 
-$content.Controls.Add($ringPanel)
-
-$ringAngle = 0
+$script:ringAngle = 0
 $ringTimer = New-Object System.Windows.Forms.Timer
 $ringTimer.Interval = 48
 $ringTimer.Add_Tick({
-    $ringAngle = ($ringAngle + 8) % 360
+    $script:ringAngle = ($script:ringAngle + 8) % 360
     $ringPanel.Invalidate()
 })
+$ringPenSmall = New-Object System.Drawing.Pen($LightBlue, 6)
+$ringPenSmall.StartCap = "Round"
+$ringPenSmall.EndCap = "Round"
 $ringPanel.Add_Paint({
-    $g = $_.Graphics
-    $g.SmoothingMode = "AntiAlias"
-    $g.DrawArc($RingPen, 10, 10, 100, 100, $ringAngle, 280)
+    try {
+        $g = $_.Graphics
+        $g.SmoothingMode = "AntiAlias"
+        $g.DrawArc($ringPenSmall, 6, 6, 66, 66, $script:ringAngle, 280)
+    } catch { }
 })
 
-# Progress text
+# ── Status label ────────────────────────────────────────────────────────────
+$statusLabel = New-Object System.Windows.Forms.Label
+$statusLabel.Font = $TitleFont
+$statusLabel.ForeColor = $TextLight
+$statusLabel.TextAlign = "MiddleCenter"
+$statusLabel.AutoSize = $false
+$form.Controls.Add($statusLabel)
+
+# ── Progress / download text ────────────────────────────────────────────────
 $progressText = New-Object System.Windows.Forms.Label
 $progressText.Font = $SmallFont
 $progressText.ForeColor = [System.Drawing.Color]::Gray
-$progressText.Dock = "Top"
-$progressText.Height = 30
-$content.Controls.Add($progressText)
+$progressText.TextAlign = "MiddleCenter"
+$progressText.AutoSize = $false
+$form.Controls.Add($progressText)
 
-# Buttons
+# ── Step indicators ─────────────────────────────────────────────────────────
+$stepPanel = New-Object System.Windows.Forms.FlowLayoutPanel
+$stepPanel.FlowDirection = "LeftToRight"
+$stepPanel.AutoSize = $true
+$stepPanel.WrapContents = $false
+$stepPanel.BackColor = [System.Drawing.Color]::Transparent
+$form.Controls.Add($stepPanel)
+
+$stepLabels = [System.Collections.Generic.List[System.Windows.Forms.Label]]::new()
+$stepNum = 0
+foreach ($stepText in @($S.Step1, $S.Step2, $S.Step3)) {
+    $stepNum++
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "$([char]0x25CF) $stepNum $stepText"
+    $lbl.Font = $SmallFont
+    $lbl.ForeColor = [System.Drawing.Color]::Gray
+    $lbl.AutoSize = $true
+    $lbl.Margin = New-Object System.Windows.Forms.Padding(20, 0, 20, 0)
+    $stepLabels.Add($lbl)
+    $stepPanel.Controls.Add($lbl)
+}
+
+# ── Buttons ─────────────────────────────────────────────────────────────────
 $btnWiFi = New-Object System.Windows.Forms.Button
-$btnWiFi.Text = "🌐 Connect via WiFi"
-$btnWiFi.Size = New-Object System.Drawing.Size(300, 60)
-$btnWiFi.Font = New-Object System.Drawing.Font("Segoe UI", 12, [System.Drawing.FontStyle]::Bold)
+$btnWiFi.Text = "Connect via WiFi"
+$btnWiFi.Size = New-Object System.Drawing.Size(260, 48)
+$btnWiFi.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
 $btnWiFi.BackColor = $LightBlue
 $btnWiFi.ForeColor = [System.Drawing.Color]::White
 $btnWiFi.FlatStyle = "Flat"
 $btnWiFi.FlatAppearance.BorderSize = 0
-$btnWiFi.Location = New-Object System.Drawing.Point(300, 420)
 $btnWiFi.Visible = $false
-$content.Controls.Add($btnWiFi)
+$form.Controls.Add($btnWiFi)
 
 $btnRetry = New-Object System.Windows.Forms.Button
-$btnRetry.Text = "🔄 Retry"
-$btnRetry.Size = New-Object System.Drawing.Size(180, 50)
+$btnRetry.Text = "Retry"
+$btnRetry.Size = New-Object System.Drawing.Size(160, 42)
 $btnRetry.Font = $BodyFont
-$btnRetry.BackColor = [System.Drawing.Color]::Orange
-$btnRetry.ForeColor = [System.Drawing.Color]::White
+$btnRetry.BackColor = [System.Drawing.Color]::FromArgb(230, 230, 230)
+$btnRetry.ForeColor = $TextLight
 $btnRetry.FlatStyle = "Flat"
+$btnRetry.FlatAppearance.BorderSize = 0
 $btnRetry.Visible = $false
-$btnRetry.Location = New-Object System.Drawing.Point(360, 500)
-$content.Controls.Add($btnRetry)
+$form.Controls.Add($btnRetry)
 
+# ── Dynamic centering ───────────────────────────────────────────────────────
+# Positions all controls relative to the form centre on every resize.
+$contentW = 600
+function Center-AllControls {
+    $cw = $form.ClientSize.Width
+    $ch = $form.ClientSize.Height
+    $cx = [int]($cw / 2)
+
+    # Vertical block: logo(50) + subtitle(25) + device(22) + gap(30) + ring(80) +
+    #   gap(18) + status(55) + progress(24) + gap(12) + steps(28) + gap(18) +
+    #   wifibtn(48) + gap(10) + retrybtn(42) = ~462
+    $blockH = 462
+    $y = [int][Math]::Max(40, ($ch - $blockH) / 2)
+
+    $logo.SetBounds(($cx - $contentW / 2), $y, $contentW, 50)
+    $y += 54
+    $subtitleLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, 25)
+    $y += 28
+    $deviceLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, 22)
+    $y += 50
+    $ringPanel.Location = New-Object System.Drawing.Point(($cx - 40), $y)
+    $y += 96
+    $statusLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, 55)
+    $y += 58
+    $progressText.SetBounds(($cx - $contentW / 2), $y, $contentW, 24)
+    $y += 36
+    $stepPanel.Location = New-Object System.Drawing.Point([int]($cx - $stepPanel.Width / 2), $y)
+    $y += 46
+    $btnWiFi.Location = New-Object System.Drawing.Point(($cx - 130), $y)
+    $y += 58
+    $btnRetry.Location = New-Object System.Drawing.Point(($cx - 80), $y)
+
+    # Dark mode button stays top-right
+    $btnDark.Location = New-Object System.Drawing.Point(($cw - 60), 16)
+}
+
+$form.Add_Resize({ Center-AllControls })
+
+# ── Helper functions ────────────────────────────────────────────────────────
 function Write-Status {
     param([string]$Message, [string]$Color = 'Black')
     $statusLabel.ForeColor = switch ($Color) {
-        'Green'  { [System.Drawing.Color]::DarkGreen }
-        'Red'    { [System.Drawing.Color]::Red }
-        'Yellow' { [System.Drawing.Color]::OrangeRed }
-        default  { if ($IsDarkMode) { $TextDark } else { $TextLight } }
+        'Green'  { [System.Drawing.Color]::DarkGreen; break }
+        'Red'    { [System.Drawing.Color]::Red; break }
+        'Yellow' { [System.Drawing.Color]::OrangeRed; break }
+        'Cyan'   { $LightBlue; break }
+        default  { if ($script:IsDarkMode) { $TextDark } else { $TextLight } }
     }
     $statusLabel.Text = $Message
     $form.Refresh()
 }
 
 function Update-Step { param([int]$s)
-    for ($i = 0; $i -lt 3; $i++) {
+    for ($i = 0; $i -lt $stepLabels.Count; $i++) {
         $stepLabels[$i].ForeColor = if ($i -lt $s) { $LightBlue } else { [System.Drawing.Color]::Gray }
     }
 }
 
 function Toggle-DarkMode {
-    $script:IsDarkMode = -not $IsDarkMode
-    $form.BackColor = if ($IsDarkMode) { $DarkBg } else { $LightBg }
-    $content.BackColor = if ($IsDarkMode) { $DarkCard } else { $LightCard }
-    $header.BackColor = if ($IsDarkMode) { $DarkBlue } else { $LightBlue }
-    $statusLabel.ForeColor = if ($IsDarkMode) { $TextDark } else { $TextLight }
-    $btnDark.Text = if ($IsDarkMode) { "☀️" } else { "🌙" }
+    $script:IsDarkMode = -not $script:IsDarkMode
+    $bg  = if ($script:IsDarkMode) { $DarkBg }   else { $LightCard }
+    $fg  = if ($script:IsDarkMode) { $TextDark }  else { $TextLight }
+    $form.BackColor          = $bg
+    $btnDark.BackColor       = $bg
+    $btnDark.ForeColor       = $fg
+    $statusLabel.ForeColor   = $fg
+    $logo.ForeColor          = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(100, 180, 255) } else { $LightBlue }
+    $subtitleLabel.ForeColor = if ($script:IsDarkMode) { [System.Drawing.Color]::Silver } else { [System.Drawing.Color]::Gray }
+    $deviceLabel.ForeColor   = if ($script:IsDarkMode) { [System.Drawing.Color]::Silver } else { [System.Drawing.Color]::DarkGray }
+    $btnDark.Text            = if ($script:IsDarkMode) { [char]0x2600 } else { [char]0x263D }
     $form.Refresh()
 }
 $btnDark.Add_Click({ Toggle-DarkMode })
 #endregion
 
-#region ── Final Completion Screen ──────────────────────────────────────────
+#region ── Final Completion Screen (fullscreen) ─────────────────────────────
 function Show-CompletionScreen {
     Play-Sound 1200 400
     $finalForm = New-Object System.Windows.Forms.Form
     $finalForm.Text = $S.Complete
-    $finalForm.Size = New-Object System.Drawing.Size(620, 380)
-    $finalForm.StartPosition = "CenterScreen"
-    $finalForm.BackColor = if ($IsDarkMode) { $DarkCard } else { $LightCard }
+    $finalForm.FormBorderStyle = "None"
+    $finalForm.WindowState = "Maximized"
+    $finalForm.BackColor = if ($script:IsDarkMode) { $DarkBg } else { $LightCard }
+    $finalForm.Font = $BodyFont
 
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text = $S.Complete + "`n`nAmpCloud imaging engine is ready."
     $lbl.Font = $TitleFont
+    $lbl.ForeColor = if ($script:IsDarkMode) { $TextDark } else { $TextLight }
     $lbl.TextAlign = "MiddleCenter"
-    $lbl.Dock = "Fill"
+    $lbl.AutoSize = $false
     $finalForm.Controls.Add($lbl)
 
     $btnReboot = New-Object System.Windows.Forms.Button
     $btnReboot.Text      = $S.Reboot
-    $btnReboot.Size      = New-Object System.Drawing.Size(180, 60)
-    $btnReboot.Location  = New-Object System.Drawing.Point(50, 260)
-    $btnReboot.BackColor = [System.Drawing.Color]::DarkGreen
-    $btnReboot.ForeColor = "White"
+    $btnReboot.Size      = New-Object System.Drawing.Size(200, 52)
+    $btnReboot.BackColor = [System.Drawing.Color]::FromArgb(16, 124, 16)
+    $btnReboot.ForeColor = [System.Drawing.Color]::White
+    $btnReboot.FlatStyle = "Flat"
+    $btnReboot.FlatAppearance.BorderSize = 0
+    $btnReboot.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
     $finalForm.Controls.Add($btnReboot)
 
     $btnPower = New-Object System.Windows.Forms.Button
     $btnPower.Text      = $S.PowerOff
-    $btnPower.Size      = New-Object System.Drawing.Size(180, 60)
-    $btnPower.Location  = New-Object System.Drawing.Point(240, 260)
-    $btnPower.BackColor = [System.Drawing.Color]::DarkRed
-    $btnPower.ForeColor = "White"
+    $btnPower.Size      = New-Object System.Drawing.Size(200, 52)
+    $btnPower.BackColor = [System.Drawing.Color]::FromArgb(196, 43, 28)
+    $btnPower.ForeColor = [System.Drawing.Color]::White
+    $btnPower.FlatStyle = "Flat"
+    $btnPower.FlatAppearance.BorderSize = 0
+    $btnPower.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
     $finalForm.Controls.Add($btnPower)
 
     $btnShell = New-Object System.Windows.Forms.Button
     $btnShell.Text     = $S.Shell
-    $btnShell.Size     = New-Object System.Drawing.Size(180, 60)
-    $btnShell.Location = New-Object System.Drawing.Point(430, 260)
+    $btnShell.Size     = New-Object System.Drawing.Size(200, 52)
+    $btnShell.BackColor = [System.Drawing.Color]::FromArgb(230, 230, 230)
+    $btnShell.ForeColor = $TextLight
+    $btnShell.FlatStyle = "Flat"
+    $btnShell.FlatAppearance.BorderSize = 0
+    $btnShell.Font = New-Object System.Drawing.Font("Segoe UI", 11)
     $finalForm.Controls.Add($btnShell)
 
     $btnReboot.Add_Click({ shutdown /r /t 0 })
@@ -573,6 +609,21 @@ function Show-CompletionScreen {
     $btnShell.Add_Click({
         $finalForm.Close()
         & cmd.exe /k
+    })
+
+    # Center controls on resize
+    $finalForm.Add_Resize({
+        $cw = $finalForm.ClientSize.Width
+        $ch = $finalForm.ClientSize.Height
+        $cx = [int]($cw / 2)
+        $lbl.SetBounds(($cx - 300), [int](($ch / 2) - 80), 600, 100)
+        $gap = 16
+        $totalBtnW = 200 * 3 + $gap * 2
+        $bx = [int]($cx - $totalBtnW / 2)
+        $by = [int]($ch / 2) + 50
+        $btnReboot.Location = New-Object System.Drawing.Point($bx, $by)
+        $btnPower.Location  = New-Object System.Drawing.Point(($bx + 200 + $gap), $by)
+        $btnShell.Location  = New-Object System.Drawing.Point(($bx + 400 + $gap * 2), $by)
     })
 
     $finalForm.ShowDialog() | Out-Null
@@ -598,7 +649,7 @@ function ProceedToEngine {
         Write-Status ($S.Download -f 0)
         $web = New-Object System.Net.WebClient
         $web.add_DownloadProgressChanged({
-            param($s, $e)
+            param($sender, $e)
             Write-Status ($S.Download -f $e.ProgressPercentage)
         })
         $task = $web.DownloadFileTaskAsync($url, $dlPath)
@@ -618,7 +669,7 @@ function ProceedToEngine {
 
 function Show-Failure {
     Play-Sound 400 600
-    Write-Status "❌ Could not connect to the internet.`nPlease check your network." 'Red'
+    Write-Status "Could not connect to the internet.`nPlease check your network." 'Red'
     $btnRetry.Visible = $true
     $btnRetry.Add_Click({
         $btnRetry.Visible = $false
@@ -633,8 +684,11 @@ function Show-Failure {
 }
 
 $form.Add_Shown({
+    Center-AllControls
     Update-Step 1
     Write-Status $S.StatusInit 'Cyan'
+    $ringPanel.Visible = $true
+    $ringTimer.Start()
     Invoke-WpeInit
     Optimize-WinPENetwork
 
@@ -642,6 +696,8 @@ $form.Add_Shown({
 
     if (-not $hasInternet) {
         Update-Step 2
+        $ringTimer.Stop()
+        $ringPanel.Visible = $false
         Write-Status $S.StatusNoNet 'Yellow'
         $btnWiFi.Visible = $true
         $btnWiFi.Add_Click({
