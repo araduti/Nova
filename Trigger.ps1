@@ -535,15 +535,38 @@ function Build-WinPE {
         Write-Step "Fetching AmpCloud.ps1 from $ampCloudUrl"
         Invoke-WebRequest -Uri $ampCloudUrl -OutFile $ampCloudDest -UseBasicParsing
 
-        # ── 6. winpeshl.ini → auto-launch Bootstrap.ps1 ──────────────────────
+        # ── 6. winpeshl.ini + batch launcher → auto-launch Bootstrap.ps1 ───────
+        # WinRE ships its own winpeshl.exe which does not reliably handle the
+        # comma-separated "<exe>, <args>" format used for direct PowerShell
+        # invocation.  Routing through cmd.exe /k avoids that parsing difference:
+        # winpeshl.ini always succeeds (cmd.exe is a guaranteed WinPE binary),
+        # and the helper batch file handles the PowerShell invocation directly.
+        #
         # -NoExit keeps the PowerShell host alive after Bootstrap.ps1 exits
         # (normally or via error), preventing an unintended reboot.
         # -Command with & invokes Bootstrap.ps1 as a child script so that any
         # exit call inside it exits only that script, not the PowerShell host.
+        # X:\ is the ramdisk root in every WinPE / WinRE environment.
+
+        # Verify PowerShell is present in the image before committing.
+        $psBinPath = Join-Path $paths.MountDir `
+            'Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
+        if (-not (Test-Path $psBinPath)) {
+            throw ('PowerShell executable not found in the mounted image ' +
+                   '(Windows\System32\WindowsPowerShell\v1.0\powershell.exe). ' +
+                   'Ensure WinPE-PowerShell.cab is compatible with the base WIM.')
+        }
+
+        $launcherPath = Join-Path $paths.MountDir 'Windows\System32\ampcloud-start.cmd'
+        @'
+@echo off
+X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -Command "& X:\Windows\System32\Bootstrap.ps1"
+'@ | Set-Content -Path $launcherPath -Encoding Ascii
+
         $winpeshlPath = Join-Path $paths.MountDir 'Windows\System32\winpeshl.ini'
         @'
 [LaunchApps]
-%SYSTEMROOT%\System32\WindowsPowerShell\v1.0\powershell.exe, -NoProfile -ExecutionPolicy Bypass -NoExit -Command "& $env:SystemRoot\System32\Bootstrap.ps1"
+X:\Windows\System32\cmd.exe, /k X:\Windows\System32\ampcloud-start.cmd
 '@ | Set-Content -Path $winpeshlPath -Encoding Ascii
 
     } catch {
