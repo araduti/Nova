@@ -8,11 +8,12 @@
     One-liner entry point. Runs on any Windows PC.
     - Auto-installs the Windows ADK + WinPE add-on if missing.
     - Builds a custom boot image in pure PowerShell (no copype.cmd / cmd.exe).
-      Prefers WinRE (Windows Recovery Environment) as the base WIM because WinRE
+      Always uses WinRE (Windows Recovery Environment) as the base WIM because WinRE
       ships with WiFi hardware drivers (Intel, Realtek, MediaTek, Qualcomm) that
       Microsoft bundles via Windows Update, enabling wireless connectivity on most
-      laptops without manual driver injection. Falls back to the ADK winpe.wim when
-      WinRE is not accessible on the source machine.
+      laptops without manual driver injection. If the local WinRE has an architecture
+      or version mismatch with the installed ADK, a fresh WinRE is obtained by
+      downloading a Windows ISO, mounting it, and extracting WinRE.wim directly.
       Recovery-specific packages (startup repair, boot recovery) are stripped from
       WinRE and the WIM is re-exported with maximum compression to keep it small.
     - Injects Bootstrap.ps1 and winpeshl.ini into the image.
@@ -31,6 +32,13 @@
 .PARAMETER WorkDir
     Root working directory for all artefacts. Default: C:\AmpCloud
 
+.PARAMETER WindowsISOUrl
+    Optional path to a local Windows ISO file, or an HTTPS URL to download one.
+    Used when a WinRE architecture or version mismatch is detected and a fresh WinRE
+    must be extracted. For amd64 a Windows Server 2025 Evaluation ISO is tried by
+    default (free download, no authentication required). For arm64 and other
+    architectures the URL must be supplied explicitly.
+
 .PARAMETER NoReboot
     Build everything but do NOT reboot. Useful for testing.
 
@@ -39,14 +47,18 @@
 
 .EXAMPLE
     .\Trigger.ps1 -NoReboot -WorkDir D:\AmpCloud
+
+.EXAMPLE
+    .\Trigger.ps1 -WindowsISOUrl 'D:\ISOs\Win11_ARM64.iso'
 #>
 
 [CmdletBinding()]
 param(
-    [string] $GitHubUser   = 'araduti',
-    [string] $GitHubRepo   = 'AmpCloud',
-    [string] $GitHubBranch = 'main',
-    [string] $WorkDir      = 'C:\AmpCloud',
+    [string] $GitHubUser      = 'araduti',
+    [string] $GitHubRepo      = 'AmpCloud',
+    [string] $GitHubBranch    = 'main',
+    [string] $WorkDir         = 'C:\AmpCloud',
+    [string] $WindowsISOUrl   = '',
     [switch] $NoReboot
 )
 
@@ -56,6 +68,12 @@ $ErrorActionPreference = 'Stop'
 # Derived paths ─ kept out of params to avoid user confusion
 $script:WinPEWorkDir = Join-Path $WorkDir 'WinPE'
 $script:RamdiskDir   = Join-Path $WorkDir 'Boot'
+
+# Windows Image Architecture integer → ADK folder name mapping.
+# Source: MSDN — ImageArchitecture enumeration used by Get-WindowsImage
+# https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/dism/imagearchitecture-enumeration
+#   0 = x86 | 5 = arm | 9 = amd64 | 12 = arm64
+$script:WimArchIntMap = @{ 0 = 'x86'; 5 = 'arm'; 9 = 'amd64'; 12 = 'arm64' }
 
 #region ── Logging ──────────────────────────────────────────────────────────────
 
@@ -184,6 +202,158 @@ function Get-WinREPath {
         return $tempWim
     }
     return $null
+}
+
+#endregion
+
+#region ── Windows ISO → WinRE extraction ───────────────────────────────────────
+
+function Get-WinREPathFromWindowsISO {
+    <#
+    .SYNOPSIS
+        Downloads (when needed) a Windows ISO and extracts WinRE.wim from it.
+    .DESCRIPTION
+        When the machine's local WinRE.wim cannot be used — because its CPU
+        architecture differs from the build target, or because its Windows build
+        number is incompatible with the installed ADK package set — this function
+        obtains a fresh WinRE that is guaranteed to be the correct architecture.
+
+        Source selection order:
+          1. $ISOUrl is a local file path → used directly (no download).
+          2. $ISOUrl is an HTTPS URL → downloaded to a temp file, deleted afterwards.
+          3. $ISOUrl is empty → a built-in default URL is tried for known
+             architectures.  For amd64 the Windows Server 2025 Evaluation ISO is
+             used (same build 26100 as Windows 11 24H2; free, no authentication).
+             For other architectures the caller must supply $ISOUrl explicitly.
+
+        The ISO is mounted with Mount-DiskImage, sources\install.wim (or
+        install.esd) is mounted read-only at a temp path, WinRE.wim is copied
+        out, then everything is dismounted and cleaned up in a finally block.
+
+    .PARAMETER Architecture
+        Target WinPE architecture string: amd64, arm64, x86, or arm.
+    .PARAMETER ISOUrl
+        Path to a local Windows ISO file, or an HTTPS URL to download one.
+        Optional — a built-in default is tried for amd64 when omitted.
+    .OUTPUTS  [string] Temp path to the extracted WinRE.wim.  The CALLER is
+              responsible for deleting this file when it is no longer needed.
+    #>
+    param(
+        [string] $Architecture,
+        [string] $ISOUrl = ''
+    )
+
+    # ── Built-in default ISO download URLs ──────────────────────────────────────
+    # Windows Server 2025 Evaluation (build 26100) is freely downloadable without
+    # authentication and shares the same Windows build number as Windows 11 24H2,
+    # making its WinRE compatible with the Windows 11 24H2 ADK package set.
+    # No publicly available evaluation ISO exists for arm64 or x86 — users must
+    # supply -WindowsISOUrl for those architectures.
+    $defaultISOUrls = @{
+        amd64 = 'https://go.microsoft.com/fwlink/?linkid=2271125'
+    }
+
+    $isoPath       = ''
+    $isoDownloaded = $false
+    $isoMounted    = $false
+    $wimMountDir   = ''
+
+    try {
+        # ── Step 1: Obtain the ISO file ──────────────────────────────────────────
+        if ($ISOUrl -and (Test-Path -LiteralPath $ISOUrl)) {
+            $isoPath = $ISOUrl
+            Write-Success "Using local Windows ISO: $isoPath"
+        } else {
+            if (-not $ISOUrl) {
+                $ISOUrl = $defaultISOUrls[$Architecture]
+                if (-not $ISOUrl) {
+                    throw ("No Windows ISO is available for architecture '$Architecture' " +
+                           "by default. Provide -WindowsISOUrl pointing to a Windows ISO " +
+                           "file or download URL (e.g. the Windows 11 $Architecture ISO " +
+                           "from https://www.microsoft.com/software-download/windows11).")
+                }
+                Write-Step "Using built-in default ISO URL for $Architecture..."
+            }
+
+            $isoPath = Join-Path $env:TEMP `
+                "ampcloud_win_iso_${Architecture}_$([System.Guid]::NewGuid().ToString('N')).iso"
+            Write-Step ('Downloading Windows ISO for ' + $Architecture +
+                        ' — this file is several GB and may take a while...')
+            try {
+                Invoke-WebRequest -Uri $ISOUrl -OutFile $isoPath -UseBasicParsing `
+                                  -TimeoutSec 7200   # 2-hour ceiling for large ISOs
+            } catch {
+                throw ("Failed to download Windows ISO from '$ISOUrl': $_`n" +
+                       'Tip: download the ISO manually and re-run with ' +
+                       "-WindowsISOUrl '<path-to-iso>'.")
+            }
+            Write-Success 'Windows ISO downloaded.'
+            $isoDownloaded = $true
+        }
+
+        # ── Step 2: Mount the ISO ────────────────────────────────────────────────
+        Write-Step 'Mounting Windows ISO...'
+        Mount-DiskImage -ImagePath $isoPath | Out-Null
+        $isoMounted     = $true
+        $isoDriveLetter = (Get-DiskImage -ImagePath $isoPath |
+                            Get-Partition | Get-Volume |
+                            Select-Object -First 1 -ExpandProperty DriveLetter)
+        if (-not $isoDriveLetter) {
+            throw ('Could not determine the drive letter of the mounted ISO. ' +
+                   'The file may be corrupted or not a valid Windows ISO.')
+        }
+        $isoDrive = "${isoDriveLetter}:\"
+
+        # ── Step 3: Locate the Windows installation image ─────────────────────────
+        $installWim = Join-Path $isoDrive 'sources\install.wim'
+        $installEsd = Join-Path $isoDrive 'sources\install.esd'
+        $wimPath = if     (Test-Path $installWim) { $installWim }
+                   elseif (Test-Path $installEsd) { $installEsd }
+                   else {
+                       throw ('Could not find sources\install.wim or sources\install.esd ' +
+                              "on the mounted ISO at $isoDrive")
+                   }
+
+        # ── Step 4: Mount the installation image read-only (first index) ──────────
+        $wimMountDir = Join-Path $env:TEMP `
+            "ampcloud_iso_wim_$([System.Guid]::NewGuid().ToString('N'))"
+        New-Item -ItemType Directory -Path $wimMountDir -Force | Out-Null
+        $imageIndex = (Get-WindowsImage -ImagePath $wimPath |
+                        Select-Object -First 1 -ExpandProperty ImageIndex)
+        if (-not $imageIndex) {
+            throw "Could not read any image index from '$wimPath' — the file may be corrupted."
+        }
+        Write-Step ("Mounting $(Split-Path $wimPath -Leaf) " +
+                    "(index $imageIndex — read-only)...")
+        Mount-WindowsImage -ImagePath $wimPath -Index $imageIndex `
+                           -Path $wimMountDir -ReadOnly | Out-Null
+
+        # ── Step 5: Copy WinRE.wim out of the installation image ──────────────────
+        $winreSrc = Join-Path $wimMountDir 'Windows\System32\Recovery\WinRE.wim'
+        if (-not (Test-Path $winreSrc)) {
+            throw "WinRE.wim not found inside the mounted Windows image at: $winreSrc"
+        }
+        $winreDest = Join-Path $env:TEMP `
+            "ampcloud_iso_winre_$([System.Guid]::NewGuid().ToString('N')).wim"
+        Write-Step 'Copying WinRE.wim from Windows installation image...'
+        Copy-Item $winreSrc $winreDest -Force
+        Write-Success 'WinRE.wim extracted from Windows ISO.'
+        return $winreDest
+
+    } finally {
+        # Clean up in reverse order; every step is always attempted.
+        if ($wimMountDir -and (Test-Path $wimMountDir)) {
+            Dismount-WindowsImage -Path $wimMountDir -Discard `
+                                  -ErrorAction SilentlyContinue | Out-Null
+            Remove-Item $wimMountDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if ($isoMounted) {
+            Dismount-DiskImage -ImagePath $isoPath -ErrorAction SilentlyContinue | Out-Null
+        }
+        if ($isoDownloaded -and $isoPath -and (Test-Path $isoPath)) {
+            Remove-Item $isoPath -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 #endregion
@@ -417,7 +587,12 @@ function Remove-WinRERecoveryPackages {
 
 function Build-WinPE {
     <#
-    .SYNOPSIS  Builds a fully customised WinRE/WinPE boot image ready for ramdisk boot.
+    .SYNOPSIS  Builds a fully customised WinRE boot image ready for ramdisk boot.
+    .DESCRIPTION
+        Always uses WinRE as the base WIM.  When the machine's local WinRE cannot
+        be used (architecture mismatch or ADK package version mismatch), a fresh
+        WinRE is obtained by calling Get-WinREPathFromWindowsISO, which downloads
+        a Windows ISO, mounts it, and extracts WinRE.wim.
     .OUTPUTS   [hashtable] Keys: MediaDir, MountDir, BootWim
     #>
     param(
@@ -426,24 +601,91 @@ function Build-WinPE {
         [string] $Architecture,
         [string] $GitHubUser,
         [string] $GitHubRepo,
-        [string] $GitHubBranch
+        [string] $GitHubBranch,
+        [string] $WindowsISOUrl  = '',   # User-supplied ISO path or URL for WinRE extraction
+        [string] $_ISOWinREPath  = ''    # Internal — pre-extracted ISO WinRE path (retry only)
     )
 
-    # ── 0. Prefer WinRE as the base WIM (built-in WiFi hardware drivers) ────────
-    # WinRE ships with WiFi hardware drivers (Intel, Realtek, MediaTek, Qualcomm)
-    # that Microsoft delivers via Windows Update. Using WinRE as the base image
-    # means WiFi works on most laptops without manually injecting device drivers.
-    # If WinRE is not accessible on this machine, the ADK winpe.wim is used as
-    # a fallback (existing behaviour; WiFi requires manual driver injection).
-    Write-Step 'Locating WinRE.wim to use as base image (built-in WiFi drivers)...'
-    $winrePath   = Get-WinREPath
-    $usingWinRE  = $null -ne $winrePath
-    $isTempWinRE = $usingWinRE -and ($winrePath -like "$env:TEMP\*")
+    # Preserve the caller-supplied architecture.  On a retry the recursive call
+    # always passes the original host architecture so the ISO WinRE, the ADK
+    # media files, and the package set are all guaranteed to be consistent.
+    $originalArchitecture = $Architecture
 
-    if ($usingWinRE) {
-        Write-Success 'WinRE found — WiFi hardware drivers will be available in the boot image.'
+    # ── 0. Locate WinRE base image ────────────────────────────────────────────────
+    # WinRE ships with WiFi hardware drivers (Intel, Realtek, MediaTek, Qualcomm)
+    # that Microsoft delivers via Windows Update, enabling wireless on most laptops.
+
+    # $wimSourceToDelete tracks any temp WIM file that must be removed once
+    # Copy-WinPEFiles has finished (it copies the file into the workspace).
+    $wimSourceToDelete = $null
+
+    if ($_ISOWinREPath) {
+        # ── Retry path: use the WinRE pre-extracted from a Windows ISO ───────────
+        Write-Warn 'Using WinRE extracted from Windows ISO (fresh copy).'
+        $winrePath   = $_ISOWinREPath
+        $usingWinRE  = $true
+        $wimSourceToDelete = $_ISOWinREPath   # clean up after Copy-WinPEFiles
     } else {
-        Write-Warn 'WinRE.wim not found — falling back to ADK winpe.wim (WiFi requires manual driver injection).'
+        # ── First attempt: try the machine's local WinRE ─────────────────────────
+        Write-Step 'Locating WinRE.wim to use as base image (built-in WiFi drivers)...'
+        $localWinRE  = Get-WinREPath
+        $usingWinRE  = $false
+        $winrePath   = $null
+
+        if ($localWinRE) {
+            # ── Detect the WIM's actual architecture ─────────────────────────────
+            # Uses the script-level $script:WimArchIntMap (defined at the top of
+            # this file) to translate the DISM Architecture integer to an ADK folder
+            # name.  Applying ADK packages for arch A to a WIM built for arch B
+            # fails with 0x800f081e (CBS_E_NOT_APPLICABLE).  If the WIM arch differs
+            # from the target arch, discard this WinRE and fetch the correct one.
+            $wimArch = $null
+            try {
+                $wimInfo = Get-WindowsImage -ImagePath $localWinRE -Index 1 -ErrorAction Stop
+                $archInt = $wimInfo.Architecture -as [int]
+                if ($null -eq $archInt) {
+                    Write-Warn ("WinRE image returned a non-integer Architecture value " +
+                                "('$($wimInfo.Architecture)') — skipping arch check.")
+                } else {
+                    $wimArch = $script:WimArchIntMap[$archInt]
+                    if (-not $wimArch) {
+                        Write-Warn ("Unrecognized WinRE image architecture value " +
+                                    "($archInt) — skipping arch check.")
+                    }
+                }
+            } catch {
+                Write-Warn "Could not read WinRE image metadata: $_"
+            }
+
+            if ($wimArch -and $wimArch -ne $Architecture) {
+                # Architecture mismatch — clean up the local temp WinRE (if any)
+                # and obtain a correct-arch WinRE from a Windows ISO instead.
+                Write-Warn ("Local WinRE is $wimArch but the build target is $Architecture. " +
+                            'Fetching a fresh WinRE from a Windows ISO...')
+                if ($localWinRE -like "$env:TEMP\*") {
+                    Remove-Item $localWinRE -Force -ErrorAction SilentlyContinue
+                }
+                $winrePath         = Get-WinREPathFromWindowsISO -Architecture $Architecture `
+                                                                  -ISOUrl $WindowsISOUrl
+                $usingWinRE        = $true
+                $wimSourceToDelete = $winrePath
+            } else {
+                # Architecture matches — use the local WinRE directly.
+                Write-Success 'WinRE found — WiFi hardware drivers will be available in the boot image.'
+                $winrePath = $localWinRE
+                $usingWinRE = $true
+                if ($localWinRE -like "$env:TEMP\*") {
+                    $wimSourceToDelete = $localWinRE
+                }
+            }
+        } else {
+            Write-Warn ('WinRE.wim not found on this machine. ' +
+                        'Fetching WinRE from a Windows ISO...')
+            $winrePath         = Get-WinREPathFromWindowsISO -Architecture $Architecture `
+                                                              -ISOUrl $WindowsISOUrl
+            $usingWinRE        = $true
+            $wimSourceToDelete = $winrePath
+        }
     }
 
     # ── 1. Create workspace ──────────────────────────────────────────────────
@@ -451,9 +693,11 @@ function Build-WinPE {
         $paths = Copy-WinPEFiles -ADKRoot $ADKRoot -Destination $WorkDir `
                                  -Architecture $Architecture -WimSource $winrePath
     } finally {
-        # Release temp WinRE copy (on recovery partition) regardless of success/failure
-        if ($isTempWinRE -and $winrePath -and (Test-Path $winrePath)) {
-            Remove-Item $winrePath -Force -ErrorAction SilentlyContinue
+        # Release the temp WinRE file once Copy-WinPEFiles has copied it into the
+        # workspace.  This covers all temp sources: recovery-partition copies,
+        # ISO-extracted WinRE files, and retry-path pre-extracted WinREs.
+        if ($wimSourceToDelete -and (Test-Path $wimSourceToDelete)) {
+            Remove-Item $wimSourceToDelete -Force -ErrorAction SilentlyContinue
         }
     }
 
@@ -461,6 +705,7 @@ function Build-WinPE {
     Write-Step 'Mounting boot.wim...'
     Mount-WindowsImage -ImagePath $paths.BootWim -Index 1 -Path $paths.MountDir | Out-Null
 
+    $retryWithISOWinRE = $false   # set to $true inside the try if version mismatch detected
     try {
         # ── 3. Slim WinRE by removing recovery tools (not needed for deployment) ──
         if ($usingWinRE) {
@@ -552,6 +797,16 @@ function Build-WinPE {
         $psBinPath = Join-Path $paths.MountDir `
             'Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
         if (-not (Test-Path $psBinPath)) {
+            if ($usingWinRE -and -not $_ISOWinREPath) {
+                # WinPE-PowerShell.cab could not be applied to this WinRE because the
+                # ADK package set targets a different Windows build.  Set a flag so
+                # the catch block can discard this attempt, obtain a fresh WinRE from
+                # a Windows ISO (guaranteed to be the correct build), and retry.
+                # The $_ISOWinREPath guard means the retry path (where $_ISOWinREPath
+                # is set) takes the hard-error branch below — one retry maximum.
+                $retryWithISOWinRE = $true
+                throw 'PowerShell not found in WinRE image — ADK / WinRE version mismatch.'
+            }
             throw ('PowerShell executable not found in the mounted image ' +
                    '(Windows\System32\WindowsPowerShell\v1.0\powershell.exe). ' +
                    'Ensure WinPE-PowerShell.cab is compatible with the base WIM.')
@@ -573,6 +828,31 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\ampcloud-start.cmd
         # Always clean up a dangling mount on failure
         Write-Warn 'Customisation failed — discarding mounted image to avoid corruption.'
         Dismount-WindowsImage -Path $paths.MountDir -Discard -ErrorAction SilentlyContinue | Out-Null
+
+        # ── WinRE / ADK version mismatch — fetch fresh WinRE from Windows ISO ──────
+        # WinPE-PowerShell.cab could not be applied because the ADK package set
+        # targets a different Windows build than the local WinRE.  Obtain a fresh
+        # WinRE by downloading a Windows ISO, mounting it, and extracting WinRE.wim.
+        # The ISO WinRE is always a valid WinRE; its build may still not match the
+        # ADK perfectly, but since we are now on the second attempt the hard error
+        # path is taken if PowerShell is still absent.
+        if ($retryWithISOWinRE) {
+            Write-Warn ('WinPE-PowerShell.cab is not compatible with the local WinRE image ' +
+                        '(ADK / WinRE version mismatch). ' +
+                        'Fetching a fresh WinRE from a Windows ISO and retrying...')
+            $freshWinRE = Get-WinREPathFromWindowsISO -Architecture $originalArchitecture `
+                                                       -ISOUrl $WindowsISOUrl
+            if (Test-Path $WorkDir) {
+                Remove-Item $WorkDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            return Build-WinPE -ADKRoot $ADKRoot -WorkDir $WorkDir `
+                               -Architecture $originalArchitecture `
+                               -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo `
+                               -GitHubBranch $GitHubBranch `
+                               -WindowsISOUrl $WindowsISOUrl `
+                               -_ISOWinREPath $freshWinRE
+        }
+
         throw
     }
 
@@ -769,12 +1049,13 @@ try {
 
     # ── 2. Boot image (WinRE preferred, WinPE fallback) ──────────────────────
     $paths = Build-WinPE `
-        -ADKRoot      $adkRoot `
-        -WorkDir      $script:WinPEWorkDir `
-        -Architecture $arch `
-        -GitHubUser   $GitHubUser `
-        -GitHubRepo   $GitHubRepo `
-        -GitHubBranch $GitHubBranch
+        -ADKRoot        $adkRoot `
+        -WorkDir        $script:WinPEWorkDir `
+        -Architecture   $arch `
+        -GitHubUser     $GitHubUser `
+        -GitHubRepo     $GitHubRepo `
+        -GitHubBranch   $GitHubBranch `
+        -WindowsISOUrl  $WindowsISOUrl
 
     # ── 3. BCD ────────────────────────────────────────────────────────────────
     New-BCDRamdiskEntry `
