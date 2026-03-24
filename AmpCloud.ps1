@@ -195,7 +195,11 @@ function Initialize-TargetDisk {
         # Windows OS Partition - all remaining space
         $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -GptType '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}'
         $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false | Out-Null
-        Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
+        # Format-Volume may auto-assign the drive letter; only reassign if needed.
+        $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
+        if ([string]$currentLetter -ne [string]$OSDriveLetter) {
+            Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
+        }
 
     } else {
         # Initialize as MBR
@@ -209,7 +213,11 @@ function Initialize-TargetDisk {
         # Windows OS Partition - remaining
         $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -MbrType 7
         $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false | Out-Null
-        Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
+        # Format-Volume may auto-assign the drive letter; only reassign if needed.
+        $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
+        if ([string]$currentLetter -ne [string]$OSDriveLetter) {
+            Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
+        }
     }
 
     Write-Success "Disk $DiskNumber partitioned. OS drive: ${OSDriveLetter}:"
