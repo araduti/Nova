@@ -101,15 +101,30 @@ $Strings = @{
     EN = @{ Header="A M P C L O U D"; Step1="Network"; Step2="Connect"; Step3="Load Engine";
             StatusInit="🌐 Initialising network stack..."; StatusNoNet="No wired internet detected`nTap below to connect via WiFi";
             Connected="✅ Connected! Loading imaging engine..."; Download="📥 Downloading AmpCloud.ps1 ({0}%)";
-            Complete="🎉 Setup complete!"; Reboot="Reboot Now"; PowerOff="Power Off"; Shell="Drop to Shell" }
+            Complete="🎉 Setup complete!"; Reboot="Reboot Now"; PowerOff="Power Off"; Shell="Drop to Shell";
+            CatalogFetch="📋 Fetching available Windows editions...";
+            CatalogFail="⚠️ Could not fetch edition catalog. Using default edition.";
+            EditionTitle="Select Windows Edition";
+            EditionLabel="Choose the Windows edition to install:";
+            EditionBtn="Install →" }
     FR = @{ Header="A M P C L O U D"; Step1="Réseau"; Step2="Connexion"; Step3="Chargement";
             StatusInit="🌐 Initialisation du réseau..."; StatusNoNet="Pas de connexion filaire`nAppuyez ci-dessous pour le WiFi";
             Connected="✅ Connecté ! Lancement du moteur..."; Download="📥 Téléchargement AmpCloud.ps1 ({0}%)";
-            Complete="🎉 Configuration terminée !"; Reboot="Redémarrer maintenant"; PowerOff="Éteindre"; Shell="Ouvrir le shell" }
+            Complete="🎉 Configuration terminée !"; Reboot="Redémarrer maintenant"; PowerOff="Éteindre"; Shell="Ouvrir le shell";
+            CatalogFetch="📋 Récupération des éditions Windows disponibles...";
+            CatalogFail="⚠️ Impossible de récupérer le catalogue. Édition par défaut utilisée.";
+            EditionTitle="Sélectionner l'édition Windows";
+            EditionLabel="Choisissez l'édition Windows à installer :";
+            EditionBtn="Installer →" }
     ES = @{ Header="A M P C L O U D"; Step1="Red"; Step2="Conectar"; Step3="Cargar";
             StatusInit="🌐 Inicializando red..."; StatusNoNet="Sin internet cableado`nToque abajo para WiFi";
             Connected="✅ ¡Conectado! Cargando motor..."; Download="📥 Descargando AmpCloud.ps1 ({0}%)";
-            Complete="🎉 ¡Configuración completa!"; Reboot="Reiniciar ahora"; PowerOff="Apagar"; Shell="Abrir shell" }
+            Complete="🎉 ¡Configuración completa!"; Reboot="Reiniciar ahora"; PowerOff="Apagar"; Shell="Abrir shell";
+            CatalogFetch="📋 Obteniendo ediciones de Windows disponibles...";
+            CatalogFail="⚠️ No se pudo obtener el catálogo. Usando edición predeterminada.";
+            EditionTitle="Seleccionar edición de Windows";
+            EditionLabel="Elija la edición de Windows a instalar:";
+            EditionBtn="Instalar →" }
 }
 $S = $Strings[$Lang]
 #endregion
@@ -702,6 +717,149 @@ function Show-CompletionScreen {
 #region ── Main Flow ─────────────────────────────────────────────────────────
 $script:EngineStarted = $false
 
+function Select-WindowsEdition {
+    <#
+    .SYNOPSIS  Downloads the Microsoft ESD catalog and shows a ComboBox so the
+               user can pick the exact Windows edition to install.
+    .OUTPUTS   The chosen edition string (e.g. "Windows 11 Pro"), or '' when
+               the catalog cannot be fetched or the dialog is cancelled.
+    #>
+
+    # Map Bootstrap language codes to catalog LanguageCode values.
+    $langMap     = @{ 'EN' = 'en-us'; 'FR' = 'fr-fr'; 'ES' = 'es-es' }
+    $catalogLang = if ($langMap.ContainsKey($script:Lang)) { $langMap[$script:Lang] } else { 'en-us' }
+
+    Write-Status $S.CatalogFetch 'Cyan'
+    [System.Windows.Forms.Application]::DoEvents()
+
+    # Ensure scratch directory exists (same path AmpCloud.ps1 will use).
+    $scratchPath = 'X:\AmpCloud'
+    if (-not (Test-Path $scratchPath)) {
+        New-Item -ItemType Directory -Path $scratchPath -Force | Out-Null
+    }
+    $catalogCab = Join-Path $scratchPath 'catalog.cab'
+    $catalogXml = Join-Path $scratchPath 'catalog.xml'
+
+    # Async download so the ring animation continues to spin.
+    try {
+        $wc   = New-Object System.Net.WebClient
+        $task = $wc.DownloadFileTaskAsync('https://go.microsoft.com/fwlink/?LinkId=2156292', $catalogCab)
+        while (-not $task.IsCompleted) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 100
+        }
+        if ($task.IsFaulted) { throw $task.Exception.InnerException }
+
+        # Extract catalog.cab — expand.exe is available in every WinPE image.
+        & expand.exe $catalogCab -F:* $catalogXml | Out-Null
+    } catch {
+        Write-Status $S.CatalogFail 'Yellow'
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Seconds 2
+        return ''
+    }
+
+    if (-not (Test-Path $catalogXml)) {
+        Write-Status $S.CatalogFail 'Yellow'
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Seconds 2
+        return ''
+    }
+
+    # Parse the catalog XML and collect unique edition names (amd64 only).
+    try {
+        [xml]$catalog = Get-Content $catalogXml -ErrorAction Stop
+        $editions = @(
+            $catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
+                Where-Object { $_.LanguageCode -eq $catalogLang -and $_.Architecture -eq 'amd64' } |
+                Select-Object -ExpandProperty Edition |
+                Sort-Object -Unique
+        )
+        # Fall back to English if the selected language has no entries.
+        if (-not $editions -or $editions.Count -eq 0) {
+            $editions = @(
+                $catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
+                    Where-Object { $_.LanguageCode -eq 'en-us' -and $_.Architecture -eq 'amd64' } |
+                    Select-Object -ExpandProperty Edition |
+                    Sort-Object -Unique
+            )
+        }
+    } catch {
+        Write-Status $S.CatalogFail 'Yellow'
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Seconds 2
+        return ''
+    }
+
+    if (-not $editions -or $editions.Count -eq 0) {
+        Write-Status $S.CatalogFail 'Yellow'
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Seconds 2
+        return ''
+    }
+
+    # ── Edition selector dialog (same Fluent style as Select-Language) ──────
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text            = $S.EditionTitle
+    $dlg.Size            = New-Object System.Drawing.Size(520, 280)
+    $dlg.StartPosition   = 'CenterScreen'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MaximizeBox     = $false
+    $dlg.MinimizeBox     = $false
+    $dlg.Font            = New-Object System.Drawing.Font('Segoe UI', 10)
+    $dlg.BackColor       = [System.Drawing.Color]::White
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text      = $S.EditionLabel
+    $lbl.Location  = New-Object System.Drawing.Point(30, 30)
+    $lbl.Size      = New-Object System.Drawing.Size(440, 30)
+    $lbl.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
+    $dlg.Controls.Add($lbl)
+
+    $combo = New-Object System.Windows.Forms.ComboBox
+    $combo.Items.AddRange($editions)
+    $combo.DropDownStyle = 'DropDownList'
+    $combo.FlatStyle     = 'Flat'
+    $combo.Location      = New-Object System.Drawing.Point(30, 72)
+    $combo.Width         = 440
+
+    # Pre-select Windows 11 Pro if available; fall back to any plain Pro edition.
+    $defaultIdx = 0
+    $foundPref  = $false
+    for ($i = 0; $i -lt $editions.Count; $i++) {
+        if ($editions[$i] -eq 'Windows 11 Pro') { $defaultIdx = $i; $foundPref = $true; break }
+    }
+    if (-not $foundPref) {
+        for ($i = 0; $i -lt $editions.Count; $i++) {
+            if ($editions[$i] -like '*Pro*' -and
+                $editions[$i] -notlike '*Education*' -and
+                $editions[$i] -notlike '*Workstation*') {
+                $defaultIdx = $i; break
+            }
+        }
+    }
+    $combo.SelectedIndex = $defaultIdx
+    $dlg.Controls.Add($combo)
+
+    $btn = New-Object System.Windows.Forms.Button
+    $btn.Text                        = $S.EditionBtn
+    $btn.Location                    = New-Object System.Drawing.Point(175, 170)
+    $btn.Size                        = New-Object System.Drawing.Size(150, 42)
+    $btn.BackColor                   = [System.Drawing.Color]::FromArgb(0, 120, 212)
+    $btn.ForeColor                   = [System.Drawing.Color]::White
+    $btn.FlatStyle                   = 'Flat'
+    $btn.FlatAppearance.BorderSize   = 0
+    $btn.Font                        = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $btn.DialogResult                = 'OK'
+    $dlg.Controls.Add($btn)
+    $dlg.AcceptButton = $btn
+
+    if ($dlg.ShowDialog() -eq 'OK' -and $null -ne $combo.SelectedItem) {
+        return $combo.SelectedItem.ToString()
+    }
+    return ''
+}
+
 function ProceedToEngine {
     # Guard: prevent double invocation from both timer and WiFi click handler.
     if ($script:EngineStarted) { return }
@@ -714,13 +872,17 @@ function ProceedToEngine {
     $ringPanel.Visible = $true
     $ringTimer.Start()
 
+    # Download the ESD catalog and let the user pick a Windows edition.
+    $script:SelectedEdition = Select-WindowsEdition
+    $editionArgs = if ($script:SelectedEdition) { @('-WindowsEdition', $script:SelectedEdition) } else { @() }
+
     # Prefer the pre-staged copy embedded in the WinPE image by Trigger.ps1.
     # Fall back to downloading from GitHub when the local copy is absent.
     $engineFailed = $false
     try {
         $localAmpCloud = Join-Path $env:SystemRoot 'System32\AmpCloud.ps1'
         if (Test-Path $localAmpCloud) {
-            & $localAmpCloud
+            & $localAmpCloud @editionArgs
         } else {
             $url    = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
             $dlPath = 'X:\AmpCloud.ps1'
@@ -736,7 +898,7 @@ function ProceedToEngine {
                 Start-Sleep -Milliseconds 100
             }
             if ($task.IsFaulted) { throw $task.Exception.InnerException }
-            & $dlPath
+            & $dlPath @editionArgs
         }
     } catch {
         # Engine already printed diagnostics; close the UI so the console
