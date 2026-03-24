@@ -737,21 +737,18 @@ function Select-WindowsEdition {
     if (-not (Test-Path $scratchPath)) {
         New-Item -ItemType Directory -Path $scratchPath -Force | Out-Null
     }
-    $catalogCab = Join-Path $scratchPath 'catalog.cab'
-    $catalogXml = Join-Path $scratchPath 'catalog.xml'
+    $productsXml = Join-Path $scratchPath 'products.xml'
 
-    # Async download so the ring animation continues to spin.
+    # Download products.xml directly from the repository — no CAB extraction needed.
     try {
+        $productsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/products.xml"
         $wc   = New-Object System.Net.WebClient
-        $task = $wc.DownloadFileTaskAsync('https://go.microsoft.com/fwlink/?LinkId=2156292', $catalogCab)
+        $task = $wc.DownloadFileTaskAsync($productsUrl, $productsXml)
         while (-not $task.IsCompleted) {
             [System.Windows.Forms.Application]::DoEvents()
             Start-Sleep -Milliseconds 100
         }
         if ($task.IsFaulted) { throw $task.Exception.InnerException }
-
-        # Extract catalog.cab — expand.exe is available in every WinPE image.
-        & expand.exe $catalogCab -F:* $catalogXml | Out-Null
     } catch {
         Write-Status $S.CatalogFail 'Yellow'
         [System.Windows.Forms.Application]::DoEvents()
@@ -759,19 +756,19 @@ function Select-WindowsEdition {
         return ''
     }
 
-    if (-not (Test-Path $catalogXml)) {
+    if (-not (Test-Path $productsXml)) {
         Write-Status $S.CatalogFail 'Yellow'
         [System.Windows.Forms.Application]::DoEvents()
         Start-Sleep -Seconds 2
         return ''
     }
 
-    # Parse the catalog XML and collect unique edition names (amd64 only).
+    # Parse the catalog XML and collect unique edition names (x64 only).
     try {
-        [xml]$catalog = Get-Content $catalogXml -ErrorAction Stop
+        [xml]$catalog = Get-Content $productsXml -ErrorAction Stop
         $editions = @(
             $catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
-                Where-Object { $_.LanguageCode -eq $catalogLang -and $_.Architecture -eq 'amd64' } |
+                Where-Object { $_.LanguageCode -eq $catalogLang -and $_.Architecture -eq 'x64' } |
                 Select-Object -ExpandProperty Edition |
                 Sort-Object -Unique
         )
@@ -779,7 +776,7 @@ function Select-WindowsEdition {
         if (-not $editions -or $editions.Count -eq 0) {
             $editions = @(
                 $catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
-                    Where-Object { $_.LanguageCode -eq 'en-us' -and $_.Architecture -eq 'amd64' } |
+                    Where-Object { $_.LanguageCode -eq 'en-us' -and $_.Architecture -eq 'x64' } |
                     Select-Object -ExpandProperty Edition |
                     Sort-Object -Unique
             )

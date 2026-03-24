@@ -28,7 +28,7 @@ param(
     [string]$FirmwareType  = 'UEFI',
 
     # Windows image source
-    # Set to a direct URL to a .wim/.esd, or leave empty to use Microsoft ESD catalog
+    # Set to a direct URL to a .wim/.esd, or leave empty to use products.xml from the repository
     [string]$WindowsImageUrl = '',
     [string]$WindowsEdition  = 'Windows 11 Pro',
     [string]$WindowsLanguage = 'en-us',
@@ -220,27 +220,6 @@ function Initialize-TargetDisk {
 
 #region ── Windows Image Download ───────────────────────────────────────────────
 
-function Get-WindowsESDCatalog {
-    param([string]$Language)
-
-    Write-Step 'Fetching Windows ESD catalog from Microsoft...'
-    $catalogUrl = "https://go.microsoft.com/fwlink/?LinkId=2156292"
-    $catalogPath = Join-Path $ScratchDir 'catalog.cab'
-    $catalogXml  = Join-Path $ScratchDir 'catalog.xml'
-
-    Invoke-DownloadWithProgress -Uri $catalogUrl -OutFile $catalogPath -Description 'Downloading Windows ESD catalog'
-
-    # Extract catalog.cab using expand.exe (Windows native CAB extractor).
-    # There is no pure PowerShell equivalent for CAB expansion that is reliable
-    # in WinPE; Shell.Application.CopyHere is asynchronous and not safe here.
-    & expand.exe $catalogPath -F:* $catalogXml | Out-Null
-
-    if (-not (Test-Path $catalogXml)) { throw 'ESD catalog XML not found after extraction.' }
-
-    [xml]$catalog = Get-Content $catalogXml
-    return $catalog
-}
-
 function Find-WindowsESD {
     param(
         [xml]$Catalog,
@@ -250,7 +229,7 @@ function Find-WindowsESD {
         [string]$FirmwareType
     )
 
-    $arch = 'amd64'
+    $arch = 'x64'
     $matchedEsd = $Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
         Where-Object {
             $_.LanguageCode -eq $Language -and
@@ -286,8 +265,12 @@ function Get-WindowsImageSource {
         return $imagePath
     }
 
-    # Fetch from Microsoft ESD catalog
-    $catalog = Get-WindowsESDCatalog -Language $Language
+    # Read the ESD catalog directly from the repository.
+    Write-Step 'Reading Windows ESD catalog from repository...'
+    $productsUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/products.xml"
+    $productsPath = Join-Path $ScratchDir 'products.xml'
+    Invoke-DownloadWithProgress -Uri $productsUrl -OutFile $productsPath -Description 'Fetching Windows ESD catalog'
+    [xml]$catalog = Get-Content $productsPath -Encoding UTF8
     $esd     = Find-WindowsESD -Catalog $catalog -Edition $Edition -Language $Language -FirmwareType $FirmwareType
 
     Write-Host "  Found ESD: $($esd.FileName) ($([long]$esd.Size | ForEach-Object { Get-FileSizeReadable $_ }))"
