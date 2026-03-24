@@ -39,6 +39,19 @@ $null = Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyCont
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# ── Hide console window ────────────────────────────────────────────────────
+# WinPE boots into cmd.exe → powershell.exe via winpeshl.ini.  The parent
+# console window is visible behind the WinForms UI and looks unprofessional,
+# so hide it immediately before any dialog is shown.
+$null = Add-Type -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+[DllImport("user32.dll")]   public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+'@ -Name ConsoleWindow -Namespace Win32 -PassThru
+$consoleHandle = [Win32.ConsoleWindow]::GetConsoleWindow()
+if ($consoleHandle -ne [IntPtr]::Zero) {
+    $null = [Win32.ConsoleWindow]::ShowWindow($consoleHandle, 0)  # SW_HIDE
+}
+
 # ── TLS ─────────────────────────────────────────────────────────────────────
 # PowerShell 5.1 in WinPE defaults to SSL3/TLS 1.0.  Modern HTTPS endpoints
 # (msftconnecttest, GitHub, etc.) require TLS 1.2, so enforce it up front.
