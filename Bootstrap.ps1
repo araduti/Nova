@@ -39,6 +39,19 @@ $null = Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyCont
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# ── Hide console window ────────────────────────────────────────────────────
+# WinPE boots into cmd.exe → powershell.exe via winpeshl.ini.  The parent
+# console window is visible behind the WinForms UI and looks unprofessional,
+# so hide it immediately before any dialog is shown.
+$null = Add-Type -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
+[DllImport("user32.dll")]   public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+'@ -Name ConsoleWindow -Namespace Win32 -PassThru
+$consoleHandle = [Win32.ConsoleWindow]::GetConsoleWindow()
+if ($consoleHandle -ne [IntPtr]::Zero) {
+    $null = [Win32.ConsoleWindow]::ShowWindow($consoleHandle, 0)  # SW_HIDE
+}
+
 # ── TLS ─────────────────────────────────────────────────────────────────────
 # PowerShell 5.1 in WinPE defaults to SSL3/TLS 1.0.  Modern HTTPS endpoints
 # (msftconnecttest, GitHub, etc.) require TLS 1.2, so enforce it up front.
@@ -67,45 +80,75 @@ $script:BulletChar             = [char]0x2022  # '•' used in progress text
 $script:Lang = 'EN'
 function Select-Language {
     [System.Windows.Forms.Application]::EnableVisualStyles()
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text            = "AmpCloud — Language / Langue / Idioma"
-    $dlg.Size            = New-Object System.Drawing.Size(480, 300)
-    $dlg.StartPosition   = "CenterScreen"
-    $dlg.FormBorderStyle = "FixedDialog"
-    $dlg.MaximizeBox     = $false
-    $dlg.MinimizeBox     = $false
-    $dlg.Font            = New-Object System.Drawing.Font("Segoe UI", 10)
-    $dlg.BackColor       = [System.Drawing.Color]::White
 
-    $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text      = "Choose your language / Choisissez votre langue / Elija su idioma"
-    $lbl.Location  = New-Object System.Drawing.Point(30, 30)
-    $lbl.Size      = New-Object System.Drawing.Size(400, 40)
-    $lbl.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
-    $dlg.Controls.Add($lbl)
+    $accentBlue = [System.Drawing.Color]::FromArgb(0, 120, 212)
+    $bgColor    = [System.Drawing.Color]::FromArgb(32, 32, 32)
+    $cardColor  = [System.Drawing.Color]::FromArgb(45, 45, 45)
+    $fgColor    = [System.Drawing.Color]::White
+    $subtleText = [System.Drawing.Color]::FromArgb(170, 170, 170)
+    $inputBg    = [System.Drawing.Color]::FromArgb(60, 60, 60)
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text            = "AmpCloud"
+    $dlg.Size            = New-Object System.Drawing.Size(520, 380)
+    $dlg.StartPosition   = "CenterScreen"
+    $dlg.FormBorderStyle = "None"
+    $dlg.BackColor       = $bgColor
+    $dlg.Font            = New-Object System.Drawing.Font("Segoe UI", 10)
+    $dlg.ShowInTaskbar   = $true
+
+    # ── Title label ─────────────────────────────────────────────────────────
+    $titleLbl = New-Object System.Windows.Forms.Label
+    $titleLbl.Text      = "A M P C L O U D"
+    $titleLbl.Location  = New-Object System.Drawing.Point(0, 40)
+    $titleLbl.Size      = New-Object System.Drawing.Size(520, 40)
+    $titleLbl.Font      = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
+    $titleLbl.ForeColor = $fgColor
+    $titleLbl.TextAlign = "MiddleCenter"
+    $dlg.Controls.Add($titleLbl)
+
+    # ── Subtitle ────────────────────────────────────────────────────────────
+    $subLbl = New-Object System.Windows.Forms.Label
+    $subLbl.Text      = "Choose your language / Choisissez votre langue / Elija su idioma"
+    $subLbl.Location  = New-Object System.Drawing.Point(0, 90)
+    $subLbl.Size      = New-Object System.Drawing.Size(520, 30)
+    $subLbl.ForeColor = $subtleText
+    $subLbl.TextAlign = "MiddleCenter"
+    $dlg.Controls.Add($subLbl)
+
+    # ── Card panel ──────────────────────────────────────────────────────────
+    $card = New-Object System.Windows.Forms.Panel
+    $card.Location  = New-Object System.Drawing.Point(60, 140)
+    $card.Size      = New-Object System.Drawing.Size(400, 180)
+    $card.BackColor = $cardColor
+    $dlg.Controls.Add($card)
 
     $combo = New-Object System.Windows.Forms.ComboBox
     $combo.Items.AddRange(@("English (EN)", "Français (FR)", "Español (ES)"))
     $combo.SelectedIndex  = 0
-    $combo.Location       = New-Object System.Drawing.Point(30, 80)
-    $combo.Width          = 400
+    $combo.Location       = New-Object System.Drawing.Point(30, 30)
+    $combo.Width          = 340
     $combo.Height         = 32
     $combo.DropDownStyle  = "DropDownList"
     $combo.FlatStyle      = "Flat"
-    $dlg.Controls.Add($combo)
+    $combo.BackColor      = $inputBg
+    $combo.ForeColor      = $fgColor
+    $combo.Font           = New-Object System.Drawing.Font("Segoe UI", 11)
+    $card.Controls.Add($combo)
 
     $btn = New-Object System.Windows.Forms.Button
-    $btn.Text             = "Continue →"
-    $btn.Location         = New-Object System.Drawing.Point(160, 180)
-    $btn.Size             = New-Object System.Drawing.Size(150, 42)
-    $btn.BackColor        = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $btn.ForeColor        = [System.Drawing.Color]::White
-    $btn.FlatStyle        = "Flat"
+    $btn.Text                      = "Continue →"
+    $btn.Location                  = New-Object System.Drawing.Point(100, 110)
+    $btn.Size                      = New-Object System.Drawing.Size(200, 46)
+    $btn.BackColor                 = $accentBlue
+    $btn.ForeColor                 = [System.Drawing.Color]::White
+    $btn.FlatStyle                 = "Flat"
     $btn.FlatAppearance.BorderSize = 0
-    $btn.Font             = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $btn.DialogResult     = "OK"
-    $dlg.Controls.Add($btn)
-    $dlg.AcceptButton     = $btn
+    $btn.Font                      = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
+    $btn.Cursor                    = [System.Windows.Forms.Cursors]::Hand
+    $btn.DialogResult              = "OK"
+    $card.Controls.Add($btn)
+    $dlg.AcceptButton = $btn
 
     if ($dlg.ShowDialog() -eq "OK") {
         switch ($combo.SelectedIndex) {
@@ -897,30 +940,58 @@ function Select-WindowsEdition {
         return ''
     }
 
-    # ── Edition selector dialog (same Fluent style as Select-Language) ──────
+    # ── Edition selector dialog (Fluent dark style) ──────────────────────────
+    $accentBlue = [System.Drawing.Color]::FromArgb(0, 120, 212)
+    $bgColor    = [System.Drawing.Color]::FromArgb(32, 32, 32)
+    $cardColor  = [System.Drawing.Color]::FromArgb(45, 45, 45)
+    $fgColor    = [System.Drawing.Color]::White
+    $subtleText = [System.Drawing.Color]::FromArgb(170, 170, 170)
+    $inputBg    = [System.Drawing.Color]::FromArgb(60, 60, 60)
+
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text            = $S.EditionTitle
-    $dlg.Size            = New-Object System.Drawing.Size(520, 280)
+    $dlg.Size            = New-Object System.Drawing.Size(520, 380)
     $dlg.StartPosition   = 'CenterScreen'
-    $dlg.FormBorderStyle = 'FixedDialog'
-    $dlg.MaximizeBox     = $false
-    $dlg.MinimizeBox     = $false
+    $dlg.FormBorderStyle = 'None'
+    $dlg.BackColor       = $bgColor
     $dlg.Font            = New-Object System.Drawing.Font('Segoe UI', 10)
-    $dlg.BackColor       = [System.Drawing.Color]::White
+    $dlg.ShowInTaskbar   = $true
 
-    $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text      = $S.EditionLabel
-    $lbl.Location  = New-Object System.Drawing.Point(30, 30)
-    $lbl.Size      = New-Object System.Drawing.Size(440, 30)
-    $lbl.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
-    $dlg.Controls.Add($lbl)
+    # ── Title ───────────────────────────────────────────────────────────────
+    $titleLbl = New-Object System.Windows.Forms.Label
+    $titleLbl.Text      = $S.EditionTitle
+    $titleLbl.Location  = New-Object System.Drawing.Point(0, 40)
+    $titleLbl.Size      = New-Object System.Drawing.Size(520, 40)
+    $titleLbl.Font      = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
+    $titleLbl.ForeColor = $fgColor
+    $titleLbl.TextAlign = 'MiddleCenter'
+    $dlg.Controls.Add($titleLbl)
+
+    # ── Subtitle ────────────────────────────────────────────────────────────
+    $subLbl = New-Object System.Windows.Forms.Label
+    $subLbl.Text      = $S.EditionLabel
+    $subLbl.Location  = New-Object System.Drawing.Point(0, 90)
+    $subLbl.Size      = New-Object System.Drawing.Size(520, 30)
+    $subLbl.ForeColor = $subtleText
+    $subLbl.TextAlign = 'MiddleCenter'
+    $dlg.Controls.Add($subLbl)
+
+    # ── Card panel ──────────────────────────────────────────────────────────
+    $card = New-Object System.Windows.Forms.Panel
+    $card.Location  = New-Object System.Drawing.Point(60, 140)
+    $card.Size      = New-Object System.Drawing.Size(400, 180)
+    $card.BackColor = $cardColor
+    $dlg.Controls.Add($card)
 
     $combo = New-Object System.Windows.Forms.ComboBox
     $combo.Items.AddRange($editions)
     $combo.DropDownStyle = 'DropDownList'
     $combo.FlatStyle     = 'Flat'
-    $combo.Location      = New-Object System.Drawing.Point(30, 72)
-    $combo.Width         = 440
+    $combo.Location      = New-Object System.Drawing.Point(30, 30)
+    $combo.Width         = 340
+    $combo.BackColor     = $inputBg
+    $combo.ForeColor     = $fgColor
+    $combo.Font          = New-Object System.Drawing.Font('Segoe UI', 11)
 
     # Pre-select Professional if available; fall back to any Pro-like edition.
     $defaultIdx = 0
@@ -938,19 +1009,20 @@ function Select-WindowsEdition {
         }
     }
     $combo.SelectedIndex = $defaultIdx
-    $dlg.Controls.Add($combo)
+    $card.Controls.Add($combo)
 
     $btn = New-Object System.Windows.Forms.Button
     $btn.Text                        = $S.EditionBtn
-    $btn.Location                    = New-Object System.Drawing.Point(175, 170)
-    $btn.Size                        = New-Object System.Drawing.Size(150, 42)
-    $btn.BackColor                   = [System.Drawing.Color]::FromArgb(0, 120, 212)
+    $btn.Location                    = New-Object System.Drawing.Point(100, 110)
+    $btn.Size                        = New-Object System.Drawing.Size(200, 46)
+    $btn.BackColor                   = $accentBlue
     $btn.ForeColor                   = [System.Drawing.Color]::White
     $btn.FlatStyle                   = 'Flat'
     $btn.FlatAppearance.BorderSize   = 0
-    $btn.Font                        = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+    $btn.Font                        = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
+    $btn.Cursor                      = [System.Windows.Forms.Cursors]::Hand
     $btn.DialogResult                = 'OK'
-    $dlg.Controls.Add($btn)
+    $card.Controls.Add($btn)
     $dlg.AcceptButton = $btn
 
     if ($dlg.ShowDialog() -eq 'OK' -and $null -ne $combo.SelectedItem) {
@@ -1005,7 +1077,7 @@ function ProceedToEngine {
         $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $localAmpCloud,
                     '-StatusFile', $script:StatusFile)
         if ($script:SelectedEdition) { $psArgs += @('-WindowsEdition', $script:SelectedEdition) }
-        $engineProc = Start-Process -FilePath $script:PsBin -ArgumentList $psArgs -PassThru
+        $engineProc = Start-Process -FilePath $script:PsBin -ArgumentList $psArgs -WindowStyle Hidden -PassThru
 
         # Start polling the status file so the UI shows real-time progress.
         $script:uiUpdateTimer.Start()
