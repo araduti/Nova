@@ -716,31 +716,42 @@ function ProceedToEngine {
 
     # Prefer the pre-staged copy embedded in the WinPE image by Trigger.ps1.
     # Fall back to downloading from GitHub when the local copy is absent.
-    $localAmpCloud = Join-Path $env:SystemRoot 'System32\AmpCloud.ps1'
-    if (Test-Path $localAmpCloud) {
-        & $localAmpCloud
-    } else {
-        $url    = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
-        $dlPath = 'X:\AmpCloud.ps1'
-        Write-Status ($S.Download -f 0)
-        $web = New-Object System.Net.WebClient
-        $web.add_DownloadProgressChanged({
-            param($sender, $e)
-            Write-Status ($S.Download -f $e.ProgressPercentage)
-        })
-        $task = $web.DownloadFileTaskAsync($url, $dlPath)
-        while (-not $task.IsCompleted) {
-            [System.Windows.Forms.Application]::DoEvents()
-            Start-Sleep -Milliseconds 100
+    $engineFailed = $false
+    try {
+        $localAmpCloud = Join-Path $env:SystemRoot 'System32\AmpCloud.ps1'
+        if (Test-Path $localAmpCloud) {
+            & $localAmpCloud
+        } else {
+            $url    = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
+            $dlPath = 'X:\AmpCloud.ps1'
+            Write-Status ($S.Download -f 0)
+            $web = New-Object System.Net.WebClient
+            $web.add_DownloadProgressChanged({
+                param($sender, $e)
+                Write-Status ($S.Download -f $e.ProgressPercentage)
+            })
+            $task = $web.DownloadFileTaskAsync($url, $dlPath)
+            while (-not $task.IsCompleted) {
+                [System.Windows.Forms.Application]::DoEvents()
+                Start-Sleep -Milliseconds 100
+            }
+            if ($task.IsFaulted) { throw $task.Exception.InnerException }
+            & $dlPath
         }
-        if ($task.IsFaulted) { throw $task.Exception.InnerException }
-        & $dlPath
+    } catch {
+        # Engine already printed diagnostics; close the UI so the console
+        # is usable.  The -NoExit PowerShell host from ampcloud-start.cmd
+        # provides the interactive prompt for troubleshooting.
+        $engineFailed = $true
     }
 
     $ringTimer.Stop()
     Stop-Transcript -ErrorAction SilentlyContinue
     $form.Close()
-    Show-CompletionScreen
+
+    if (-not $engineFailed) {
+        Show-CompletionScreen
+    }
 }
 
 function Show-Failure {
@@ -753,8 +764,9 @@ function Show-Failure {
         if ($hasInternet) {
             ProceedToEngine
         } else {
+            # Close the form; the -NoExit PowerShell host from
+            # ampcloud-start.cmd provides the interactive prompt.
             $form.Close()
-            & $script:PsBin -NoProfile -NoExit
         }
     })
 }

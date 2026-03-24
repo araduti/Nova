@@ -55,7 +55,7 @@ param(
     [string]$ScratchDir = 'X:\AmpCloud',
 
     # Target OS drive letter (assigned during partitioning)
-    [string]$OSDrive = 'W'
+    [string]$OSDrive = 'C'
 )
 
 Set-StrictMode -Version Latest
@@ -668,8 +668,11 @@ try {
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
     Write-Host ''
     Write-Host '[AmpCloud] Dropping to interactive shell for troubleshooting.' -ForegroundColor Yellow
-    & $script:PsBin -NoProfile -NoExit
-    exit 1
+    # Re-throw so Bootstrap.ps1 can close the WinForms UI before the user
+    # needs the console.  The PowerShell host was started with -NoExit by
+    # ampcloud-start.cmd, so an interactive prompt appears automatically
+    # once the form is dismissed.
+    throw
 }
 
 #endregion
