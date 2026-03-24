@@ -144,48 +144,24 @@ function Optimize-WinPENetwork {
         # Set high-performance power plan
         powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null | Out-Null
 
-        # TCP auto-tuning and offload settings via PowerShell cmdlets
-        try {
-            Set-NetTCPSetting -SettingName '*' -AutoTuningLevelLocal Normal `
-                              -ErrorAction SilentlyContinue
-        } catch {}
-        try {
-            Set-NetOffloadGlobalSetting -ReceiveSideScaling Enabled `
-                                        -ReceiveSegmentCoalescing Enabled `
-                                        -ErrorAction SilentlyContinue
-        } catch {}
+        # TCP auto-tuning and offload settings via netsh (always available in WinPE)
+        netsh int tcp set global autotuninglevel=normal 2>$null | Out-Null
+        netsh int tcp set global congestionprovider=ctcp 2>$null | Out-Null
+        netsh int tcp set global chimney=enabled 2>$null | Out-Null
+        netsh int tcp set global rss=enabled 2>$null | Out-Null
+        netsh int tcp set global rsc=enabled 2>$null | Out-Null
 
         # Disable IPv6 on all adapters to reduce routing overhead
-        Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
-            try {
-                Disable-NetAdapterBinding -Name $_.Name -ComponentID 'ms_tcpip6' `
-                                          -ErrorAction SilentlyContinue
-            } catch {}
-        }
-
-        # Renew DHCP leases on all connected adapters
-        Get-NetAdapter -ErrorAction SilentlyContinue |
-            Where-Object { $_.Status -eq 'Up' } |
-            ForEach-Object {
-                try {
-                    $iface = $_
-                    Get-NetIPAddress -InterfaceIndex $iface.InterfaceIndex `
-                                     -AddressFamily IPv4 `
-                                     -PrefixOrigin Dhcp `
-                                     -ErrorAction SilentlyContinue |
-                        ForEach-Object {
-                            # Re-acquire DHCP: release then allow auto-renewal
-                            Remove-NetIPAddress -InterfaceIndex $iface.InterfaceIndex `
-                                                -AddressFamily IPv4 `
-                                                -Confirm:$false `
-                                                -ErrorAction SilentlyContinue
-                        }
-                    # Trigger DHCP discovery
-                    $iface | Set-NetIPInterface -Dhcp Enabled `
-                                                -ErrorAction SilentlyContinue
-                } catch {}
+        # Best-effort: Get-NetAdapter may not exist in WinPE without NetAdapter module
+        try {
+            Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
+                netsh interface ipv6 set interface "$($_.Name)" admin=disabled 2>$null | Out-Null
             }
-    } finally {
+        } catch {}
+
+        # Renew DHCP leases (ipconfig is always available in WinPE)
+        ipconfig /renew 2>$null | Out-Null
+    } catch {} finally {
         $ErrorActionPreference = $prev
     }
 }
