@@ -138,35 +138,43 @@ function Invoke-DownloadWithProgress {
     Write-Host "  Source : $Uri"
     Write-Host "  Target : $OutFile"
 
-    $wr = [System.Net.WebRequest]::Create($Uri)
-    $wr.Method = 'GET'
-    $response  = $wr.GetResponse()
-    $totalBytes = $response.ContentLength
-    $stream     = $response.GetResponseStream()
-    $fs         = [System.IO.File]::Create($OutFile)
-    $buffer     = New-Object byte[] 65536
-    $downloaded = 0
-    $sw         = [System.Diagnostics.Stopwatch]::StartNew()
+    $response  = $null
+    $stream    = $null
+    $fs        = $null
+    try {
+        $wr = [System.Net.WebRequest]::Create($Uri)
+        $wr.Method = 'GET'
+        $response  = $wr.GetResponse()
+        $totalBytes = $response.ContentLength
+        $stream     = $response.GetResponseStream()
+        $fs         = [System.IO.File]::Create($OutFile)
+        $buffer     = New-Object byte[] 65536
+        $downloaded = 0
+        $sw         = [System.Diagnostics.Stopwatch]::StartNew()
 
-    do {
-        $read = $stream.Read($buffer, 0, $buffer.Length)
-        if ($read -gt 0) {
-            $fs.Write($buffer, 0, $read)
-            $downloaded += $read
-            if ($sw.ElapsedMilliseconds -gt 1000) {
-                $pct = if ($totalBytes -gt 0) { [int]($downloaded * 100 / $totalBytes) } else { 0 }
-                $speed = if ($sw.Elapsed.TotalSeconds -gt 0) { [long]($downloaded / $sw.Elapsed.TotalSeconds) } else { 0 }
-                Write-Host "  Progress: $pct% ($(Get-FileSizeReadable $downloaded) / $(Get-FileSizeReadable $totalBytes)) @ $(Get-FileSizeReadable $speed)/s" -NoNewline
-                Write-Host "`r" -NoNewline
+        do {
+            $read = $stream.Read($buffer, 0, $buffer.Length)
+            if ($read -gt 0) {
+                $fs.Write($buffer, 0, $read)
+                $downloaded += $read
+                if ($sw.ElapsedMilliseconds -gt 1000) {
+                    $pct = if ($totalBytes -gt 0) { [int]($downloaded * 100 / $totalBytes) } else { 0 }
+                    $speed = if ($sw.Elapsed.TotalSeconds -gt 0) { [long]($downloaded / $sw.Elapsed.TotalSeconds) } else { 0 }
+                    Write-Host "  Progress: $pct% ($(Get-FileSizeReadable $downloaded) / $(Get-FileSizeReadable $totalBytes)) @ $(Get-FileSizeReadable $speed)/s" -NoNewline
+                    Write-Host "`r" -NoNewline
+                }
             }
-        }
-    } while ($read -gt 0)
+        } while ($read -gt 0)
 
-    $fs.Close()
-    $stream.Close()
-    $response.Close()
-    Write-Host ''
-    Write-Success "Download complete: $(Get-FileSizeReadable $downloaded)"
+        Write-Host ''
+        Write-Success "Download complete: $(Get-FileSizeReadable $downloaded)"
+    } catch {
+        throw "Download failed for '$Description' (URL: $Uri): $_"
+    } finally {
+        if ($fs)       { $fs.Close() }
+        if ($stream)   { $stream.Close() }
+        if ($response) { $response.Close() }
+    }
 }
 
 #endregion
@@ -188,24 +196,41 @@ function Initialize-TargetDisk {
 
     # Clear the disk
     Write-Step "Clearing disk $DiskNumber..."
-    Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false -ErrorAction SilentlyContinue
+    $clearError = $null
+    try {
+        Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false -ErrorAction Stop
+    } catch {
+        $clearError = $_
+        Write-Warn "Clear-Disk failed on disk ${DiskNumber}: $clearError"
+    }
+
+    $stepName = ''
+    try {
 
     if ($FirmwareType -eq 'UEFI') {
         # Initialize as GPT
+        $stepName = 'Initialize-Disk (GPT)'
         Initialize-Disk -Number $DiskNumber -PartitionStyle GPT -ErrorAction Stop
 
         # EFI System Partition (ESP) - 260 MB
+        $stepName = 'New-Partition (ESP 260 MB)'
         $esp = New-Partition -DiskNumber $DiskNumber -Size 260MB -GptType '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'
+        $stepName = 'Format-Volume (ESP FAT32)'
         Format-Volume -Partition $esp -FileSystem FAT32 -NewFileSystemLabel 'System' -Confirm:$false | Out-Null
+        $stepName = 'Add-PartitionAccessPath (ESP)'
         Add-PartitionAccessPath -DiskNumber $DiskNumber -PartitionNumber $esp.PartitionNumber -AssignDriveLetter
 
         # Microsoft Reserved Partition (MSR) - 16 MB
+        $stepName = 'New-Partition (MSR 16 MB)'
         New-Partition -DiskNumber $DiskNumber -Size 16MB -GptType '{e3c9e316-0b5c-4db8-817d-f92df00215ae}' | Out-Null
 
         # Windows OS Partition - all remaining space
+        $stepName = 'New-Partition (OS)'
         $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -GptType '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}'
+        $stepName = 'Format-Volume (OS NTFS)'
         $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false | Out-Null
         # Format-Volume may auto-assign the drive letter; only reassign if needed.
+        $stepName = 'Set-Partition (drive letter)'
         $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
         if ([string]$currentLetter -ne [string]$OSDriveLetter) {
             Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
@@ -213,21 +238,36 @@ function Initialize-TargetDisk {
 
     } else {
         # Initialize as MBR
+        $stepName = 'Initialize-Disk (MBR)'
         Initialize-Disk -Number $DiskNumber -PartitionStyle MBR -ErrorAction Stop
 
         # System/Active partition - 500 MB
+        $stepName = 'New-Partition (System 500 MB)'
         $sysPartition = New-Partition -DiskNumber $DiskNumber -Size 500MB -IsActive -MbrType 7
+        $stepName = 'Format-Volume (System NTFS)'
         $sysPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'System' -Confirm:$false | Out-Null
+        $stepName = 'Add-PartitionAccessPath (System)'
         Add-PartitionAccessPath -DiskNumber $DiskNumber -PartitionNumber $sysPartition.PartitionNumber -AssignDriveLetter
 
         # Windows OS Partition - remaining
+        $stepName = 'New-Partition (OS)'
         $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -MbrType 7
+        $stepName = 'Format-Volume (OS NTFS)'
         $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false | Out-Null
         # Format-Volume may auto-assign the drive letter; only reassign if needed.
+        $stepName = 'Set-Partition (drive letter)'
         $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
         if ([string]$currentLetter -ne [string]$OSDriveLetter) {
             Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
         }
+    }
+
+    } catch {
+        $msg = "Disk $DiskNumber partitioning failed at step '$stepName': $_"
+        if ($clearError) {
+            $msg += " (preceded by Clear-Disk error: $clearError)"
+        }
+        throw $msg
     }
 
     Write-Success "Disk $DiskNumber partitioned. OS drive: ${OSDriveLetter}:"
@@ -298,19 +338,30 @@ function Get-WindowsImageSource {
     }
 
     # Read the ESD catalog directly from the repository.
-    Write-Step 'Reading Windows ESD catalog from repository...'
-    $productsUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/products.xml"
-    $productsPath = Join-Path $ScratchDir 'products.xml'
-    Invoke-DownloadWithProgress -Uri $productsUrl -OutFile $productsPath -Description 'Fetching Windows ESD catalog'
-    [xml]$catalog = Get-Content $productsPath -Encoding UTF8
-    $esd     = Find-WindowsESD -Catalog $catalog -Edition $Edition -Language $Language -FirmwareType $FirmwareType
+    $stepName = ''
+    try {
+        $stepName = 'Download ESD catalog'
+        Write-Step 'Reading Windows ESD catalog from repository...'
+        $productsUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/products.xml"
+        $productsPath = Join-Path $ScratchDir 'products.xml'
+        Invoke-DownloadWithProgress -Uri $productsUrl -OutFile $productsPath -Description 'Fetching Windows ESD catalog'
 
-    Write-Host "  Found ESD: $($esd.FileName) ($([long]$esd.Size | ForEach-Object { Get-FileSizeReadable $_ }))"
+        $stepName = 'Parse ESD catalog'
+        [xml]$catalog = Get-Content $productsPath -Encoding UTF8
 
-    $esdPath = Join-Path $ScratchDir $esd.FileName
-    Invoke-DownloadWithProgress -Uri $esd.FilePath -OutFile $esdPath -Description "Downloading Windows ESD: $Edition"
+        $stepName = 'Find matching ESD'
+        $esd     = Find-WindowsESD -Catalog $catalog -Edition $Edition -Language $Language -FirmwareType $FirmwareType
 
-    return $esdPath
+        Write-Host "  Found ESD: $($esd.FileName) ($([long]$esd.Size | ForEach-Object { Get-FileSizeReadable $_ }))"
+
+        $stepName = 'Download ESD'
+        $esdPath = Join-Path $ScratchDir $esd.FileName
+        Invoke-DownloadWithProgress -Uri $esd.FilePath -OutFile $esdPath -Description "Downloading Windows ESD: $Edition"
+
+        return $esdPath
+    } catch {
+        throw "Get-WindowsImageSource failed at step '$stepName': $_"
+    }
 }
 
 #endregion
@@ -342,37 +393,45 @@ function Apply-WindowsImage {
 
     Write-Step "Applying Windows image to ${OSDriveLetter}:..."
 
-    # Get the correct image index for the requested edition
-    $images = Get-WindowsImage -ImagePath $ImagePath -ErrorAction Stop
-    Write-Host "  Available editions in image:"
-    $images | ForEach-Object { Write-Host "    [$($_.ImageIndex)] $($_.ImageName)" }
+    $stepName = ''
+    try {
+        # Get the correct image index for the requested edition
+        $stepName = 'Get-WindowsImage (enumerate editions)'
+        $images = Get-WindowsImage -ImagePath $ImagePath -ErrorAction Stop
+        Write-Host "  Available editions in image:"
+        $images | ForEach-Object { Write-Host "    [$($_.ImageIndex)] $($_.ImageName)" }
 
-    $targetImage = $images | Where-Object { $_.ImageName -like "*$Edition*" } | Select-Object -First 1
+        $stepName = 'Find target edition'
+        $targetImage = $images | Where-Object { $_.ImageName -like "*$Edition*" } | Select-Object -First 1
 
-    # The catalog uses short IDs (e.g. 'Professional') while WIM ImageName
-    # uses friendly names (e.g. 'Windows 11 Pro').  Try the mapped name.
-    if (-not $targetImage -and $script:EditionNameMap.ContainsKey($Edition)) {
-        $mappedName = $script:EditionNameMap[$Edition]
-        $targetImage = $images | Where-Object { $_.ImageName -like "*$mappedName*" } | Select-Object -First 1
+        # The catalog uses short IDs (e.g. 'Professional') while WIM ImageName
+        # uses friendly names (e.g. 'Windows 11 Pro').  Try the mapped name.
+        if (-not $targetImage -and $script:EditionNameMap.ContainsKey($Edition)) {
+            $mappedName = $script:EditionNameMap[$Edition]
+            $targetImage = $images | Where-Object { $_.ImageName -like "*$mappedName*" } | Select-Object -First 1
+        }
+
+        if (-not $targetImage) {
+            Write-Warn "Edition '$Edition' not found. Using index 1."
+            $targetImage = $images | Select-Object -First 1
+        }
+
+        $stepName = 'Expand-WindowsImage (apply)'
+        Write-Step "Applying image index $($targetImage.ImageIndex): $($targetImage.ImageName)"
+        $scratch = Join-Path $ScratchDir 'scratch'
+        New-ScratchDirectory -Path $scratch
+
+        Expand-WindowsImage `
+            -ImagePath       $ImagePath `
+            -Index           $targetImage.ImageIndex `
+            -ApplyPath       "${OSDriveLetter}:\" `
+            -ScratchDirectory $scratch `
+            -ErrorAction Stop | Out-Null
+
+        Write-Success 'Windows image applied successfully.'
+    } catch {
+        throw "Apply-WindowsImage failed at step '$stepName': $_"
     }
-
-    if (-not $targetImage) {
-        Write-Warn "Edition '$Edition' not found. Using index 1."
-        $targetImage = $images | Select-Object -First 1
-    }
-
-    Write-Step "Applying image index $($targetImage.ImageIndex): $($targetImage.ImageName)"
-    $scratch = Join-Path $ScratchDir 'scratch'
-    New-ScratchDirectory -Path $scratch
-
-    Expand-WindowsImage `
-        -ImagePath       $ImagePath `
-        -Index           $targetImage.ImageIndex `
-        -ApplyPath       "${OSDriveLetter}:\" `
-        -ScratchDirectory $scratch `
-        -ErrorAction Stop | Out-Null
-
-    Write-Success 'Windows image applied successfully.'
 }
 
 #endregion
@@ -390,30 +449,39 @@ function Set-Bootloader {
 
     $osDrive = "${OSDriveLetter}:"
 
-    if ($FirmwareType -eq 'UEFI') {
-        # Find the EFI system partition
-        $espDrive = (Get-Partition -DiskNumber $DiskNumber |
-            Where-Object { $_.GptType -eq '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}' } |
-            Get-Volume |
-            Select-Object -First 1).DriveLetter
-
-        if (-not $espDrive) {
-            # Assign a temporary drive letter to ESP
-            $esp = Get-Partition -DiskNumber $DiskNumber |
+    $stepName = ''
+    try {
+        if ($FirmwareType -eq 'UEFI') {
+            # Find the EFI system partition
+            $stepName = 'Find EFI System Partition'
+            $espDrive = (Get-Partition -DiskNumber $DiskNumber |
                 Where-Object { $_.GptType -eq '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}' } |
-                Select-Object -First 1
-            Add-PartitionAccessPath -DiskNumber $DiskNumber -PartitionNumber $esp.PartitionNumber -AssignDriveLetter
-            $espDrive = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $esp.PartitionNumber | Get-Volume).DriveLetter
+                Get-Volume |
+                Select-Object -First 1).DriveLetter
+
+            if (-not $espDrive) {
+                # Assign a temporary drive letter to ESP
+                $stepName = 'Assign ESP drive letter'
+                $esp = Get-Partition -DiskNumber $DiskNumber |
+                    Where-Object { $_.GptType -eq '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}' } |
+                    Select-Object -First 1
+                Add-PartitionAccessPath -DiskNumber $DiskNumber -PartitionNumber $esp.PartitionNumber -AssignDriveLetter
+                $espDrive = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $esp.PartitionNumber | Get-Volume).DriveLetter
+            }
+
+            $stepName = 'bcdboot (UEFI)'
+            Write-Host "  EFI partition: ${espDrive}:"
+            & bcdboot.exe "$osDrive\Windows" /s "${espDrive}:" /f UEFI 2>&1 | Write-Host
+        } else {
+            $stepName = 'bcdboot (BIOS)'
+            & bcdboot.exe "$osDrive\Windows" /s "$osDrive" /f BIOS 2>&1 | Write-Host
         }
 
-        Write-Host "  EFI partition: ${espDrive}:"
-        & bcdboot.exe "$osDrive\Windows" /s "${espDrive}:" /f UEFI 2>&1 | Write-Host
-    } else {
-        & bcdboot.exe "$osDrive\Windows" /s "$osDrive" /f BIOS 2>&1 | Write-Host
+        if ($LASTEXITCODE -ne 0) { throw "bcdboot failed with exit code $LASTEXITCODE" }
+        Write-Success 'Bootloader configured.'
+    } catch {
+        throw "Set-Bootloader failed at step '$stepName': $_"
     }
-
-    if ($LASTEXITCODE -ne 0) { throw "bcdboot failed with exit code $LASTEXITCODE" }
-    Write-Success 'Bootloader configured.'
 }
 
 #endregion
@@ -433,21 +501,28 @@ function Add-Drivers {
 
     Write-Step "Injecting drivers from: $DriverPath"
 
-    $infFiles = Get-ChildItem $DriverPath -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue
-    if (-not $infFiles) {
-        Write-Warn 'No .inf files found in driver path. Skipping.'
-        return
+    $stepName = ''
+    try {
+        $stepName = 'Enumerate driver .inf files'
+        $infFiles = Get-ChildItem $DriverPath -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue
+        if (-not $infFiles) {
+            Write-Warn 'No .inf files found in driver path. Skipping.'
+            return
+        }
+
+        Write-Host "  Found $($infFiles.Count) driver(s)."
+
+        $stepName = 'Add-WindowsDriver'
+        Add-WindowsDriver `
+            -Path        "${OSDriveLetter}:\" `
+            -Driver      $DriverPath `
+            -Recurse `
+            -ErrorAction Continue | Out-Null
+
+        Write-Success "Drivers injected from: $DriverPath"
+    } catch {
+        throw "Add-Drivers failed at step '$stepName': $_"
     }
-
-    Write-Host "  Found $($infFiles.Count) driver(s)."
-
-    Add-WindowsDriver `
-        -Path        "${OSDriveLetter}:\" `
-        -Driver      $DriverPath `
-        -Recurse `
-        -ErrorAction Continue | Out-Null
-
-    Write-Success "Drivers injected from: $DriverPath"
 }
 
 # ── OEM driver injection ──────────────────────────────────────────────────────
@@ -504,25 +579,35 @@ function Add-DellDrivers {
         [string]$ScratchDir
     )
     Write-Step 'Fetching Dell drivers via Dell Command | Update (DCU)...'
-    Install-OemModule -Name 'DellCommandUpdate'
-    Import-Module DellCommandUpdate -ErrorAction Stop
 
-    $driverTemp = Join-Path $ScratchDir 'Dell-Drivers'
-    New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+    $stepName = ''
+    try {
+        $stepName = 'Install DellCommandUpdate module'
+        Install-OemModule -Name 'DellCommandUpdate'
+        $stepName = 'Import DellCommandUpdate module'
+        Import-Module DellCommandUpdate -ErrorAction Stop
 
-    # Download applicable driver updates without applying them to the live OS.
-    Invoke-DCUUpdate -UpdateType driver -DownloadPath $driverTemp -ApplyUpdates:$false
+        $stepName = 'Invoke-DCUUpdate'
+        $driverTemp = Join-Path $ScratchDir 'Dell-Drivers'
+        New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
 
-    $infFiles = Get-ChildItem $driverTemp -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue
-    if (-not $infFiles) {
-        Write-Warn 'Dell Command | Update found no driver packages to inject.'
-        return
+        # Download applicable driver updates without applying them to the live OS.
+        Invoke-DCUUpdate -UpdateType driver -DownloadPath $driverTemp -ApplyUpdates:$false
+
+        $stepName = 'Inject Dell drivers'
+        $infFiles = Get-ChildItem $driverTemp -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue
+        if (-not $infFiles) {
+            Write-Warn 'Dell Command | Update found no driver packages to inject.'
+            return
+        }
+
+        Write-Host "  Injecting $($infFiles.Count) Dell driver(s) into ${OSDriveLetter}:\..."
+        Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
+            -ErrorAction Continue | Out-Null
+        Write-Success 'Dell drivers injected successfully.'
+    } catch {
+        throw "Add-DellDrivers failed at step '$stepName': $_"
     }
-
-    Write-Host "  Injecting $($infFiles.Count) Dell driver(s) into ${OSDriveLetter}:\..."
-    Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
-        -ErrorAction Continue | Out-Null
-    Write-Success 'Dell drivers injected successfully.'
 }
 
 function Add-HpDrivers {
@@ -536,16 +621,25 @@ function Add-HpDrivers {
         [string]$ScratchDir
     )
     Write-Step 'Fetching HP drivers via HP Client Management Script Library (HPCMSL)...'
-    Install-OemModule -Name 'HPCMSL'
-    Import-Module HPCMSL -ErrorAction Stop
 
-    $driverTemp = Join-Path $ScratchDir 'HP-Drivers'
-    New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+    $stepName = ''
+    try {
+        $stepName = 'Install HPCMSL module'
+        Install-OemModule -Name 'HPCMSL'
+        $stepName = 'Import HPCMSL module'
+        Import-Module HPCMSL -ErrorAction Stop
 
-    # Add-HPDrivers handles platform detection, SoftPaq download, extraction,
-    # and offline DISM injection in a single call.
-    Add-HPDrivers -Path "${OSDriveLetter}:\" -TempPath $driverTemp -ErrorAction Stop
-    Write-Success 'HP drivers injected successfully.'
+        $stepName = 'Add-HPDrivers'
+        $driverTemp = Join-Path $ScratchDir 'HP-Drivers'
+        New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+
+        # Add-HPDrivers handles platform detection, SoftPaq download, extraction,
+        # and offline DISM injection in a single call.
+        Add-HPDrivers -Path "${OSDriveLetter}:\" -TempPath $driverTemp -ErrorAction Stop
+        Write-Success 'HP drivers injected successfully.'
+    } catch {
+        throw "Add-HpDrivers failed at step '$stepName': $_"
+    }
 }
 
 function Add-LenovoDrivers {
@@ -558,37 +652,48 @@ function Add-LenovoDrivers {
         [string]$ScratchDir
     )
     Write-Step 'Fetching Lenovo drivers via LSUClient...'
-    Install-OemModule -Name 'LSUClient'
-    Import-Module LSUClient -ErrorAction Stop
 
-    $driverTemp = Join-Path $ScratchDir 'Lenovo-Drivers'
-    New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
-
-    $updates = $null
+    $stepName = ''
     try {
-        $updates = Get-LSUpdate -ErrorAction Stop | Where-Object { $_.Type -eq 'Driver' }
+        $stepName = 'Install LSUClient module'
+        Install-OemModule -Name 'LSUClient'
+        $stepName = 'Import LSUClient module'
+        Import-Module LSUClient -ErrorAction Stop
+
+        $driverTemp = Join-Path $ScratchDir 'Lenovo-Drivers'
+        New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+
+        $stepName = 'Get-LSUpdate'
+        $updates = $null
+        try {
+            $updates = Get-LSUpdate -ErrorAction Stop | Where-Object { $_.Type -eq 'Driver' }
+        } catch {
+            Write-Warn "LSUClient failed to retrieve update list: $_"
+            return
+        }
+        if (-not $updates) {
+            Write-Warn 'LSUClient found no driver updates for this Lenovo model.'
+            return
+        }
+
+        $stepName = 'Save-LSUpdate'
+        Write-Host "  Found $($updates.Count) Lenovo driver package(s). Downloading..."
+        $updates | Save-LSUpdate -Path $driverTemp
+
+        $stepName = 'Inject Lenovo drivers'
+        $infFiles = Get-ChildItem $driverTemp -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue
+        if (-not $infFiles) {
+            Write-Warn 'No .inf files found in downloaded Lenovo packages. Skipping injection.'
+            return
+        }
+
+        Write-Host "  Injecting $($infFiles.Count) driver(s) into ${OSDriveLetter}:\..."
+        Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
+            -ErrorAction Continue | Out-Null
+        Write-Success 'Lenovo drivers injected successfully.'
     } catch {
-        Write-Warn "LSUClient failed to retrieve update list: $_"
-        return
+        throw "Add-LenovoDrivers failed at step '$stepName': $_"
     }
-    if (-not $updates) {
-        Write-Warn 'LSUClient found no driver updates for this Lenovo model.'
-        return
-    }
-
-    Write-Host "  Found $($updates.Count) Lenovo driver package(s). Downloading..."
-    $updates | Save-LSUpdate -Path $driverTemp
-
-    $infFiles = Get-ChildItem $driverTemp -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue
-    if (-not $infFiles) {
-        Write-Warn 'No .inf files found in downloaded Lenovo packages. Skipping injection.'
-        return
-    }
-
-    Write-Host "  Injecting $($infFiles.Count) driver(s) into ${OSDriveLetter}:\..."
-    Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
-        -ErrorAction Continue | Out-Null
-    Write-Success 'Lenovo drivers injected successfully.'
 }
 
 function Invoke-OemDriverInjection {
@@ -602,18 +707,26 @@ function Invoke-OemDriverInjection {
         [string]$ScratchDir
     )
     Write-Step 'OEM driver injection: detecting manufacturer...'
-    $manufacturer = Get-SystemManufacturer
-    Write-Host "  Manufacturer: '$manufacturer'"
 
-    switch -Wildcard ($manufacturer) {
-        '*Dell*'    { Add-DellDrivers   -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
-        '*HP*'      { Add-HpDrivers     -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
-        '*Hewlett*' { Add-HpDrivers     -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
-        '*Lenovo*'  { Add-LenovoDrivers -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
-        default {
-            Write-Warn ("Manufacturer '$manufacturer' is not supported for OEM driver automation. " +
-                        'Use -DriverPath for manual driver injection.')
+    $stepName = ''
+    try {
+        $stepName = 'Detect manufacturer'
+        $manufacturer = Get-SystemManufacturer
+        Write-Host "  Manufacturer: '$manufacturer'"
+
+        $stepName = "Inject drivers for '$manufacturer'"
+        switch -Wildcard ($manufacturer) {
+            '*Dell*'    { Add-DellDrivers   -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+            '*HP*'      { Add-HpDrivers     -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+            '*Hewlett*' { Add-HpDrivers     -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+            '*Lenovo*'  { Add-LenovoDrivers -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+            default {
+                Write-Warn ("Manufacturer '$manufacturer' is not supported for OEM driver automation. " +
+                            'Use -DriverPath for manual driver injection.')
+            }
         }
+    } catch {
+        throw "Invoke-OemDriverInjection failed at step '$stepName': $_"
     }
 }
 
@@ -635,17 +748,25 @@ function Set-AutopilotConfig {
 
     Write-Step 'Applying Autopilot configuration...'
 
-    $autopilotDest = "${OSDriveLetter}:\Windows\Provisioning\Autopilot\AutopilotConfigurationFile.json"
-    New-Item -ItemType Directory -Path (Split-Path $autopilotDest) -Force | Out-Null
+    $stepName = ''
+    try {
+        $stepName = 'Create Autopilot directory'
+        $autopilotDest = "${OSDriveLetter}:\Windows\Provisioning\Autopilot\AutopilotConfigurationFile.json"
+        New-Item -ItemType Directory -Path (Split-Path $autopilotDest) -Force | Out-Null
 
-    if ($JsonUrl) {
-        Write-Host "  Fetching Autopilot JSON from: $JsonUrl"
-        Invoke-WebRequest -Uri $JsonUrl -OutFile $autopilotDest -UseBasicParsing
-    } else {
-        Copy-Item $JsonPath $autopilotDest -Force
+        if ($JsonUrl) {
+            $stepName = 'Download Autopilot JSON'
+            Write-Host "  Fetching Autopilot JSON from: $JsonUrl"
+            Invoke-WebRequest -Uri $JsonUrl -OutFile $autopilotDest -UseBasicParsing
+        } else {
+            $stepName = 'Copy Autopilot JSON'
+            Copy-Item $JsonPath $autopilotDest -Force
+        }
+
+        Write-Success "Autopilot JSON placed at: $autopilotDest"
+    } catch {
+        throw "Set-AutopilotConfig failed at step '$stepName': $_"
     }
-
-    Write-Success "Autopilot JSON placed at: $autopilotDest"
 }
 
 #endregion
@@ -666,18 +787,28 @@ function Install-CCMSetup {
 
     Write-Step 'Staging ConfigMgr CCMSetup...'
 
-    $ccmDir  = "${OSDriveLetter}:\Windows\Setup\Scripts"
-    New-Item -ItemType Directory -Path $ccmDir -Force | Out-Null
+    $stepName = ''
+    try {
+        $stepName = 'Create scripts directory'
+        $ccmDir  = "${OSDriveLetter}:\Windows\Setup\Scripts"
+        New-Item -ItemType Directory -Path $ccmDir -Force | Out-Null
 
-    $ccmExe  = Join-Path $ScratchDir 'ccmsetup.exe'
-    Invoke-DownloadWithProgress -Uri $CCMSetupUrl -OutFile $ccmExe -Description 'Downloading ccmsetup.exe'
-    Copy-Item $ccmExe (Join-Path $ccmDir 'ccmsetup.exe') -Force
+        $stepName = 'Download ccmsetup.exe'
+        $ccmExe  = Join-Path $ScratchDir 'ccmsetup.exe'
+        Invoke-DownloadWithProgress -Uri $CCMSetupUrl -OutFile $ccmExe -Description 'Downloading ccmsetup.exe'
 
-    # Add to SetupComplete.cmd to run ccmsetup on first boot
-    $setupComplete = "${OSDriveLetter}:\Windows\Setup\Scripts\SetupComplete.cmd"
-    Add-SetupCompleteEntry -FilePath $setupComplete -Line '"%~dp0ccmsetup.exe" /BITSPriority:FOREGROUND'
+        $stepName = 'Stage ccmsetup.exe'
+        Copy-Item $ccmExe (Join-Path $ccmDir 'ccmsetup.exe') -Force
 
-    Write-Success 'CCMSetup staged for first-boot execution.'
+        # Add to SetupComplete.cmd to run ccmsetup on first boot
+        $stepName = 'Add SetupComplete entry'
+        $setupComplete = "${OSDriveLetter}:\Windows\Setup\Scripts\SetupComplete.cmd"
+        Add-SetupCompleteEntry -FilePath $setupComplete -Line '"%~dp0ccmsetup.exe" /BITSPriority:FOREGROUND'
+
+        Write-Success 'CCMSetup staged for first-boot execution.'
+    } catch {
+        throw "Install-CCMSetup failed at step '$stepName': $_"
+    }
 }
 
 #endregion
@@ -693,24 +824,30 @@ function Set-OOBECustomization {
 
     Write-Step 'Applying OOBE customization...'
 
-    $unattendDest = "${OSDriveLetter}:\Windows\Panther\unattend.xml"
-    New-Item -ItemType Directory -Path (Split-Path $unattendDest) -Force | Out-Null
+    $stepName = ''
+    try {
+        $stepName = 'Create Panther directory'
+        $unattendDest = "${OSDriveLetter}:\Windows\Panther\unattend.xml"
+        New-Item -ItemType Directory -Path (Split-Path $unattendDest) -Force | Out-Null
 
-    if ($UnattendUrl) {
-        Write-Host "  Fetching unattend.xml from: $UnattendUrl"
-        Invoke-WebRequest -Uri $UnattendUrl -OutFile $unattendDest -UseBasicParsing
-        Write-Success "Custom unattend.xml applied from URL."
-        return
-    }
+        if ($UnattendUrl) {
+            $stepName = 'Download unattend.xml'
+            Write-Host "  Fetching unattend.xml from: $UnattendUrl"
+            Invoke-WebRequest -Uri $UnattendUrl -OutFile $unattendDest -UseBasicParsing
+            Write-Success "Custom unattend.xml applied from URL."
+            return
+        }
 
-    if ($UnattendPath -and (Test-Path $UnattendPath)) {
-        Copy-Item $UnattendPath $unattendDest -Force
-        Write-Success "Custom unattend.xml applied from path: $UnattendPath"
-        return
-    }
+        if ($UnattendPath -and (Test-Path $UnattendPath)) {
+            $stepName = 'Copy unattend.xml'
+            Copy-Item $UnattendPath $unattendDest -Force
+            Write-Success "Custom unattend.xml applied from path: $UnattendPath"
+            return
+        }
 
-    # Generate a minimal default unattend.xml
-    Write-Warn 'No unattend.xml source provided. Generating minimal default...'
+        # Generate a minimal default unattend.xml
+        $stepName = 'Generate default unattend.xml'
+        Write-Warn 'No unattend.xml source provided. Generating minimal default...'
 
     $defaultUnattend = @'
 <?xml version="1.0" encoding="utf-8"?>
@@ -737,6 +874,9 @@ function Set-OOBECustomization {
 '@
     Set-Content -Path $unattendDest -Value $defaultUnattend -Encoding UTF8
     Write-Success 'Default unattend.xml applied.'
+    } catch {
+        throw "Set-OOBECustomization failed at step '$stepName': $_"
+    }
 }
 
 #endregion
@@ -757,26 +897,34 @@ function Invoke-PostScripts {
 
     Write-Step "Staging $($ScriptUrls.Count) post-provisioning script(s)..."
 
-    $scriptDir = "${OSDriveLetter}:\Windows\Setup\Scripts"
-    New-Item -ItemType Directory -Path $scriptDir -Force | Out-Null
+    $stepName = ''
+    try {
+        $stepName = 'Create scripts directory'
+        $scriptDir = "${OSDriveLetter}:\Windows\Setup\Scripts"
+        New-Item -ItemType Directory -Path $scriptDir -Force | Out-Null
 
-    $i = 1
-    foreach ($url in $ScriptUrls) {
-        $fileName = "AmpCloud_Post_$($i.ToString('00')).ps1"
-        $dest     = Join-Path $scriptDir $fileName
-        Write-Host "  Downloading: $url -> $fileName"
-        Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
-        $i++
+        $i = 1
+        foreach ($url in $ScriptUrls) {
+            $fileName = "AmpCloud_Post_$($i.ToString('00')).ps1"
+            $stepName = "Download post-script '$fileName'"
+            $dest     = Join-Path $scriptDir $fileName
+            Write-Host "  Downloading: $url -> $fileName"
+            Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+            $i++
+        }
+
+        # Add each script to SetupComplete.cmd
+        $stepName = 'Add SetupComplete entries'
+        $setupComplete = "${OSDriveLetter}:\Windows\Setup\Scripts\SetupComplete.cmd"
+        for ($j = 1; $j -lt $i; $j++) {
+            $fileName = "AmpCloud_Post_$($j.ToString('00')).ps1"
+            Add-SetupCompleteEntry -FilePath $setupComplete -Line "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$fileName`""
+        }
+
+        Write-Success "Post-provisioning scripts staged in: $scriptDir"
+    } catch {
+        throw "Invoke-PostScripts failed at step '$stepName': $_"
     }
-
-    # Add each script to SetupComplete.cmd
-    $setupComplete = "${OSDriveLetter}:\Windows\Setup\Scripts\SetupComplete.cmd"
-    for ($j = 1; $j -lt $i; $j++) {
-        $fileName = "AmpCloud_Post_$($j.ToString('00')).ps1"
-        Add-SetupCompleteEntry -FilePath $setupComplete -Line "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$fileName`""
-    }
-
-    Write-Success "Post-provisioning scripts staged in: $scriptDir"
 }
 
 #endregion
@@ -795,13 +943,16 @@ Write-Host @"
  Cloud-only Imaging Engine · amd64/x86 · https://github.com/$GitHubUser/$GitHubRepo
 "@ -ForegroundColor Cyan
 
+$stepName = ''
 try {
     Write-Step "Firmware type: $FirmwareType"
 
     # Ensure scratch directory exists
+    $stepName = 'Create scratch directory'
     New-ScratchDirectory -Path $ScratchDir
 
     # Step 1: Partition the disk
+    $stepName = 'Partition disk'
     Initialize-TargetDisk `
         -DiskNumber    $TargetDiskNumber `
         -FirmwareType  $FirmwareType `
@@ -809,10 +960,12 @@ try {
 
     # Redirect scratch to the OS drive so large downloads (ESD images) do not
     # fill the size-limited WinPE ramdisk on X:.
+    $stepName = 'Redirect scratch directory to OS drive'
     $ScratchDir = Join-Path "${OSDrive}:" 'AmpCloud'
     New-ScratchDirectory -Path $ScratchDir
 
     # Step 2: Download Windows image
+    $stepName = 'Download Windows image'
     $imagePath = Get-WindowsImageSource `
         -ImageUrl    $WindowsImageUrl `
         -Edition     $WindowsEdition `
@@ -821,6 +974,7 @@ try {
         -ScratchDir  $ScratchDir
 
     # Step 3: Apply Windows image
+    $stepName = 'Apply Windows image'
     Apply-WindowsImage `
         -ImagePath     $imagePath `
         -Edition       $WindowsEdition `
@@ -828,41 +982,48 @@ try {
         -ScratchDir    $ScratchDir
 
     # Step 4: Configure bootloader
+    $stepName = 'Configure bootloader'
     Set-Bootloader `
         -OSDriveLetter $OSDrive `
         -FirmwareType  $FirmwareType `
         -DiskNumber    $TargetDiskNumber
 
     # Step 5: Inject drivers
+    $stepName = 'Inject drivers'
     Add-Drivers `
         -DriverPath    $DriverPath `
         -OSDriveLetter $OSDrive
 
     if ($UseOemDrivers) {
+        $stepName = 'Inject OEM drivers'
         Invoke-OemDriverInjection `
             -OSDriveLetter $OSDrive `
             -ScratchDir    $ScratchDir
     }
 
     # Step 6: Apply Autopilot/Intune configuration
+    $stepName = 'Apply Autopilot configuration'
     Set-AutopilotConfig `
         -JsonUrl       $AutopilotJsonUrl `
         -JsonPath      $AutopilotJsonPath `
         -OSDriveLetter $OSDrive
 
     # Step 7: Stage ConfigMgr setup
+    $stepName = 'Stage ConfigMgr setup'
     Install-CCMSetup `
         -CCMSetupUrl   $CCMSetupUrl `
         -OSDriveLetter $OSDrive `
         -ScratchDir    $ScratchDir
 
     # Step 8: Customize OOBE
+    $stepName = 'Customize OOBE'
     Set-OOBECustomization `
         -UnattendUrl   $UnattendUrl `
         -UnattendPath  $UnattendPath `
         -OSDriveLetter $OSDrive
 
     # Step 9: Stage post-provisioning scripts
+    $stepName = 'Stage post-provisioning scripts'
     Invoke-PostScripts `
         -ScriptUrls    $PostScriptUrls `
         -OSDriveLetter $OSDrive `
@@ -878,15 +1039,17 @@ try {
 
     # Clean up scratch directory so temporary files do not persist in the
     # final Windows installation.
+    $stepName = 'Clean up scratch directory'
     if (Test-Path $ScratchDir) {
         Remove-Item $ScratchDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    $stepName = 'Reboot'
     Start-Sleep -Seconds 15
     Restart-Computer -Force
 
 } catch {
-    Write-Fail "AmpCloud imaging failed: $_"
+    Write-Fail "AmpCloud imaging failed at step '$stepName': $_"
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
     Write-Host ''
     Write-Host '[AmpCloud] Dropping to interactive shell for troubleshooting.' -ForegroundColor Yellow
