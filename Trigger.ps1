@@ -1190,7 +1190,10 @@ try {
         if ($cloudImage.BootSdiUrl) {
             $bootSdiPath = Join-Path $bootSubDir 'boot.sdi'
             Write-Step 'Downloading boot.sdi...'
-            Invoke-WebRequest -Uri $cloudImage.BootSdiUrl -OutFile $bootSdiPath -UseBasicParsing
+            $prevPref = $ProgressPreference
+            $ProgressPreference = 'SilentlyContinue'
+            try     { Invoke-WebRequest -Uri $cloudImage.BootSdiUrl -OutFile $bootSdiPath -UseBasicParsing }
+            finally { $ProgressPreference = $prevPref }
             Write-Success 'boot.sdi downloaded.'
         } else {
             # boot.sdi was not in the release — fall back to the local ADK copy
@@ -1246,6 +1249,7 @@ try {
             } catch {
                 Write-Warn "Upload failed (non-fatal): $_"
             } finally {
+                $tokenPlain = $null
                 [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
             }
         }
