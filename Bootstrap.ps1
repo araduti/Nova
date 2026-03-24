@@ -180,6 +180,18 @@ function Invoke-WpeInit {
     } catch {
         Write-Status "wpeinit.exe unavailable: $_" 'Yellow'
     }
+
+    # Disable the WinPE firewall so outgoing HTTPS requests are not blocked.
+    # WinPE is a transient deployment environment; disabling the firewall is
+    # standard practice for imaging/provisioning scenarios (MDT, SCCM, etc.).
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        netsh advfirewall set allprofiles state off 2>$null | Out-Null
+    } catch {} finally {
+        $ErrorActionPreference = $prev
+    }
+
     Start-Sleep -Seconds 4
 }
 
@@ -670,7 +682,14 @@ function Show-CompletionScreen {
 #endregion
 
 #region ── Main Flow ─────────────────────────────────────────────────────────
+$script:EngineStarted = $false
+
 function ProceedToEngine {
+    # Guard: prevent double invocation from both timer and WiFi click handler.
+    if ($script:EngineStarted) { return }
+    $script:EngineStarted = $true
+    if ($script:connectCheckTimer) { $script:connectCheckTimer.Stop() }
+
     Update-Step 3
     Write-Status $S.Connected 'Green'
     Play-Sound 900 300
@@ -722,6 +741,8 @@ function Show-Failure {
     })
 }
 
+$script:connectCheckTimer = New-Object System.Windows.Forms.Timer
+
 $form.Add_Shown({
     Center-AllControls
     Update-Step 1
@@ -733,13 +754,16 @@ $form.Add_Shown({
 
     $hasInternet = Test-InternetConnectivity
 
-    if (-not $hasInternet) {
+    if ($hasInternet) {
+        ProceedToEngine
+    } else {
         Update-Step 2
         $ringTimer.Stop()
         $ringPanel.Visible = $false
         Write-Status $S.StatusNoNet 'Yellow'
         $btnWiFi.Visible = $true
         $btnWiFi.Add_Click({
+            $script:connectCheckTimer.Stop()
             $btnWiFi.Visible = $false
             $ringPanel.Visible = $true
             $ringTimer.Start()
@@ -748,10 +772,21 @@ $form.Add_Shown({
             $ringPanel.Visible = $false
             if ($hasInternet) { ProceedToEngine } else { Show-Failure }
         })
-        if (-not $hasInternet) { $hasInternet = Wait-ForConnection -Timeout $MaxWaitSeconds }
-    }
 
-    if ($hasInternet) { ProceedToEngine } else { Show-Failure }
+        # Use a non-blocking timer to periodically re-check wired connectivity
+        # so the UI stays responsive and the WiFi button remains clickable.
+        # 5 s strikes a balance between responsiveness and avoiding excessive
+        # network probes (each check hits two URLs with a 6 s timeout).
+        $script:connectCheckTimer.Interval = 5000
+        $script:connectCheckTimer.Add_Tick({
+            if (Test-InternetConnectivity) {
+                $script:connectCheckTimer.Stop()
+                $btnWiFi.Visible = $false
+                ProceedToEngine
+            }
+        })
+        $script:connectCheckTimer.Start()
+    }
 })
 
 # Launch
