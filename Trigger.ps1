@@ -253,6 +253,12 @@ function Get-WinREPathFromWindowsISO {
         [string] $ISOUrl = ''
     )
 
+    # Suppress the default PowerShell progress bars from DISM cmdlets
+    # (Mount-WindowsImage, Dismount-WindowsImage, Get-WindowsImage) so the
+    # console stays clean.  The custom Write-Step / Write-Success messages
+    # provide all the user feedback needed.
+    $ProgressPreference = 'SilentlyContinue'
+
     # ── Built-in default ISO download URLs ──────────────────────────────────────
     # Windows Server 2025 Evaluation (build 26100) is freely downloadable without
     # authentication and shares the same Windows build number as Windows 11 24H2,
@@ -328,6 +334,7 @@ function Get-WinREPathFromWindowsISO {
         Write-Step "Mounting $(Split-Path $wimPath -Leaf) (index $imageIndex — read-only)..."
         $null = Mount-WindowsImage -ImagePath $wimPath -Index $imageIndex `
                            -Path $wimMountDir -ReadOnly
+        Write-Success "$(Split-Path $wimPath -Leaf) mounted."
 
         # ── Step 5: Copy WinRE.wim out of the installation image ──────────────────
         $winreSrc = Join-Path $wimMountDir 'Windows\System32\Recovery\WinRE.wim'
@@ -573,31 +580,32 @@ function Show-BuildConfiguration {
     }
 
     while ($true) {
+        Clear-Host
         Write-Host ''
-        Write-Host '  ════════════════════════════════════════════════════════════════' -ForegroundColor Cyan
-        Write-Host '  Boot Image Configuration                      (edit or Enter ⏎)' -ForegroundColor Cyan
-        Write-Host '  ════════════════════════════════════════════════════════════════' -ForegroundColor Cyan
+        Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
+        Write-Host '  ║         Boot Image Configuration                         ║' -ForegroundColor Cyan
+        Write-Host '  ╚════════════════════════════════════════════════════════════╝' -ForegroundColor Cyan
         Write-Host ''
-        Write-Host "  Architecture : $Architecture" -ForegroundColor White
-        Write-Host "  Language     : $language" -ForegroundColor White
+        Write-Host "    Architecture  $Architecture" -ForegroundColor White
+        Write-Host "    Language      $language" -ForegroundColor White
         Write-Host ''
         Write-Host '  WinPE Optional Components' -ForegroundColor White
-        Write-Host '  ─────────────────────────' -ForegroundColor DarkGray
+        Write-Host '  ─────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
 
         for ($i = 0; $i -lt $pkgCount; $i++) {
             $pkg  = $script:AvailableWinPEPackages[$i]
-            $mark = if ($selected[$i]) { 'x' } else { ' ' }
+            $mark = if ($selected[$i]) { '■' } else { ' ' }
             $tag  = if ($pkg.Required) { ' (required)' } else { '' }
             $num  = '{0,2}' -f ($i + 1)
-            $padName = $pkg.Name.PadRight(22)
+            $padName = $pkg.Name.PadRight(24)
             $color   = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
             Write-Host "    [$mark] $num. $padName $($pkg.Description)$tag" -ForegroundColor $color
         }
 
         Write-Host ''
         Write-Host '  Drivers' -ForegroundColor White
-        Write-Host '  ───────' -ForegroundColor DarkGray
-        $vMark  = if ($injectVirtIO) { 'x' } else { ' ' }
+        Write-Host '  ─────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
+        $vMark  = if ($injectVirtIO) { '■' } else { ' ' }
         $vColor = if ($injectVirtIO) { 'Green' } else { 'DarkGray' }
         Write-Host "    [$vMark]  V. VirtIO network driver (netkvm)" -ForegroundColor $vColor
 
@@ -609,13 +617,14 @@ function Show-BuildConfiguration {
 
         Write-Host ''
         Write-Host '  ┌──────────────────────────────────────────────────────────┐' -ForegroundColor DarkGray
-        Write-Host '  │  1-9  toggle package   L  change language               │' -ForegroundColor DarkGray
-        Write-Host '  │  V    toggle VirtIO    D  add driver path               │' -ForegroundColor DarkGray
-        Write-Host '  │  A    select all pkgs  N  deselect optional pkgs        │' -ForegroundColor DarkGray
-        Write-Host '  │  R    remove driver    Enter  continue with settings ⏎  │' -ForegroundColor DarkGray
+        Write-Host '  │  1-9  toggle package    L  change language              │' -ForegroundColor DarkGray
+        Write-Host '  │  V    toggle VirtIO     D  add driver path              │' -ForegroundColor DarkGray
+        Write-Host '  │  A    select all pkgs   N  deselect optional pkgs       │' -ForegroundColor DarkGray
+        Write-Host '  │  R    remove driver     Enter  continue with settings ⏎ │' -ForegroundColor DarkGray
         Write-Host '  └──────────────────────────────────────────────────────────┘' -ForegroundColor DarkGray
+        Write-Host ''
 
-        $menuChoice = Read-Host "`n  >"
+        $menuChoice = Read-Host '  >'
         $cmd = $menuChoice.Trim()
 
         # Enter — accept current configuration
@@ -790,6 +799,12 @@ function Build-WinPE {
         [string[]] $ExtraDriverPaths  = @()
     )
 
+    # Suppress the default PowerShell progress bars from DISM cmdlets
+    # (Mount-WindowsImage, Add-WindowsPackage, Add-WindowsDriver, etc.) so the
+    # console stays clean.  The custom Write-Step / Write-Success messages
+    # provide all the user feedback needed.
+    $ProgressPreference = 'SilentlyContinue'
+
     # If no packages were specified, fall back to the required defaults so that
     # a direct call to Build-WinPE without Show-BuildConfiguration still works.
     if ($PackageNames.Count -eq 0) {
@@ -891,6 +906,7 @@ function Build-WinPE {
     # ── 2. Mount ─────────────────────────────────────────────────────────────
     Write-Step 'Mounting boot.wim...'
     $null = Mount-WindowsImage -ImagePath $paths.BootWim -Index 1 -Path $paths.MountDir
+    Write-Success 'boot.wim mounted.'
 
     $retryWithISOWinRE = $false   # set to $true inside the try if version mismatch detected
     try {
@@ -913,6 +929,7 @@ function Build-WinPE {
             Write-Step "Adding package: $pkg"
             try {
                 $null = Add-WindowsPackage -Path $paths.MountDir -PackagePath $pkgPath
+                Write-Success "Package added: $pkg"
             } catch {
                 # Package may already be present in the WinRE base image (expected)
                 # or there may be a version mismatch with the ADK (non-fatal warning).
@@ -1066,6 +1083,7 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\ampcloud-start.cmd
     # ── 7. Commit & unmount ───────────────────────────────────────────────────
     Write-Step 'Committing and unmounting image...'
     $null = Dismount-WindowsImage -Path $paths.MountDir -Save
+    Write-Success 'Image committed and unmounted.'
 
     # ── 8. Re-export with maximum compression to reduce WIM size ─────────────
     # Maximum compression can shrink WinRE by 100–200 MB compared to the default
