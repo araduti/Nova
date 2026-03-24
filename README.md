@@ -152,7 +152,7 @@ Streamed from GitHub at runtime. Never needs to be rebuilt or redeployed.
 | `UnattendUrl` | _(empty)_ | URL to `unattend.xml` |
 | `UnattendPath` | _(empty)_ | Local WinPE path to `unattend.xml` |
 | `PostScriptUrls` | `@()` | Array of URLs to PowerShell scripts for first-boot |
-| `OSDrive` | `W` | Drive letter to assign to the OS partition |
+| `OSDrive` | `C` | Drive letter to assign to the OS partition |
 
 ---
 
