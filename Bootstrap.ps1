@@ -740,25 +740,18 @@ function Select-WindowsEdition {
     if (-not (Test-Path $scratchPath)) {
         New-Item -ItemType Directory -Path $scratchPath -Force | Out-Null
     }
-    $catalogCab = Join-Path $scratchPath 'catalog.cab'
+    $productsXml = Join-Path $scratchPath 'products.xml'
 
-    # Async download so the ring animation continues to spin.
+    # Download products.xml directly from the repository — no CAB extraction needed.
     try {
+        $productsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/products.xml"
         $wc   = New-Object System.Net.WebClient
-        $task = $wc.DownloadFileTaskAsync('https://go.microsoft.com/fwlink/?LinkId=2156292', $catalogCab)
+        $task = $wc.DownloadFileTaskAsync($productsUrl, $productsXml)
         while (-not $task.IsCompleted) {
             [System.Windows.Forms.Application]::DoEvents()
             Start-Sleep -Milliseconds 100
         }
         if ($task.IsFaulted) { throw $task.Exception.InnerException }
-
-        # Extract catalog.cab — expand.exe is available in every WinPE image.
-        # The cab typically contains products.xml; extract to a temporary
-        # directory and locate the XML by extension for resilience against
-        # filename changes in future catalog releases.
-        $extractDir = Join-Path $scratchPath 'catalog_extract'
-        if (-not (Test-Path $extractDir)) { New-Item -ItemType Directory -Path $extractDir -Force | Out-Null }
-        & expand.exe $catalogCab -F:* $extractDir | Out-Null
     } catch {
         Write-Status $S.CatalogFail 'Yellow'
         [System.Windows.Forms.Application]::DoEvents()
@@ -766,9 +759,7 @@ function Select-WindowsEdition {
         return ''
     }
 
-    $catalogXml = Get-ChildItem $extractDir -Filter '*.xml' -ErrorAction SilentlyContinue |
-        Select-Object -First 1 -ExpandProperty FullName
-    if (-not $catalogXml) {
+    if (-not (Test-Path $productsXml)) {
         Write-Status $S.CatalogFail 'Yellow'
         [System.Windows.Forms.Application]::DoEvents()
         Start-Sleep -Seconds 2
@@ -777,7 +768,7 @@ function Select-WindowsEdition {
 
     # Parse the catalog XML and collect unique edition names (x64 only).
     try {
-        [xml]$catalog = Get-Content $catalogXml -ErrorAction Stop
+        [xml]$catalog = Get-Content $productsXml -ErrorAction Stop
         $editions = @(
             $catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
                 Where-Object { $_.LanguageCode -eq $catalogLang -and $_.Architecture -eq 'x64' } |
@@ -883,7 +874,8 @@ function ProceedToEngine {
 
     # Download the ESD catalog and let the user pick a Windows edition.
     $script:SelectedEdition = Select-WindowsEdition
-    $editionArgs = if ($script:SelectedEdition) { @('-WindowsEdition', $script:SelectedEdition) } else { @() }
+    $editionArgs = @{}
+    if ($script:SelectedEdition) { $editionArgs['WindowsEdition'] = $script:SelectedEdition }
 
     # Prefer the pre-staged copy embedded in the WinPE image by Trigger.ps1.
     # Fall back to downloading from GitHub when the local copy is absent.
@@ -979,6 +971,7 @@ $script:initTimer.Add_Tick({
     switch ($script:_initState) {
 
         'INIT' {
+            $script:_wait = 0
             try {
                 $script:_proc = Start-Process -FilePath 'wpeinit.exe' `
                     -NoNewWindow -PassThru -ErrorAction Stop
@@ -987,7 +980,11 @@ $script:initTimer.Add_Tick({
         }
 
         'WPEINIT_POLL' {
-            if ($null -eq $script:_proc -or $script:_proc.HasExited) {
+            if ($null -eq $script:_proc -or $script:_proc.HasExited -or
+                ++$script:_wait -ge 120) {       # 60-second timeout (120 × 500 ms)
+                if ($script:_proc -and -not $script:_proc.HasExited) {
+                    try { $script:_proc.Kill() } catch {}
+                }
                 # wpeutil UpdateBootInfo populates PEFirmwareType in the
                 # registry — needed by downstream partitioning logic.
                 $prev = $ErrorActionPreference
@@ -1014,6 +1011,7 @@ $script:initTimer.Add_Tick({
 
         'DHCP' {
             $script:_dhcp++
+            $script:_wait = 0
             try {
                 $script:_proc = Start-Process -FilePath 'ipconfig.exe' `
                     -ArgumentList '/renew' -NoNewWindow -PassThru `
@@ -1023,7 +1021,11 @@ $script:initTimer.Add_Tick({
         }
 
         'DHCP_POLL' {
-            if ($null -eq $script:_proc -or $script:_proc.HasExited) {
+            if ($null -eq $script:_proc -or $script:_proc.HasExited -or
+                ++$script:_wait -ge 60) {        # 30-second timeout (60 × 500 ms)
+                if ($script:_proc -and -not $script:_proc.HasExited) {
+                    try { $script:_proc.Kill() } catch {}
+                }
                 if (Test-HasValidIP) {
                     $script:_initState = 'CHECK'
                 } elseif ($script:_dhcp -ge 3) {

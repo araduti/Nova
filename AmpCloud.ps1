@@ -28,7 +28,7 @@ param(
     [string]$FirmwareType  = 'UEFI',
 
     # Windows image source
-    # Set to a direct URL to a .wim/.esd, or leave empty to use Microsoft ESD catalog
+    # Set to a direct URL to a .wim/.esd, or leave empty to use products.xml from the repository
     [string]$WindowsImageUrl = '',
     [string]$WindowsEdition  = 'Professional',
     [string]$WindowsLanguage = 'en-us',
@@ -36,6 +36,10 @@ param(
     # Driver injection
     # Folder path (inside WinPE or on a share) containing driver .inf files
     [string]$DriverPath = '',
+    # Automatically detect the system manufacturer (Dell, HP, Lenovo) and use
+    # their official PowerShell modules to fetch and inject the latest drivers.
+    # Requires internet access from WinPE. Mutually compatible with -DriverPath.
+    [switch]$UseOemDrivers,
 
     # Autopilot / Intune
     [string]$AutopilotJsonUrl = '',   # URL to AutopilotConfigurationFile.json
@@ -195,7 +199,11 @@ function Initialize-TargetDisk {
         # Windows OS Partition - all remaining space
         $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -GptType '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}'
         $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false | Out-Null
-        Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
+        # Format-Volume may auto-assign the drive letter; only reassign if needed.
+        $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
+        if ([string]$currentLetter -ne [string]$OSDriveLetter) {
+            Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
+        }
 
     } else {
         # Initialize as MBR
@@ -209,7 +217,11 @@ function Initialize-TargetDisk {
         # Windows OS Partition - remaining
         $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -MbrType 7
         $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false | Out-Null
-        Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
+        # Format-Volume may auto-assign the drive letter; only reassign if needed.
+        $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
+        if ([string]$currentLetter -ne [string]$OSDriveLetter) {
+            Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
+        }
     }
 
     Write-Success "Disk $DiskNumber partitioned. OS drive: ${OSDriveLetter}:"
@@ -219,33 +231,6 @@ function Initialize-TargetDisk {
 #endregion
 
 #region ── Windows Image Download ───────────────────────────────────────────────
-
-function Get-WindowsESDCatalog {
-    param([string]$Language)
-
-    Write-Step 'Fetching Windows ESD catalog from Microsoft...'
-    $catalogUrl = "https://go.microsoft.com/fwlink/?LinkId=2156292"
-    $catalogPath = Join-Path $ScratchDir 'catalog.cab'
-
-    Invoke-DownloadWithProgress -Uri $catalogUrl -OutFile $catalogPath -Description 'Downloading Windows ESD catalog'
-
-    # Extract catalog.cab using expand.exe (Windows native CAB extractor).
-    # There is no pure PowerShell equivalent for CAB expansion that is reliable
-    # in WinPE; Shell.Application.CopyHere is asynchronous and not safe here.
-    # The cab typically contains products.xml; extract to a temporary
-    # directory and locate the XML by extension for resilience against
-    # filename changes in future catalog releases.
-    $extractDir = Join-Path $ScratchDir 'catalog_extract'
-    New-ScratchDirectory -Path $extractDir
-    & expand.exe $catalogPath -F:* $extractDir | Out-Null
-
-    $catalogXml = Get-ChildItem $extractDir -Filter '*.xml' -ErrorAction SilentlyContinue |
-        Select-Object -First 1 -ExpandProperty FullName
-    if (-not $catalogXml) { throw 'ESD catalog XML not found after extraction.' }
-
-    [xml]$catalog = Get-Content $catalogXml
-    return $catalog
-}
 
 function Find-WindowsESD {
     param(
@@ -257,9 +242,7 @@ function Find-WindowsESD {
     )
 
     $arch = 'x64'
-    $allFiles = @($Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File)
-
-    $matchedEsd = $allFiles |
+    $matchedEsd = $Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
         Where-Object {
             $_.LanguageCode -eq $Language -and
             $_.Architecture -eq $arch -and
@@ -307,8 +290,12 @@ function Get-WindowsImageSource {
         return $imagePath
     }
 
-    # Fetch from Microsoft ESD catalog
-    $catalog = Get-WindowsESDCatalog -Language $Language
+    # Read the ESD catalog directly from the repository.
+    Write-Step 'Reading Windows ESD catalog from repository...'
+    $productsUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/products.xml"
+    $productsPath = Join-Path $ScratchDir 'products.xml'
+    Invoke-DownloadWithProgress -Uri $productsUrl -OutFile $productsPath -Description 'Fetching Windows ESD catalog'
+    [xml]$catalog = Get-Content $productsPath -Encoding UTF8
     $esd     = Find-WindowsESD -Catalog $catalog -Edition $Edition -Language $Language -FirmwareType $FirmwareType
 
     Write-Host "  Found ESD: $($esd.FileName) ($([long]$esd.Size | ForEach-Object { Get-FileSizeReadable $_ }))"
@@ -454,6 +441,173 @@ function Add-Drivers {
         -ErrorAction Continue | Out-Null
 
     Write-Success "Drivers injected from: $DriverPath"
+}
+
+# ── OEM driver injection ──────────────────────────────────────────────────────
+
+function Initialize-NuGetProvider {
+    <#
+    .SYNOPSIS
+        Ensures NuGet is available and PSGallery is trusted so Install-Module
+        works correctly, including inside WinPE.
+    #>
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+        Write-Host '  Bootstrapping NuGet package provider...'
+        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -ErrorAction Stop | Out-Null
+    }
+    $gallery = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
+    if (-not $gallery -or $gallery.InstallationPolicy -ne 'Trusted') {
+        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+}
+
+function Install-OemModule {
+    <#
+    .SYNOPSIS
+        Installs a PowerShell module from the PSGallery if it is not already
+        present on the current machine.
+    #>
+    param([string]$Name)
+    if (-not (Get-Module -ListAvailable -Name $Name -ErrorAction SilentlyContinue)) {
+        Write-Host "  Installing PowerShell module: $Name"
+        Initialize-NuGetProvider
+        Install-Module -Name $Name -Force -Scope AllUsers -AcceptLicense `
+            -ErrorAction Stop
+    }
+}
+
+function Get-SystemManufacturer {
+    <#
+    .SYNOPSIS
+        Returns the trimmed manufacturer string from Win32_ComputerSystem.
+    #>
+    $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+    if ($cs) { return $cs.Manufacturer.Trim() }
+    return ''
+}
+
+function Add-DellDrivers {
+    <#
+    .SYNOPSIS
+        Downloads and injects the latest Dell drivers using Dell Command | Update.
+    #>
+    param(
+        [string]$OSDriveLetter,
+        [string]$ScratchDir
+    )
+    Write-Step 'Fetching Dell drivers via Dell Command | Update (DCU)...'
+    Install-OemModule -Name 'DellCommandUpdate'
+    Import-Module DellCommandUpdate -ErrorAction Stop
+
+    $driverTemp = Join-Path $ScratchDir 'Dell-Drivers'
+    New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+
+    # Download applicable driver updates without applying them to the live OS.
+    Invoke-DCUUpdate -UpdateType driver -DownloadPath $driverTemp -ApplyUpdates:$false
+
+    $infFiles = Get-ChildItem $driverTemp -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue
+    if (-not $infFiles) {
+        Write-Warn 'Dell Command | Update found no driver packages to inject.'
+        return
+    }
+
+    Write-Host "  Injecting $($infFiles.Count) Dell driver(s) into ${OSDriveLetter}:\..."
+    Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
+        -ErrorAction Continue | Out-Null
+    Write-Success 'Dell drivers injected successfully.'
+}
+
+function Add-HpDrivers {
+    <#
+    .SYNOPSIS
+        Downloads and injects the latest HP drivers using HP Client Management
+        Script Library (HPCMSL).
+    #>
+    param(
+        [string]$OSDriveLetter,
+        [string]$ScratchDir
+    )
+    Write-Step 'Fetching HP drivers via HP Client Management Script Library (HPCMSL)...'
+    Install-OemModule -Name 'HPCMSL'
+    Import-Module HPCMSL -ErrorAction Stop
+
+    $driverTemp = Join-Path $ScratchDir 'HP-Drivers'
+    New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+
+    # Add-HPDrivers handles platform detection, SoftPaq download, extraction,
+    # and offline DISM injection in a single call.
+    Add-HPDrivers -Path "${OSDriveLetter}:\" -TempPath $driverTemp -ErrorAction Stop
+    Write-Success 'HP drivers injected successfully.'
+}
+
+function Add-LenovoDrivers {
+    <#
+    .SYNOPSIS
+        Downloads and injects the latest Lenovo drivers using LSUClient.
+    #>
+    param(
+        [string]$OSDriveLetter,
+        [string]$ScratchDir
+    )
+    Write-Step 'Fetching Lenovo drivers via LSUClient...'
+    Install-OemModule -Name 'LSUClient'
+    Import-Module LSUClient -ErrorAction Stop
+
+    $driverTemp = Join-Path $ScratchDir 'Lenovo-Drivers'
+    New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+
+    $updates = $null
+    try {
+        $updates = Get-LSUpdate -ErrorAction Stop | Where-Object { $_.Type -eq 'Driver' }
+    } catch {
+        Write-Warn "LSUClient failed to retrieve update list: $_"
+        return
+    }
+    if (-not $updates) {
+        Write-Warn 'LSUClient found no driver updates for this Lenovo model.'
+        return
+    }
+
+    Write-Host "  Found $($updates.Count) Lenovo driver package(s). Downloading..."
+    $updates | Save-LSUpdate -Path $driverTemp
+
+    $infFiles = Get-ChildItem $driverTemp -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue
+    if (-not $infFiles) {
+        Write-Warn 'No .inf files found in downloaded Lenovo packages. Skipping injection.'
+        return
+    }
+
+    Write-Host "  Injecting $($infFiles.Count) driver(s) into ${OSDriveLetter}:\..."
+    Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
+        -ErrorAction Continue | Out-Null
+    Write-Success 'Lenovo drivers injected successfully.'
+}
+
+function Invoke-OemDriverInjection {
+    <#
+    .SYNOPSIS
+        Detects the system manufacturer and calls the appropriate OEM driver
+        injection function (Dell, HP, or Lenovo).
+    #>
+    param(
+        [string]$OSDriveLetter,
+        [string]$ScratchDir
+    )
+    Write-Step 'OEM driver injection: detecting manufacturer...'
+    $manufacturer = Get-SystemManufacturer
+    Write-Host "  Manufacturer: '$manufacturer'"
+
+    switch -Wildcard ($manufacturer) {
+        '*Dell*'    { Add-DellDrivers   -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+        '*HP*'      { Add-HpDrivers     -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+        '*Hewlett*' { Add-HpDrivers     -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+        '*Lenovo*'  { Add-LenovoDrivers -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+        default {
+            Write-Warn ("Manufacturer '$manufacturer' is not supported for OEM driver automation. " +
+                        'Use -DriverPath for manual driver injection.')
+        }
+    }
 }
 
 #endregion
@@ -646,6 +800,11 @@ try {
         -FirmwareType  $FirmwareType `
         -OSDriveLetter $OSDrive
 
+    # Redirect scratch to the OS drive so large downloads (ESD images) do not
+    # fill the size-limited WinPE ramdisk on X:.
+    $ScratchDir = Join-Path "${OSDrive}:" 'AmpCloud'
+    New-ScratchDirectory -Path $ScratchDir
+
     # Step 2: Download Windows image
     $imagePath = Get-WindowsImageSource `
         -ImageUrl    $WindowsImageUrl `
@@ -671,6 +830,12 @@ try {
     Add-Drivers `
         -DriverPath    $DriverPath `
         -OSDriveLetter $OSDrive
+
+    if ($UseOemDrivers) {
+        Invoke-OemDriverInjection `
+            -OSDriveLetter $OSDrive `
+            -ScratchDir    $ScratchDir
+    }
 
     # Step 6: Apply Autopilot/Intune configuration
     Set-AutopilotConfig `
@@ -703,6 +868,12 @@ try {
 [AmpCloud]  Rebooting in 15 seconds...
 [AmpCloud] ══════════════════════════════════════════════════════════
 "@ -ForegroundColor Green
+
+    # Clean up scratch directory so temporary files do not persist in the
+    # final Windows installation.
+    if (Test-Path $ScratchDir) {
+        Remove-Item $ScratchDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
     Start-Sleep -Seconds 15
     Restart-Computer -Force

@@ -1,0 +1,1627 @@
+<?xml version='1.0' encoding='utf-8'?>
+<MCT>
+  <Catalogs>
+    <Catalog version="2.0">
+      <PublishedMedia id="" release="">
+        <Files>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_fr-fr.esd</FileName>
+            <LanguageCode>fr-fr</LanguageCode>
+            <Language>French (France)</Language>
+            <Edition>Professional</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4688329913</Size>
+            <Sha1>4ef9aa06fc2bacf12d24254fda0258217aa120b1</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/b5241abf-858c-4996-a2cb-7e95dbbcb46b/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_fr-fr.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_fr-fr.esd</FileName>
+            <LanguageCode>fr-fr</LanguageCode>
+            <Language>French (France)</Language>
+            <Edition>Core</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4688329913</Size>
+            <Sha1>4ef9aa06fc2bacf12d24254fda0258217aa120b1</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/b5241abf-858c-4996-a2cb-7e95dbbcb46b/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_fr-fr.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_fr-fr.esd</FileName>
+            <LanguageCode>fr-fr</LanguageCode>
+            <Language>French (France)</Language>
+            <Edition>Education</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4688329913</Size>
+            <Sha1>4ef9aa06fc2bacf12d24254fda0258217aa120b1</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/b5241abf-858c-4996-a2cb-7e95dbbcb46b/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_fr-fr.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_es-es.esd</FileName>
+            <LanguageCode>es-es</LanguageCode>
+            <Language>Spanish (Spain)</Language>
+            <Edition>Professional</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4680692940</Size>
+            <Sha1>418a62e394b3a5a2e624bb6108fab1a8655e89a4</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/ce1c4ba7-fef5-490b-808d-2765a0cdc8bf/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_es-es.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_es-es.esd</FileName>
+            <LanguageCode>es-es</LanguageCode>
+            <Language>Spanish (Spain)</Language>
+            <Edition>Core</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4680692940</Size>
+            <Sha1>418a62e394b3a5a2e624bb6108fab1a8655e89a4</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/ce1c4ba7-fef5-490b-808d-2765a0cdc8bf/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_es-es.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_es-es.esd</FileName>
+            <LanguageCode>es-es</LanguageCode>
+            <Language>Spanish (Spain)</Language>
+            <Edition>Education</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4680692940</Size>
+            <Sha1>418a62e394b3a5a2e624bb6108fab1a8655e89a4</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/ce1c4ba7-fef5-490b-808d-2765a0cdc8bf/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_es-es.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_es-es.esd</FileName>
+            <LanguageCode>es-es</LanguageCode>
+            <Language>Spanish (Spain)</Language>
+            <Edition>Professional</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4552361959</Size>
+            <Sha1>634d9a0f0d797ed08d68b423ef1503673b67f681</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/9ddff406-8f94-4f17-b88a-09e19d113639/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_es-es.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_es-es.esd</FileName>
+            <LanguageCode>es-es</LanguageCode>
+            <Language>Spanish (Spain)</Language>
+            <Edition>Core</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4552361959</Size>
+            <Sha1>634d9a0f0d797ed08d68b423ef1503673b67f681</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/9ddff406-8f94-4f17-b88a-09e19d113639/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_es-es.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_es-es.esd</FileName>
+            <LanguageCode>es-es</LanguageCode>
+            <Language>Spanish (Spain)</Language>
+            <Edition>Education</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4552361959</Size>
+            <Sha1>634d9a0f0d797ed08d68b423ef1503673b67f681</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/9ddff406-8f94-4f17-b88a-09e19d113639/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_es-es.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_fr-fr.esd</FileName>
+            <LanguageCode>fr-fr</LanguageCode>
+            <Language>French (France)</Language>
+            <Edition>Professional</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4532016370</Size>
+            <Sha1>2942b1baa8943efeca01a1389324049a7aac2ed5</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/3224a028-0b8d-4ae3-8beb-1999f8c15e17/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_fr-fr.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_fr-fr.esd</FileName>
+            <LanguageCode>fr-fr</LanguageCode>
+            <Language>French (France)</Language>
+            <Edition>Core</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4532016370</Size>
+            <Sha1>2942b1baa8943efeca01a1389324049a7aac2ed5</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/3224a028-0b8d-4ae3-8beb-1999f8c15e17/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_fr-fr.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_fr-fr.esd</FileName>
+            <LanguageCode>fr-fr</LanguageCode>
+            <Language>French (France)</Language>
+            <Edition>Education</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4532016370</Size>
+            <Sha1>2942b1baa8943efeca01a1389324049a7aac2ed5</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/3224a028-0b8d-4ae3-8beb-1999f8c15e17/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_fr-fr.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode>
+            <Language>English (United States)</Language>
+            <Edition>Professional</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4680320173</Size>
+            <Sha1>8ceab2838f8e90180ac7490e8752157fb05588cb</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/009d9a0d-8e1a-45ce-9540-21377534803e/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_en-us.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode>
+            <Language>English (United States)</Language>
+            <Edition>Core</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4680320173</Size>
+            <Sha1>8ceab2838f8e90180ac7490e8752157fb05588cb</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/009d9a0d-8e1a-45ce-9540-21377534803e/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_en-us.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode>
+            <Language>English (United States)</Language>
+            <Edition>Education</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4680320173</Size>
+            <Sha1>8ceab2838f8e90180ac7490e8752157fb05588cb</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/009d9a0d-8e1a-45ce-9540-21377534803e/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_en-us.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode>
+            <Language>English (United States)</Language>
+            <Edition>Professional</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4527171158</Size>
+            <Sha1>c78fd344e845d3b17cb91c40bf4a856459da1b6c</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/37acc189-7f4f-4e07-976c-1cf0a099ec79/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode>
+            <Language>English (United States)</Language>
+            <Edition>Core</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4527171158</Size>
+            <Sha1>c78fd344e845d3b17cb91c40bf4a856459da1b6c</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/37acc189-7f4f-4e07-976c-1cf0a099ec79/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode>
+            <Language>English (United States)</Language>
+            <Edition>Education</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4527171158</Size>
+            <Sha1>c78fd344e845d3b17cb91c40bf4a856459da1b6c</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/37acc189-7f4f-4e07-976c-1cf0a099ec79/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_A64FRE_es-es.esd</FileName>
+            <LanguageCode>es-es</LanguageCode>
+            <Language>Spanish (Spain)</Language>
+            <Edition>Enterprise</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4456483853</Size>
+            <Sha1>73fbb3b8a5f1e92746139c6269dfcfe6ff55bab1</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/69932664-7b6d-4dd8-be38-86fff6a42656/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_A64FRE_es-es.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%ENTERPRISE%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_x64FRE_fr-fr.esd</FileName>
+            <LanguageCode>fr-fr</LanguageCode>
+            <Language>French (France)</Language>
+            <Edition>Enterprise</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4600611091</Size>
+            <Sha1>a22742719d1022c49bc50cff945a95bacb32e64e</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/b62641bc-cc6a-4228-b0b9-2daebe7c2880/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_x64FRE_fr-fr.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%ENTERPRISE%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_x64FRE_es-es.esd</FileName>
+            <LanguageCode>es-es</LanguageCode>
+            <Language>Spanish (Spain)</Language>
+            <Edition>Enterprise</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4613296678</Size>
+            <Sha1>1d528f09fd3ed616a46228425632136d91c9ff20</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/812b8b0e-7f86-4555-98a5-c4ba4a57e09f/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_x64FRE_es-es.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%ENTERPRISE%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_A64FRE_fr-fr.esd</FileName>
+            <LanguageCode>fr-fr</LanguageCode>
+            <Language>French (France)</Language>
+            <Edition>Enterprise</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4470546437</Size>
+            <Sha1>3b5ea3cf8454b93b3ce4ca6368333fba7d99f6a1</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/7072e98f-fc0c-426d-b867-bb36fda2ece1/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_A64FRE_fr-fr.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%ENTERPRISE%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_A64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode>
+            <Language>English (United States)</Language>
+            <Edition>Enterprise</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4476243990</Size>
+            <Sha1>a67698c3b2988dc7fbd38063875a14b5d2e2c9ee</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/f33d02ce-9ad6-4224-90f2-6012845f05f8/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_A64FRE_en-us.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%ENTERPRISE%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_x64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode>
+            <Language>English (United States)</Language>
+            <Edition>Enterprise</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4612287490</Size>
+            <Sha1>e64ace7b54ecbb73c7c1bfad165a50e1776da30b</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/c7723d5e-7036-47e9-8384-860157d39b2f/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTBUSINESS_VOL_x64FRE_en-us.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%ENTERPRISE%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_fr-fr.esd</FileName>
+            <LanguageCode>fr-fr</LanguageCode>
+            <Language>French (France)</Language>
+            <Edition>HomePremium</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4688329913</Size>
+            <Sha1>4ef9aa06fc2bacf12d24254fda0258217aa120b1</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/b5241abf-858c-4996-a2cb-7e95dbbcb46b/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_fr-fr.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_es-es.esd</FileName>
+            <LanguageCode>es-es</LanguageCode>
+            <Language>Spanish (Spain)</Language>
+            <Edition>HomePremium</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4680692940</Size>
+            <Sha1>418a62e394b3a5a2e624bb6108fab1a8655e89a4</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/ce1c4ba7-fef5-490b-808d-2765a0cdc8bf/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_es-es.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_es-es.esd</FileName>
+            <LanguageCode>es-es</LanguageCode>
+            <Language>Spanish (Spain)</Language>
+            <Edition>HomePremium</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4552361959</Size>
+            <Sha1>634d9a0f0d797ed08d68b423ef1503673b67f681</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/9ddff406-8f94-4f17-b88a-09e19d113639/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_es-es.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_fr-fr.esd</FileName>
+            <LanguageCode>fr-fr</LanguageCode>
+            <Language>French (France)</Language>
+            <Edition>HomePremium</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4532016370</Size>
+            <Sha1>2942b1baa8943efeca01a1389324049a7aac2ed5</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/3224a028-0b8d-4ae3-8beb-1999f8c15e17/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_fr-fr.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode>
+            <Language>English (United States)</Language>
+            <Edition>HomePremium</Edition>
+            <Architecture>x64</Architecture>
+            <Size>4680320173</Size>
+            <Sha1>8ceab2838f8e90180ac7490e8752157fb05588cb</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/009d9a0d-8e1a-45ce-9540-21377534803e/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_x64FRE_en-us.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>False</IsRetailOnly>
+          </File>
+          <File id="">
+            <FileName>26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FileName>
+            <LanguageCode>en-us</LanguageCode>
+            <Language>English (United States)</Language>
+            <Edition>HomePremium</Edition>
+            <Architecture>ARM64</Architecture>
+            <Size>4527171158</Size>
+            <Sha1>c78fd344e845d3b17cb91c40bf4a856459da1b6c</Sha1>
+            <FilePath>http://dl.delivery.mp.microsoft.com/filestreamingservice/files/37acc189-7f4f-4e07-976c-1cf0a099ec79/26100.4349.250607-1500.ge_release_svc_refresh_CLIENTCONSUMER_RET_A64FRE_en-us.esd</FilePath>
+            <Key />
+            <Architecture_Loc>%ARCH_64%</Architecture_Loc>
+            <Edition_Loc>%CLIENT%</Edition_Loc>
+            <IsRetailOnly>True</IsRetailOnly>
+          </File>
+          </Files>
+        <Languages>
+          <Language LanguageCode="default">
+            <BASE>Windows 11 Home</BASE>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO>Windows 11 Pro</PRO>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <ARCH_32>32-bit (x86)</ARCH_32>
+            <ARCH_64>64-bit (x64)</ARCH_64>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="ar-sa">
+            <ARCH_32>32- بت (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-بت (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="bg-bg">
+            <ARCH_32>32 бита (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 бита (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="cs-cz">
+            <ARCH_32>32 bitů (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 bitů (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="da-dk">
+            <ARCH_32>32-bit (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-bit (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="de-de">
+            <ARCH_32>32-Bit (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-Bit (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="el-gr">
+            <ARCH_32>32 bit (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 bit (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="en-gb">
+            <ARCH_32>32-bit (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-bit (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="en-us">
+            <ARCH_32>32-bit (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-bit (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="es-es">
+            <ARCH_32>32 bits (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 bits (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="es-mx">
+            <ARCH_32>32 bits (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 bits (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="et-ee">
+            <ARCH_32>32-bitine (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-bitine (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="fi-fi">
+            <ARCH_32>32-bittinen (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-bittinen (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="fr-ca">
+            <ARCH_32>32 bits (x86)</ARCH_32>
+            <BASE_K>Windows 11 Famille K</BASE_K>
+            <PRO>Windows 11 Professionnel</PRO>
+            <SINGLE_LANGUAGE />
+            <PRO_K>Windows 11 Professionnel K</PRO_K>
+            <BASE>Windows 11 Famille</BASE>
+            <BASE_N>Windows 11 Famille N</BASE_N>
+            <ARCH_64>64 bits (x64)</ARCH_64>
+            <BASE_CHINA />
+            <BASE_KN>Windows 11 Famille KN</BASE_KN>
+            <PRO_KN>Windows 11 Professionnel KN</PRO_KN>
+            <PRO_N>Windows 11 Professionnel N</PRO_N>
+            <EDU>Windows 11 Éducation</EDU>
+            <EDU_N>Windows 11 Éducation N</EDU_N>
+            <EDU_K>Windows 11 Éducation K</EDU_K>
+            <EDU_KN>Windows 11 Éducation KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="fr-fr">
+            <ARCH_32>32 bits (x86)</ARCH_32>
+            <BASE_K>Windows 11 Famille K</BASE_K>
+            <PRO>Windows 11 Professionnel</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Famille Unilingue</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Professionnel K</PRO_K>
+            <BASE>Windows 11 Famille</BASE>
+            <BASE_N>Windows 11 Famille N</BASE_N>
+            <ARCH_64>64 bits (x64)</ARCH_64>
+            <BASE_CHINA />
+            <BASE_KN>Windows 11 Famille KN</BASE_KN>
+            <PRO_KN>Windows 11 Professionnel KN</PRO_KN>
+            <PRO_N>Windows 11 Professionnel N</PRO_N>
+            <EDU>Windows 11 Éducation</EDU>
+            <EDU_N>Windows 11 Éducation N</EDU_N>
+            <EDU_K>Windows 11 Éducation K</EDU_K>
+            <EDU_KN>Windows 11 Éducation KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="he-il">
+            <ARCH_32>32 סיביות (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 סיביות (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="hr-hr">
+            <ARCH_32>32-bitna (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-bitna (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="hu-hu">
+            <ARCH_32>32 bites (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 bites (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="it-it">
+            <ARCH_32>32 bit (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 bit (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="ja-jp">
+            <ARCH_32>32 ビット (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 ビット (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="ko-kr">
+            <ARCH_32>32비트(x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro K</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language K</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home KN</BASE_N>
+            <ARCH_64>64비트(x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro KN</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="lt-lt">
+            <ARCH_32>32 bitų (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 bitų (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="lv-lv">
+            <ARCH_32>32-bit (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-bit (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="nb-no">
+            <ARCH_32>32-biters (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-biters (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="nl-nl">
+            <ARCH_32>32-bits (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-bits (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="pl-pl">
+            <ARCH_32>Wersja 32-bitowa (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>Wersja 64-bitowa (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="pt-br">
+            <ARCH_32>32 bits (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 bits (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="pt-pt">
+            <ARCH_32>32 bits (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 bits (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="ro-ro">
+            <ARCH_32>Pe 32 de biți (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>Pe 64 de biți (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="ru-ru">
+            <ARCH_32>32-разрядная (x86)</ARCH_32>
+            <BASE_K>Windows 11 Домашняя K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Домашняя для одного языка</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Домашняя</BASE>
+            <BASE_N>Windows 11 Домашняя N</BASE_N>
+            <ARCH_64>64-разрядная (x64)</ARCH_64>
+            <BASE_CHINA />
+            <BASE_KN>Windows 11 Домашняя KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 для образовательных учреждений</EDU>
+            <EDU_N>Windows 11 для образовательных учреждений N</EDU_N>
+            <EDU_K>Windows 11 для образовательных учреждений K</EDU_K>
+            <EDU_KN>Windows 11 для образовательных учреждений KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="sk-sk">
+            <ARCH_32>32-bitová verzia (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-bitová verzia (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="sl-si">
+            <ARCH_32>32-bitna različica (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-bitna različica (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="sr-latn-rs">
+            <ARCH_32>32-bitna verzija (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-bitna verzija (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="sv-se">
+            <ARCH_32>32 bitar (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 bitar (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="th-th">
+            <ARCH_32>32 บิต (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64 บิต (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="tr-tr">
+            <ARCH_32>32-ъìť (×86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-ъĭţ (ж64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="uk-ua">
+            <ARCH_32>32-роздярна (x86)</ARCH_32>
+            <BASE_K>Windows 11 Home K</BASE_K>
+            <PRO>Windows 11 Pro</PRO>
+            <SINGLE_LANGUAGE>Windows 11 Home Single Language</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 Pro K</PRO_K>
+            <BASE>Windows 11 Home</BASE>
+            <BASE_N>Windows 11 Home N</BASE_N>
+            <ARCH_64>64-розрядна (x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 Home (China only)</BASE_CHINA>
+            <BASE_KN>Windows 11 Home KN</BASE_KN>
+            <PRO_KN>Windows 11 Pro KN</PRO_KN>
+            <PRO_N>Windows 11 Pro N</PRO_N>
+            <EDU>Windows 11 Education</EDU>
+            <EDU_N>Windows 11 Education N</EDU_N>
+            <EDU_K>Windows 11 Education K</EDU_K>
+            <EDU_KN>Windows 11 Education KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="zh-cn">
+            <ARCH_32>32 位(x86)</ARCH_32>
+            <BASE_K>Windows 11 家庭版 K</BASE_K>
+            <PRO>Windows 11 专业版</PRO>
+            <SINGLE_LANGUAGE>Windows 11 家庭单语言版</SINGLE_LANGUAGE>
+            <PRO_K>Windows 11 专业版 K</PRO_K>
+            <BASE>Windows 11 家庭版</BASE>
+            <BASE_N>Windows 11 家庭版 N</BASE_N>
+            <ARCH_64>64 位(x64)</ARCH_64>
+            <BASE_CHINA>Windows 11 家庭中文版</BASE_CHINA>
+            <BASE_KN>Windows 11 家庭版 KN</BASE_KN>
+            <PRO_KN>Windows 11 专业版 KN</PRO_KN>
+            <PRO_N>Windows 11 专业版 N</PRO_N>
+            <EDU>Windows 11 教育版</EDU>
+            <EDU_N>Windows 11 教育版 N</EDU_N>
+            <EDU_K>Windows 11 教育版 K</EDU_K>
+            <EDU_KN>Windows 11 教育版 KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="zh-hk">
+            <ARCH_32>32 位元 (x86)</ARCH_32>
+            <BASE_K>Windows 11 家用版 K</BASE_K>
+            <PRO>Windows 11 專業版</PRO>
+            <SINGLE_LANGUAGE />
+            <PRO_K>Windows 11 專業版 K</PRO_K>
+            <BASE>Windows 11 家用版</BASE>
+            <BASE_N>Windows 11 家用版 N</BASE_N>
+            <ARCH_64>64 位元 (x64)</ARCH_64>
+            <BASE_CHINA />
+            <BASE_KN>Windows 11 家用版 KN</BASE_KN>
+            <PRO_KN>Windows 11 專業版 KN</PRO_KN>
+            <PRO_N>Windows 11 專業版 N</PRO_N>
+            <EDU>Windows 11 教育版</EDU>
+            <EDU_N>Windows 11 教育版 N</EDU_N>
+            <EDU_K>Windows 11 教育版 K</EDU_K>
+            <EDU_KN>Windows 11 教育版 KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+          <Language LanguageCode="zh-tw">
+            <ARCH_32>32 位元 (x86)</ARCH_32>
+            <BASE_K>Windows 11 家用版 K</BASE_K>
+            <PRO>Windows 11 專業版</PRO>
+            <SINGLE_LANGUAGE />
+            <PRO_K>Windows 11 專業版 K</PRO_K>
+            <BASE>Windows 11 家用版</BASE>
+            <BASE_N>Windows 11 家用版 N</BASE_N>
+            <ARCH_64>64 位元 (x64)</ARCH_64>
+            <BASE_CHINA />
+            <BASE_KN>Windows 11 家用版 KN</BASE_KN>
+            <PRO_KN>Windows 11 專業版 KN</PRO_KN>
+            <PRO_N>Windows 11 專業版 N</PRO_N>
+            <EDU>Windows 11 教育版</EDU>
+            <EDU_N>Windows 11 教育版 N</EDU_N>
+            <EDU_K>Windows 11 教育版 K</EDU_K>
+            <EDU_KN>Windows 11 教育版 KN</EDU_KN>
+            <CLIENT>Windows 11</CLIENT>
+            <CLIENT_K>Windows 11 K</CLIENT_K>
+            <CLIENT_N>Windows 11 N</CLIENT_N>
+            <CLIENT_KN>Windows 11 KN</CLIENT_KN>
+            <CLOUD>Windows 11 S</CLOUD>
+            <CLOUD_N>Windows 11 SN</CLOUD_N>
+            <ENTERPRISE>Windows 11 Enterprise</ENTERPRISE>
+            <ENTERPRISE_N>Windows 11 Enterprise N</ENTERPRISE_N>
+          </Language>
+        </Languages>
+        <EULAs>
+          <EULA>
+            <LanguageCode>ar-sa</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_AR-SA_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>bg-bg</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_BG-BG_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>cs-cz</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_CS-CZ_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>da-dk</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_DA-DK_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>de-de</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_DE-DE_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>el-gr</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_EL-GR_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>en-gb</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_EN-GB_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>en-us</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_EN-US_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>es-es</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_ES-ES_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>es-mx</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_ES-MX_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>et-ee</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_ET-EE_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>fi-fi</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_FI-FI_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>fr-ca</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_FR-CA_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>fr-fr</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_FR-FR_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>he-il</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_HE-IL_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>hr-hr</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_HR-HR_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>hu-hu</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_HU-HU_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>it-it</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_IT-IT_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>ja-jp</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_JA-JP_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>ko-kr</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_KO-KR_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>lt-lt</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_LT-LT_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>lv-lv</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_LV-LV_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>nb-no</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_NB-NO_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>nl-nl</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_NL-NL_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>pl-pl</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_PL-PL_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>pt-br</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_PT-BR_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>pt-pt</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_PT-PT_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>ro-ro</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_RO-RO_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>ru-ru</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_RU-RU_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>sk-sk</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_SK-SK_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>sl-si</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_SL-SI_6.27.16.rtf																															</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>sr-latn-rs</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_SR-LATN-RS_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>sv-se</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_SV-SE_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>th-th</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_TH-TH_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>tr-tr</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_TR-TR_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>uk-ua</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_UK-UA_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>zh-cn</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_ZH-CN_6.27.16.rtf</URL>
+          </EULA>
+          <EULA>
+            <LanguageCode>zh-tw</LanguageCode>
+            <URL>https://download.microsoft.com/download/C/0/3/C036B882-9F99-4BC9-A4B5-69370C4E17E9/EULA_MCTool_ZH-TW_6.27.16.rtf</URL>
+          </EULA>
+        </EULAs>
+      </PublishedMedia>
+    </Catalog>
+  </Catalogs>
+</MCT>
