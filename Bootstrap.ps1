@@ -276,6 +276,11 @@ $script:CardPadTop         = 40
 $script:CardPadBottom      = 36
 $script:IllustH            = 110      # space reserved for the illustration
 
+# Illustration circle sizes (used by the card Paint handler)
+$script:IllustBig          = 58       # centre circle diameter
+$script:IllustSmall        = 46       # side circle diameter
+$script:IllustGap          = 10       # overlap offset between circles
+
 # Illustration circle colours (Azure · Teal · Violet — matching the OOBE palette)
 $script:IllustBlue   = [System.Drawing.Color]::FromArgb(0, 120, 212)
 $script:IllustGreen  = [System.Drawing.Color]::FromArgb(16, 137, 62)
@@ -285,6 +290,21 @@ $script:IllustViolet = [System.Drawing.Color]::FromArgb(135, 100, 184)
 $script:IconFont = $null
 try { $script:IconFont = New-Object System.Drawing.Font("Segoe MDL2 Assets", 18) }
 catch { Write-Verbose "Segoe MDL2 Assets font not available: $_" }
+
+# ── Helper: rounded-rectangle GraphicsPath ──────────────────────────────────
+# Returns a new GraphicsPath outlining a rounded rectangle.  Callers must
+# Dispose() the returned path when done.
+function New-RoundedRectPath {
+    param([int]$X, [int]$Y, [int]$W, [int]$H, [int]$Radius)
+    $p = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $d = $Radius * 2
+    $p.AddArc($X,          $Y,          $d, $d, 180, 90)
+    $p.AddArc($X + $W - $d, $Y,          $d, $d, 270, 90)
+    $p.AddArc($X + $W - $d, $Y + $H - $d, $d, $d,   0, 90)
+    $p.AddArc($X,          $Y + $H - $d, $d, $d,  90, 90)
+    $p.CloseFigure()
+    return $p
+}
 
 # Reusable pen for ring (performance win — avoids per-frame GDI allocation).
 # Width is updated in-place by the breathing-pulse timer tick.
@@ -568,17 +588,13 @@ try {
 } catch { Write-Verbose "Card double-buffering unavailable: $_" }
 $form.Controls.Add($cardPanel)
 
+$script:_cardW = 0; $script:_cardH = 0
 $cardPanel.Add_SizeChanged({
     if ($cardPanel.Width -le 0 -or $cardPanel.Height -le 0) { return }
-    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $r    = $script:CardRadius
-    $w    = $cardPanel.Width
-    $h    = $cardPanel.Height
-    $path.AddArc(0,             0,             $r * 2, $r * 2, 180, 90)
-    $path.AddArc($w - $r * 2,   0,             $r * 2, $r * 2, 270, 90)
-    $path.AddArc($w - $r * 2,   $h - $r * 2,  $r * 2, $r * 2, 0,   90)
-    $path.AddArc(0,             $h - $r * 2,  $r * 2, $r * 2, 90,  90)
-    $path.CloseFigure()
+    if ($cardPanel.Width -eq $script:_cardW -and $cardPanel.Height -eq $script:_cardH) { return }
+    $script:_cardW = $cardPanel.Width
+    $script:_cardH = $cardPanel.Height
+    $path = New-RoundedRectPath -X 0 -Y 0 -W $script:_cardW -H $script:_cardH -Radius $script:CardRadius
     if ($cardPanel.Region) { $cardPanel.Region.Dispose() }
     $cardPanel.Region = New-Object System.Drawing.Region($path)
     $path.Dispose()
@@ -604,15 +620,8 @@ $form.Add_Paint({
     # Soft shadow behind the card panel
     if ($cardPanel.Width -gt 0 -and $cardPanel.Height -gt 0) {
         $g.SmoothingMode = 'AntiAlias'
-        $sx = $cardPanel.Left + 4;  $sy = $cardPanel.Top + 4
-        $sw = $cardPanel.Width;     $sh = $cardPanel.Height
-        $r  = $script:CardRadius
-        $sp = New-Object System.Drawing.Drawing2D.GraphicsPath
-        $sp.AddArc($sx,            $sy,            $r * 2, $r * 2, 180, 90)
-        $sp.AddArc($sx + $sw - $r * 2, $sy,        $r * 2, $r * 2, 270, 90)
-        $sp.AddArc($sx + $sw - $r * 2, $sy + $sh - $r * 2, $r * 2, $r * 2, 0, 90)
-        $sp.AddArc($sx,            $sy + $sh - $r * 2, $r * 2, $r * 2, 90, 90)
-        $sp.CloseFigure()
+        $sp = New-RoundedRectPath -X ($cardPanel.Left + 4) -Y ($cardPanel.Top + 4) `
+                                   -W $cardPanel.Width -H $cardPanel.Height -Radius $script:CardRadius
         $sBrush = New-Object System.Drawing.SolidBrush($script:CardShadowColor)
         $g.FillPath($sBrush, $sp)
         $sBrush.Dispose();  $sp.Dispose()
@@ -625,13 +634,11 @@ $cardPanel.Add_Paint({
     $g.SmoothingMode = 'AntiAlias'
     $pw = $cardPanel.Width
     if ($pw -le 0) { return }
-    $cx = [int]($pw / 2)      # horizontal centre of card
-    $cy = 58                   # vertical centre of illustration row
-
-    # Circle sizes
-    $big   = 58                # centre circle diameter
-    $small = 46                # side circle diameter
-    $gap   = 10                # overlap offset
+    $cx    = [int]($pw / 2)
+    $cy    = [int]($script:IllustH / 2)
+    $big   = $script:IllustBig
+    $small = $script:IllustSmall
+    $gap   = $script:IllustGap
 
     # Left circle — blue (network / globe)
     $b1 = New-Object System.Drawing.SolidBrush($script:IllustBlue)
@@ -733,12 +740,14 @@ try {
     $serial = (Get-CimInstance Win32_Bios -ErrorAction SilentlyContinue).SerialNumber
     $cpuRaw = (Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue |
                    Select-Object -First 1).Name
-    $cpu    = ($cpuRaw -replace '\s+', ' ').Trim()
+    $cpu    = if ($cpuRaw) { ($cpuRaw -replace '\s+', ' ').Trim() } else { 'Unknown CPU' }
     $ramObj = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
-    $ramGB  = [Math]::Round($ramObj.TotalPhysicalMemory / 1GB, 1)
+    $ramGB  = if ($ramObj -and $ramObj.TotalPhysicalMemory) {
+                  [Math]::Round($ramObj.TotalPhysicalMemory / 1GB, 1)
+              } else { '?' }
     $diskObj = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue |
                    Select-Object -First 1
-    $diskGB  = if ($diskObj) { [Math]::Round($diskObj.Size / 1GB) } else { '?' }
+    $diskGB  = if ($diskObj -and $diskObj.Size) { [Math]::Round($diskObj.Size / 1GB) } else { '?' }
     $dot     = "  $([char]0x2022)  "
     $deviceLabel.Text = "$model${dot}S/N $serial`n$cpu${dot}${ramGB} GB RAM${dot}${diskGB} GB Disk"
 } catch {
@@ -1046,13 +1055,7 @@ function Show-CompletionScreen {
     # Rounded corners
     $fCard.Add_SizeChanged({
         if ($fCard.Width -le 0 -or $fCard.Height -le 0) { return }
-        $p = New-Object System.Drawing.Drawing2D.GraphicsPath
-        $r = $script:CardRadius
-        $p.AddArc(0, 0, $r * 2, $r * 2, 180, 90)
-        $p.AddArc($fCard.Width - $r * 2, 0, $r * 2, $r * 2, 270, 90)
-        $p.AddArc($fCard.Width - $r * 2, $fCard.Height - $r * 2, $r * 2, $r * 2, 0, 90)
-        $p.AddArc(0, $fCard.Height - $r * 2, $r * 2, $r * 2, 90, 90)
-        $p.CloseFigure()
+        $p = New-RoundedRectPath -X 0 -Y 0 -W $fCard.Width -H $fCard.Height -Radius $script:CardRadius
         if ($fCard.Region) { $fCard.Region.Dispose() }
         $fCard.Region = New-Object System.Drawing.Region($p)
         $p.Dispose()
@@ -1074,14 +1077,8 @@ function Show-CompletionScreen {
         $gb2.Dispose()
         if ($fCard.Width -gt 0 -and $fCard.Height -gt 0) {
             $g.SmoothingMode = 'AntiAlias'
-            $sx = $fCard.Left + 4;  $sy = $fCard.Top + 4
-            $r  = $script:CardRadius
-            $sp = New-Object System.Drawing.Drawing2D.GraphicsPath
-            $sp.AddArc($sx, $sy, $r * 2, $r * 2, 180, 90)
-            $sp.AddArc($sx + $fCard.Width - $r * 2, $sy, $r * 2, $r * 2, 270, 90)
-            $sp.AddArc($sx + $fCard.Width - $r * 2, $sy + $fCard.Height - $r * 2, $r * 2, $r * 2, 0, 90)
-            $sp.AddArc($sx, $sy + $fCard.Height - $r * 2, $r * 2, $r * 2, 90, 90)
-            $sp.CloseFigure()
+            $sp = New-RoundedRectPath -X ($fCard.Left + 4) -Y ($fCard.Top + 4) `
+                                       -W $fCard.Width -H $fCard.Height -Radius $script:CardRadius
             $sb = New-Object System.Drawing.SolidBrush($script:CardShadowColor)
             $g.FillPath($sb, $sp)
             $sb.Dispose(); $sp.Dispose()
