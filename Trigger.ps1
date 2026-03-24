@@ -1015,6 +1015,127 @@ function New-BCDRamdiskEntry {
 
 #endregion
 
+#region ── Cloud Boot Image ─────────────────────────────────────────────────────
+
+function Get-CloudBootImage {
+    <#
+    .SYNOPSIS  Checks GitHub Releases for a pre-built boot image.
+    .DESCRIPTION
+        Queries the GitHub Releases API for a release tagged 'boot-image'.
+        If found and it contains a boot.wim asset, returns a hashtable with
+        download URLs and metadata.  Returns $null when no cloud image is
+        available.
+    .OUTPUTS   [hashtable] with BootWimUrl, BootSdiUrl, BootWimSize, PublishedAt — or $null.
+    #>
+    param(
+        [string] $GitHubUser,
+        [string] $GitHubRepo,
+        [string] $Tag = 'boot-image'
+    )
+
+    $releaseUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/releases/tags/$Tag"
+    try {
+        $release = Invoke-RestMethod -Uri $releaseUrl -ErrorAction Stop
+    } catch {
+        return $null
+    }
+
+    $wimAsset = $release.assets | Where-Object { $_.name -eq 'boot.wim' }
+    if (-not $wimAsset) { return $null }
+
+    $sdiAsset = $release.assets | Where-Object { $_.name -eq 'boot.sdi' }
+
+    return @{
+        BootWimUrl  = $wimAsset.browser_download_url
+        BootSdiUrl  = if ($sdiAsset) { $sdiAsset.browser_download_url } else { $null }
+        BootWimSize = $wimAsset.size
+        PublishedAt = $release.published_at
+    }
+}
+
+function Publish-BootImage {
+    <#
+    .SYNOPSIS  Uploads the boot image to a GitHub Release.
+    .DESCRIPTION
+        Creates (or updates) a GitHub Release tagged 'boot-image' and uploads
+        boot.wim and boot.sdi as release assets.  Requires a Personal Access
+        Token (PAT) with 'repo' scope.
+    #>
+    param(
+        [string] $GitHubUser,
+        [string] $GitHubRepo,
+        [string] $GitHubToken,
+        [string] $BootWimPath,
+        [string] $BootSdiPath,
+        [string] $Tag = 'boot-image'
+    )
+
+    $headers = @{
+        Authorization = "token $GitHubToken"
+        Accept        = 'application/vnd.github+json'
+    }
+
+    # Check for existing release
+    $releaseUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/releases/tags/$Tag"
+    $release = $null
+    try {
+        $release = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop
+    } catch {
+        Write-Verbose "No existing release for tag '$Tag' — will create a new one."
+    }
+
+    if ($release) {
+        # Delete existing assets so they can be replaced
+        foreach ($asset in $release.assets) {
+            $deleteUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/releases/assets/$($asset.id)"
+            try {
+                $null = Invoke-RestMethod -Uri $deleteUrl -Method Delete -Headers $headers -ErrorAction Stop
+            } catch {
+                Write-Warn "Could not delete existing asset '$($asset.name)': $_"
+            }
+        }
+    } else {
+        # Create a new release
+        $timestamp = [DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')
+        $body = @{
+            tag_name   = $Tag
+            name       = 'AmpCloud Boot Image'
+            body       = "Pre-built WinPE boot image for AmpCloud deployment.`nGenerated: $timestamp UTC"
+            draft      = $false
+            prerelease = $false
+        } | ConvertTo-Json
+        $createUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/releases"
+        $release   = Invoke-RestMethod -Uri $createUrl -Method Post -Headers $headers `
+                                       -Body $body -ContentType 'application/json' -ErrorAction Stop
+        Write-Success "GitHub Release '$Tag' created."
+    }
+
+    # Upload assets
+    $uploadUrlBase = $release.upload_url -replace '\{[^}]*\}', ''
+
+    foreach ($file in @(
+        @{ Path = $BootWimPath; Name = 'boot.wim' },
+        @{ Path = $BootSdiPath; Name = 'boot.sdi' }
+    )) {
+        if (-not $file.Path -or -not (Test-Path $file.Path)) {
+            Write-Warn "File not found, skipping upload: $($file.Name)"
+            continue
+        }
+        $uploadUrl    = "${uploadUrlBase}?name=$($file.Name)"
+        $fileSizeMB   = (Get-Item $file.Path).Length / 1MB
+        $uploadHeaders = @{
+            Authorization  = "token $GitHubToken"
+            'Content-Type' = 'application/octet-stream'
+        }
+        Write-Step "Uploading $($file.Name) ($('{0:N0}' -f $fileSizeMB) MB)..."
+        $null = Invoke-WebRequest -Uri $uploadUrl -Method Post -Headers $uploadHeaders `
+                                   -InFile $file.Path -UseBasicParsing -ErrorAction Stop
+        Write-Success "$($file.Name) uploaded."
+    }
+}
+
+#endregion
+
 #region ── Main ─────────────────────────────────────────────────────────────────
 
 Write-Host @"
@@ -1034,24 +1155,111 @@ try {
     $arch = Get-WinPEArchitecture
     Write-Step "Host architecture: $arch"
 
-    # ── 1. ADK ────────────────────────────────────────────────────────────────
-    $adkRoot = Assert-ADKInstalled -Architecture $arch
+    # ── 0b. Check for a pre-built cloud boot image ───────────────────────────
+    Write-Step 'Checking for pre-built boot image on GitHub...'
+    $cloudImage = Get-CloudBootImage -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo
+    $useCloud   = $false
 
-    # ── 2. Boot image (WinRE preferred, WinPE fallback) ──────────────────────
-    $paths = Build-WinPE `
-        -ADKRoot        $adkRoot `
-        -WorkDir        $script:WinPEWorkDir `
-        -Architecture   $arch `
-        -GitHubUser     $GitHubUser `
-        -GitHubRepo     $GitHubRepo `
-        -GitHubBranch   $GitHubBranch `
-        -WindowsISOUrl  $WindowsISOUrl
+    if ($cloudImage) {
+        $cloudSizeMB = '{0:N0}' -f ($cloudImage.BootWimSize / 1MB)
+        Write-Host ''
+        Write-Host '  A pre-built boot image is available on GitHub.' -ForegroundColor Green
+        Write-Host "  Published : $($cloudImage.PublishedAt)"         -ForegroundColor Gray
+        Write-Host "  Size      : $cloudSizeMB MB"                   -ForegroundColor Gray
+        Write-Host ''
+        Write-Host '  [1] Use the cloud image (faster — skips ADK install and image build)' -ForegroundColor White
+        Write-Host '  [2] Rebuild locally'                                                  -ForegroundColor White
+        $choice = Read-Host "`n  Enter choice (1 or 2) [default: 1]"
+        if ($choice -ne '2') { $useCloud = $true }
+    }
 
-    # ── 3. BCD ────────────────────────────────────────────────────────────────
-    New-BCDRamdiskEntry `
-        -BootWim    $paths.BootWim `
-        -RamdiskDir $script:RamdiskDir `
-        -MediaDir   $paths.MediaDir
+    if ($useCloud) {
+        # ── Cloud path: download pre-built boot image ─────────────────────────
+        $cloudDir   = Join-Path $WorkDir 'Cloud'
+        $bootSubDir = Join-Path $cloudDir 'boot'
+        $null = New-Item -ItemType Directory -Path $bootSubDir -Force
+
+        $bootWimPath = Join-Path $cloudDir 'boot.wim'
+        Write-Step "Downloading boot.wim ($cloudSizeMB MB) — this may take a few minutes..."
+        $prevPref = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'
+        try     { Invoke-WebRequest -Uri $cloudImage.BootWimUrl -OutFile $bootWimPath -UseBasicParsing }
+        finally { $ProgressPreference = $prevPref }
+        Write-Success 'boot.wim downloaded.'
+
+        if ($cloudImage.BootSdiUrl) {
+            $bootSdiPath = Join-Path $bootSubDir 'boot.sdi'
+            Write-Step 'Downloading boot.sdi...'
+            $prevPref = $ProgressPreference
+            $ProgressPreference = 'SilentlyContinue'
+            try     { Invoke-WebRequest -Uri $cloudImage.BootSdiUrl -OutFile $bootSdiPath -UseBasicParsing }
+            finally { $ProgressPreference = $prevPref }
+            Write-Success 'boot.sdi downloaded.'
+        } else {
+            # boot.sdi was not in the release — fall back to the local ADK copy
+            Write-Warn 'boot.sdi not found in cloud release; obtaining from ADK...'
+            $adkRoot  = Assert-ADKInstalled -Architecture $arch
+            $sdiSrc   = Join-Path $adkRoot `
+                "Assessment and Deployment Kit\Windows Preinstallation Environment\$arch\Media\boot\boot.sdi"
+            if (Test-Path $sdiSrc) {
+                Copy-Item $sdiSrc (Join-Path $bootSubDir 'boot.sdi') -Force
+                Write-Success 'boot.sdi obtained from ADK.'
+            } else {
+                Write-Warn "boot.sdi not found at $sdiSrc — ramdisk boot will likely fail."
+            }
+        }
+
+        # ── BCD ───────────────────────────────────────────────────────────────
+        New-BCDRamdiskEntry `
+            -BootWim    $bootWimPath `
+            -RamdiskDir $script:RamdiskDir `
+            -MediaDir   $cloudDir
+
+    } else {
+        # ── Local build path ──────────────────────────────────────────────────
+        # ── 1. ADK ────────────────────────────────────────────────────────────
+        $adkRoot = Assert-ADKInstalled -Architecture $arch
+
+        # ── 2. Boot image (WinRE preferred, WinPE fallback) ──────────────────
+        $paths = Build-WinPE `
+            -ADKRoot        $adkRoot `
+            -WorkDir        $script:WinPEWorkDir `
+            -Architecture   $arch `
+            -GitHubUser     $GitHubUser `
+            -GitHubRepo     $GitHubRepo `
+            -GitHubBranch   $GitHubBranch `
+            -WindowsISOUrl  $WindowsISOUrl
+
+        # ── 2b. Offer to upload boot image to GitHub ─────────────────────────
+        Write-Host ''
+        $uploadChoice = Read-Host '  Upload this boot image to GitHub for future use? (y/N)'
+        if ($uploadChoice -match '^[Yy]') {
+            $tokenSecure = Read-Host '  GitHub Personal Access Token (repo scope)' -AsSecureString
+            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($tokenSecure)
+            try {
+                $tokenPlain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+                $sdiPath = Join-Path $paths.MediaDir 'boot\boot.sdi'
+                Publish-BootImage `
+                    -GitHubUser  $GitHubUser `
+                    -GitHubRepo  $GitHubRepo `
+                    -GitHubToken $tokenPlain `
+                    -BootWimPath $paths.BootWim `
+                    -BootSdiPath $sdiPath
+                Write-Success 'Boot image published to GitHub Releases.'
+            } catch {
+                Write-Warn "Upload failed (non-fatal): $_"
+            } finally {
+                $tokenPlain = $null
+                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+            }
+        }
+
+        # ── 3. BCD ────────────────────────────────────────────────────────────
+        New-BCDRamdiskEntry `
+            -BootWim    $paths.BootWim `
+            -RamdiskDir $script:RamdiskDir `
+            -MediaDir   $paths.MediaDir
+    }
 
     Write-Host "`n  [AmpCloud] All done — system is primed for cloud boot." -ForegroundColor Green
 
