@@ -962,10 +962,10 @@ $script:connectCheckTimer = New-Object System.Windows.Forms.Timer
 # States:
 #   INIT          – launch wpeinit.exe (non-blocking)
 #   WPEINIT_POLL  – wait for wpeinit to exit, then run quick sync tuning
-#   SETTLE        – brief delay for NIC drivers to finish binding after wpeinit
-#   DHCP          – launch ipconfig /renew (non-blocking)
+#   SETTLE        – wait for NIC drivers and DHCP Client service to start
+#   DHCP          – launch ipconfig /renew (hidden window, non-blocking)
 #   DHCP_POLL     – wait for ipconfig to exit, check for valid IP
-#   DHCP_WAIT     – 5-second pause between DHCP retries (up to 3 attempts)
+#   DHCP_WAIT     – 5-second pause between DHCP retries (up to 5 attempts)
 #   CHECK         – test internet connectivity, decide next step
 
 $script:_initState = 'INIT'
@@ -1000,7 +1000,7 @@ $script:initTimer.Add_Tick({
                 $ErrorActionPreference = 'Continue'
                 try {
                     Start-Process -FilePath 'wpeutil' -ArgumentList 'UpdateBootInfo' `
-                        -Wait -NoNewWindow -ErrorAction SilentlyContinue
+                        -Wait -WindowStyle Hidden -ErrorAction SilentlyContinue
                 } catch {} finally { $ErrorActionPreference = $prev }
 
                 Invoke-NetworkTuning
@@ -1011,8 +1011,16 @@ $script:initTimer.Add_Tick({
         }
 
         'SETTLE' {
-            # Let NIC drivers finish binding after wpeinit before DHCP.
-            if (++$script:_wait -ge 4) {        # 2-second pause (4 × 500 ms)
+            # Let NIC drivers and the DHCP Client service finish starting
+            # after wpeinit before attempting ipconfig /renew.  The service
+            # needs several seconds to initialise its RPC endpoint; calling
+            # ipconfig too early produces "RPC server is unavailable" errors.
+            if (++$script:_wait -ge 10) {       # 5-second pause (10 × 500 ms)
+                # Ensure the DHCP Client service is running (idempotent).
+                try {
+                    Start-Process -FilePath 'net.exe' -ArgumentList 'start', 'dhcp' `
+                        -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue
+                } catch {}
                 $script:_dhcp = 0
                 $script:_initState = 'DHCP'
             }
@@ -1023,7 +1031,7 @@ $script:initTimer.Add_Tick({
             $script:_wait = 0
             try {
                 $script:_proc = Start-Process -FilePath 'ipconfig.exe' `
-                    -ArgumentList '/renew' -NoNewWindow -PassThru `
+                    -ArgumentList '/renew' -WindowStyle Hidden -PassThru `
                     -ErrorAction SilentlyContinue
             } catch { $script:_proc = $null }
             $script:_initState = 'DHCP_POLL'
@@ -1037,7 +1045,7 @@ $script:initTimer.Add_Tick({
                 }
                 if (Test-HasValidIP) {
                     $script:_initState = 'CHECK'
-                } elseif ($script:_dhcp -ge 3) {
+                } elseif ($script:_dhcp -ge 5) {
                     $script:_initState = 'CHECK'
                 } else {
                     $script:_wait = 0
