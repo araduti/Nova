@@ -958,6 +958,7 @@ $script:initTimer.Add_Tick({
     switch ($script:_initState) {
 
         'INIT' {
+            $script:_wait = 0
             try {
                 $script:_proc = Start-Process -FilePath 'wpeinit.exe' `
                     -NoNewWindow -PassThru -ErrorAction Stop
@@ -966,7 +967,11 @@ $script:initTimer.Add_Tick({
         }
 
         'WPEINIT_POLL' {
-            if ($null -eq $script:_proc -or $script:_proc.HasExited) {
+            if ($null -eq $script:_proc -or $script:_proc.HasExited -or
+                ++$script:_wait -ge 120) {       # 60-second timeout (120 × 500 ms)
+                if ($script:_proc -and -not $script:_proc.HasExited) {
+                    try { $script:_proc.Kill() } catch {}
+                }
                 # wpeutil UpdateBootInfo populates PEFirmwareType in the
                 # registry — needed by downstream partitioning logic.
                 $prev = $ErrorActionPreference
@@ -993,6 +998,7 @@ $script:initTimer.Add_Tick({
 
         'DHCP' {
             $script:_dhcp++
+            $script:_wait = 0
             try {
                 $script:_proc = Start-Process -FilePath 'ipconfig.exe' `
                     -ArgumentList '/renew' -NoNewWindow -PassThru `
@@ -1002,7 +1008,11 @@ $script:initTimer.Add_Tick({
         }
 
         'DHCP_POLL' {
-            if ($null -eq $script:_proc -or $script:_proc.HasExited) {
+            if ($null -eq $script:_proc -or $script:_proc.HasExited -or
+                ++$script:_wait -ge 60) {        # 30-second timeout (60 × 500 ms)
+                if ($script:_proc -and -not $script:_proc.HasExited) {
+                    try { $script:_proc.Kill() } catch {}
+                }
                 if (Test-HasValidIP) {
                     $script:_initState = 'CHECK'
                 } elseif ($script:_dhcp -ge 3) {
