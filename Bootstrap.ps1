@@ -152,12 +152,14 @@ function Optimize-WinPENetwork {
         netsh int tcp set global rsc=enabled 2>$null | Out-Null
 
         # Disable IPv6 on all adapters to reduce routing overhead
-        # Best-effort: Get-NetAdapter may not exist in WinPE without NetAdapter module
-        try {
-            Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
-                netsh interface ipv6 set interface "$($_.Name)" admin=disabled 2>$null | Out-Null
+        # Use netsh to enumerate interfaces (Get-NetAdapter is unavailable in WinPE)
+        $ifLines = netsh interface show interface 2>$null
+        foreach ($line in $ifLines) {
+            if ($line -match '^\s*(Enabled|Disabled)\s+\S+\s+\S+\s+(.+)$') {
+                $ifName = $matches[2].Trim()
+                netsh interface ipv6 set interface "$ifName" admin=disabled 2>$null | Out-Null
             }
-        } catch {}
+        }
 
         # Renew DHCP leases (ipconfig is always available in WinPE)
         ipconfig /renew 2>$null | Out-Null

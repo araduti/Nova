@@ -119,7 +119,13 @@ function Optimize-WinPENetwork {
     netsh int tcp set global chimney=enabled | Out-Null
     netsh int tcp set global rss=enabled | Out-Null
     netsh int tcp set global rsc=enabled | Out-Null
-    Get-NetAdapter | ForEach-Object { netsh interface ipv6 set interface "$($_.Name)" admin=disabled 2>$null | Out-Null }
+    $ifLines = netsh interface show interface 2>$null
+    foreach ($line in $ifLines) {
+        if ($line -match '^\s*(Enabled|Disabled)\s+\S+\s+\S+\s+(.+)$') {
+            $ifName = $matches[2].Trim()
+            netsh interface ipv6 set interface "$ifName" admin=disabled 2>$null | Out-Null
+        }
+    }
     ipconfig /renew | Out-Null
 }
 
