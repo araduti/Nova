@@ -291,7 +291,7 @@ $script:IllustViolet = [System.Drawing.Color]::FromArgb(135, 100, 184)
 # WinPE does not include that font — glyph references render as empty boxes.
 
 function Invoke-GlobeIcon {
-    <# Draws a simple globe (circle + cross-hairs + equator arc) inside a rect. #>
+    <# Draws a simple globe (circle + crosshairs + equator arc) inside a rect. #>
     param($Graphics, $Rect, $Pen)
     $g = $Graphics; $r = $Rect
     $cx = $r.X + $r.Width / 2;  $cy = $r.Y + $r.Height / 2
@@ -1121,11 +1121,11 @@ function Show-CompletionScreen {
         $gt = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
         $gb = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
         $gr = New-Object System.Drawing.Rectangle(0, 0, $fw, $fh)
-        $gb2 = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+        $gBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
                    $gr, $gt, $gb,
                    [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-        $g.FillRectangle($gb2, $gr)
-        $gb2.Dispose()
+        $g.FillRectangle($gBrush, $gr)
+        $gBrush.Dispose()
         if ($fCard.Width -gt 0 -and $fCard.Height -gt 0) {
             $g.SmoothingMode = 'AntiAlias'
             $sp = New-RoundedRectPath -X ($fCard.Left + 4) -Y ($fCard.Top + 4) `
