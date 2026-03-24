@@ -165,7 +165,7 @@ $script:S = $Strings[$script:Lang]
 #endregion
 
 #region ── Sound Effects ─────────────────────────────────────────────────────
-function Play-Sound {
+function Invoke-Sound {
     param([int]$Freq = 800, [int]$Dur = 200)
     [console]::beep($Freq, $Dur)
 }
@@ -173,8 +173,6 @@ function Play-Sound {
 
 #region ── Fluent Theme ──────────────────────────────────────────────────────
 $LightBlue   = [System.Drawing.Color]::FromArgb(0, 120, 212)
-$DarkBlue    = [System.Drawing.Color]::FromArgb(0, 80, 160)
-$LightBg     = [System.Drawing.Color]::FromArgb(243, 243, 243)
 $DarkBg      = [System.Drawing.Color]::FromArgb(32, 32, 32)
 $LightCard   = [System.Drawing.Color]::White
 $DarkCard    = [System.Drawing.Color]::FromArgb(45, 45, 45)
@@ -182,7 +180,6 @@ $TextLight   = [System.Drawing.Color]::FromArgb(32, 32, 32)
 $TextDark    = [System.Drawing.Color]::White
 
 $script:IsDarkMode  = $false
-$HeaderFont  = New-Object System.Drawing.Font("Segoe UI", 24, [System.Drawing.FontStyle]::Bold)
 $TitleFont   = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
 $BodyFont    = New-Object System.Drawing.Font("Segoe UI", 11)
 $SmallFont   = New-Object System.Drawing.Font("Segoe UI", 9.5)
@@ -194,7 +191,7 @@ $RingPen.StartCap = "Round"
 $RingPen.EndCap = "Round"
 
 # ── Layout spacing constants ────────────────────────────────────────────────
-# Named offsets keep Center-AllControls readable and easy to tweak.
+# Named offsets keep Set-ControlLayout readable and easy to tweak.
 $Spacing = @{
     LogoH        = 50;  LogoGap      = 4      # logo height + gap below
     SubH         = 25;  SubGap       = 3      # subtitle height + gap
@@ -247,7 +244,7 @@ function Invoke-NetworkTuning {
                 $null = netsh interface ipv6 set interface "$($matches[2].Trim())" admin=disabled 2>$null
             }
         }
-    } catch {} finally { $ErrorActionPreference = $prev }
+    } catch { Write-Verbose "Network tuning failed: $_" } finally { $ErrorActionPreference = $prev }
 }
 
 function Test-HasValidIP {
@@ -270,7 +267,7 @@ function Test-InternetConnectivity {
         try {
             $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
             if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 300) { return $true }
-        } catch {}
+        } catch { Write-Verbose "Connectivity probe failed for ${url}: $_" }
     }
     return $false
 }
@@ -284,7 +281,7 @@ function Start-WlanService {
     return $true
 }
 
-function Get-WiFiNetworks {
+function Get-WiFiNetwork {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
@@ -313,10 +310,10 @@ function Get-WiFiNetworks {
     return @($unique.Values | Sort-Object Signal -Descending)
 }
 
-function Get-SignalBars { param([int]$s) ('█' * [Math]::Round($s/20)) + ('░' * (5-[Math]::Round($s/20))) }
+function Get-SignalBar { param([int]$s) ('█' * [Math]::Round($s/20)) + ('░' * (5-[Math]::Round($s/20))) }
 
 function Connect-WiFiNetwork {
-    param([string]$SSID, [string]$Password, [string]$Auth)
+    param([string]$SSID, [string]$WiFiKey, [string]$Auth)
     $safeSsid = [System.Security.SecurityElement]::Escape($SSID)
     $isOpen   = $Auth -match 'Open'
 
@@ -337,7 +334,7 @@ function Connect-WiFiNetwork {
 </WLANProfile>
 "@
     } else {
-        $safePwd  = if ($Password) { [System.Security.SecurityElement]::Escape($Password) } else { '' }
+        $safePwd  = if ($WiFiKey) { [System.Security.SecurityElement]::Escape($WiFiKey) } else { '' }
         $authType = if ($Auth -match 'WPA3') { 'WPA3SAE' } else { 'WPA2PSK' }
         $xml = @"
 <?xml version="1.0"?>
@@ -392,9 +389,9 @@ function Show-WiFiSelector {
 
     function RefreshNetworks {
         $list.Items.Clear()
-        Get-WiFiNetworks | ForEach-Object {
+        Get-WiFiNetwork | ForEach-Object {
             $item = New-Object System.Windows.Forms.ListViewItem($_.SSID)
-            $item.SubItems.Add((Get-SignalBars $_.Signal))
+            $item.SubItems.Add((Get-SignalBar $_.Signal))
             $item.SubItems.Add($_.Auth)
             $list.Items.Add($item)
         }
@@ -427,7 +424,7 @@ function Show-WiFiSelector {
                 }
             }
         }
-        Connect-WiFiNetwork -SSID $netSSID -Password $password -Auth $netAuth
+        Connect-WiFiNetwork -SSID $netSSID -WiFiKey $password -Auth $netAuth
         $password = $null
         Write-Status 'Waiting for IP address...' 'Yellow'
         Start-Sleep -Seconds 6
@@ -543,7 +540,7 @@ $ringPanel.Add_Paint({
         $g = $_.Graphics
         $g.SmoothingMode = "AntiAlias"
         $g.DrawArc($RingPen, 6, 6, 66, 66, $script:ringAngle, 280)
-    } catch { }
+    } catch { Write-Verbose "Ring paint error: $_" }
 })
 
 # ── Status label ────────────────────────────────────────────────────────────
@@ -618,7 +615,7 @@ $form.Controls.Add($f8Hint)
 # ── Dynamic centering ───────────────────────────────────────────────────────
 # Positions all controls relative to the form centre on every resize.
 $contentW = 600
-function Center-AllControls {
+function Set-ControlLayout {
     $cw = $form.ClientSize.Width
     $ch = $form.ClientSize.Height
     $cx = [int]($cw / 2)
@@ -650,7 +647,7 @@ function Center-AllControls {
     $f8Hint.Location = New-Object System.Drawing.Point(16, ($ch - 30))
 }
 
-$form.Add_Resize({ Center-AllControls })
+$form.Add_Resize({ Set-ControlLayout })
 
 # ── Helper functions ────────────────────────────────────────────────────────
 function Write-Status {
@@ -672,7 +669,7 @@ function Update-Step { param([int]$s)
     }
 }
 
-function Toggle-DarkMode {
+function Switch-DarkMode {
     $script:IsDarkMode = -not $script:IsDarkMode
     $bg  = if ($script:IsDarkMode) { $DarkBg }   else { $LightCard }
     $fg  = if ($script:IsDarkMode) { $TextDark }  else { $TextLight }
@@ -686,7 +683,7 @@ function Toggle-DarkMode {
     $btnDark.Text            = if ($script:IsDarkMode) { [char]0x2600 } else { [char]0x263D }
     $form.Refresh()
 }
-$btnDark.Add_Click({ Toggle-DarkMode })
+$btnDark.Add_Click({ Switch-DarkMode })
 
 # ── Fade-in timer ───────────────────────────────────────────────────────────
 # Smoothly ramps form opacity from 0 → 1 over ~1 second.  Started in the
@@ -725,13 +722,13 @@ $script:uiUpdateTimer.Add_Tick({
                 $ringTimer.Stop()
             }
         }
-    } catch { }
+    } catch { Write-Verbose "Status JSON parse error: $_" }
 })
 #endregion
 
 #region ── Final Completion Screen (fullscreen) ─────────────────────────────
 function Show-CompletionScreen {
-    Play-Sound 1200 400
+    Invoke-Sound 1200 400
     $finalForm = New-Object System.Windows.Forms.Form
     $finalForm.Text = $S.Complete
     $finalForm.FormBorderStyle = "None"
@@ -970,7 +967,7 @@ function ProceedToEngine {
 
     Update-Step 3
     Write-Status $S.Connected 'Green'
-    Play-Sound 900 300
+    Invoke-Sound 900 300
     $ringPanel.Visible = $true
     $ringTimer.Start()
 
@@ -991,7 +988,8 @@ function ProceedToEngine {
             Write-Status ($S.Download -f 0)
             $web = New-Object System.Net.WebClient
             $web.add_DownloadProgressChanged({
-                param($sender, $e)
+                param($eventSender, $e)
+                $null = $eventSender  # Required by .NET delegate signature
                 Write-Status ($S.Download -f $e.ProgressPercentage)
             })
             $task = $web.DownloadFileTaskAsync($url, $localAmpCloud)
@@ -1036,7 +1034,7 @@ function ProceedToEngine {
 }
 
 function Show-Failure {
-    Play-Sound 400 600
+    Invoke-Sound 400 600
     Write-Status "Could not connect to the internet.`nPlease check your network." 'Red'
     $btnRetry.Visible = $true
     $btnRetry.Add_Click({
@@ -1092,7 +1090,7 @@ $script:initTimer.Add_Tick({
             if ($null -eq $script:_proc -or $script:_proc.HasExited -or
                 ++$script:_wait -ge $script:WpeInitTimeoutTicks) {
                 if ($script:_proc -and -not $script:_proc.HasExited) {
-                    try { $script:_proc.Kill() } catch {}
+                    try { $script:_proc.Kill() } catch { Write-Verbose "Process already exited: $_" }
                 }
                 # wpeutil UpdateBootInfo populates PEFirmwareType in the
                 # registry — needed by downstream partitioning logic.
@@ -1101,7 +1099,7 @@ $script:initTimer.Add_Tick({
                 try {
                     Start-Process -FilePath 'wpeutil' -ArgumentList 'UpdateBootInfo' `
                         -Wait -WindowStyle Hidden -ErrorAction SilentlyContinue
-                } catch {} finally { $ErrorActionPreference = $prev }
+                } catch { Write-Verbose "wpeutil UpdateBootInfo failed: $_" } finally { $ErrorActionPreference = $prev }
 
                 Invoke-NetworkTuning
                 Write-Status 'Acquiring network address...' 'Cyan'
@@ -1120,7 +1118,7 @@ $script:initTimer.Add_Tick({
                 try {
                     Start-Process -FilePath 'net.exe' -ArgumentList 'start', 'dhcp' `
                         -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue
-                } catch {}
+                } catch { Write-Verbose "DHCP service start failed: $_" }
                 $script:_dhcp = 0
                 $script:_initState = 'DHCP'
             }
@@ -1141,7 +1139,7 @@ $script:initTimer.Add_Tick({
             if ($null -eq $script:_proc -or $script:_proc.HasExited -or
                 ++$script:_wait -ge $script:DhcpTimeoutTicks) {
                 if ($script:_proc -and -not $script:_proc.HasExited) {
-                    try { $script:_proc.Kill() } catch {}
+                    try { $script:_proc.Kill() } catch { Write-Verbose "Process already exited: $_" }
                 }
                 if (Test-HasValidIP) {
                     $script:_initState = 'CHECK'
@@ -1198,7 +1196,7 @@ $script:initTimer.Add_Tick({
 })
 
 $form.Add_Shown({
-    Center-AllControls
+    Set-ControlLayout
     Update-Step 1
     Write-Status $S.StatusInit 'Cyan'
     $ringPanel.Visible = $true

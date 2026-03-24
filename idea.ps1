@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     AmpCloud Bootstrap v7.3 - SUPER-FLUENT WinForms (UI Animations OPTIMIZED)
@@ -21,7 +21,7 @@ $ErrorActionPreference = 'Stop'
 
 # ── Logging ─────────────────────────────────────────────────────────────────
 $LogPath = "X:\AmpCloud-Bootstrap.log"
-Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyContinue | Out-Null
+$null = Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyContinue
 
 # ── Assemblies ──────────────────────────────────────────────────────────────
 Add-Type -AssemblyName System.Windows.Forms
@@ -82,7 +82,7 @@ $S = $Strings[$Lang]
 #endregion
 
 #region ── Sound Effects ─────────────────────────────────────────────────────
-function Play-Sound {
+function Invoke-Sound {
     param([int]$Freq = 800, [int]$Dur = 200)
     [console]::beep($Freq, $Dur)
 }
@@ -113,20 +113,20 @@ $RingPen.EndCap = "Round"
 #region ── Network + WiFi Functions ─────────────────────────────────────────
 function Optimize-WinPENetwork {
     Write-Status "🚀 Applying high-performance network tuning..." 'Cyan'
-    powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c | Out-Null
-    netsh int tcp set global autotuninglevel=normal | Out-Null
-    netsh int tcp set global congestionprovider=ctcp | Out-Null
-    netsh int tcp set global chimney=enabled | Out-Null
-    netsh int tcp set global rss=enabled | Out-Null
-    netsh int tcp set global rsc=enabled | Out-Null
+    $null = powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+    $null = netsh int tcp set global autotuninglevel=normal
+    $null = netsh int tcp set global congestionprovider=ctcp
+    $null = netsh int tcp set global chimney=enabled
+    $null = netsh int tcp set global rss=enabled
+    $null = netsh int tcp set global rsc=enabled
     $ifLines = netsh interface show interface 2>$null
     foreach ($line in $ifLines) {
         if ($line -match '^\s*(Enabled|Disabled)\s+\S+\s+\S+\s+(.+)$') {
             $ifName = $matches[2].Trim()
-            netsh interface ipv6 set interface "$ifName" admin=disabled 2>$null | Out-Null
+            $null = netsh interface ipv6 set interface "$ifName" admin=disabled 2>$null
         }
     }
-    ipconfig /renew | Out-Null
+    $null = ipconfig /renew
 }
 
 function Invoke-WpeInit {
@@ -138,7 +138,7 @@ function Invoke-WpeInit {
 function Test-InternetConnectivity {
     $urls = @('https://www.msftconnecttest.com/connecttest.txt', 'https://clients3.google.com/generate_204')
     foreach ($url in $urls) {
-        try { if ((Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 6).StatusCode -eq 200) { return $true } } catch {}
+        try { if ((Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 6).StatusCode -eq 200) { return $true } } catch { Write-Verbose "Connectivity probe failed for ${url}: $_" }
     }
     return $false
 }
@@ -162,7 +162,7 @@ function Start-WlanService {
     return $true
 }
 
-function Get-WiFiNetworks {
+function Get-WiFiNetwork {
     $raw = & netsh wlan show networks mode=bssid 2>&1
     $networks = [System.Collections.Generic.List[pscustomobject]]::new()
     $cur = $null
@@ -185,12 +185,12 @@ function Get-WiFiNetworks {
     return @($unique.Values | Sort-Object Signal -Descending)
 }
 
-function Get-SignalBars { param([int]$s) ('█' * [Math]::Round($s/20)) + ('░' * (5-[Math]::Round($s/20))) }
+function Get-SignalBar { param([int]$s) ('█' * [Math]::Round($s/20)) + ('░' * (5-[Math]::Round($s/20))) }
 
 function Connect-WiFiNetwork {
-    param([string]$SSID, [string]$Password, [string]$Auth)
+    param([string]$SSID, [string]$WiFiKey, [string]$Auth)
     $safeSSID = [System.Security.SecurityElement]::Escape($SSID)
-    $safePwd  = if ($Password) { [System.Security.SecurityElement]::Escape($Password) } else { '' }
+    $safePwd  = if ($WiFiKey) { [System.Security.SecurityElement]::Escape($WiFiKey) } else { '' }
     $isOpen = $Auth -match 'Open'
     $authType = if ($isOpen) { 'open' } elseif ($Auth -match 'WPA3') { 'WPA3SAE' } else { 'WPA2PSK' }
     $enc = if ($isOpen) { 'none' } else { 'AES' }
@@ -235,8 +235,8 @@ function Connect-WiFiNetwork {
     $tmp = Join-Path $env:TEMP "ampcloud_wifi_$([guid]::NewGuid().Guid).xml"
     try {
         $xml | Set-Content -Path $tmp -Encoding UTF8 -Force
-        & netsh wlan add profile filename="$tmp" | Out-Null
-        & netsh wlan connect name="$SSID" ssid="$SSID" | Out-Null
+        $null = & netsh wlan add profile filename="$tmp"
+        $null = & netsh wlan connect name="$SSID" ssid="$SSID"
     } finally {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     }
@@ -261,9 +261,9 @@ function Show-WiFiSelector {
 
     function RefreshNetworks {
         $list.Items.Clear()
-        Get-WiFiNetworks | ForEach-Object {
+        Get-WiFiNetwork | ForEach-Object {
             $item = New-Object System.Windows.Forms.ListViewItem($_.SSID)
-            $item.SubItems.Add((Get-SignalBars $_.Signal))
+            $item.SubItems.Add((Get-SignalBar $_.Signal))
             $item.SubItems.Add($_.Auth)
             $list.Items.Add($item)
         }
@@ -276,19 +276,19 @@ function Show-WiFiSelector {
     $dlg.Controls.Add($btnRefresh)
     $btnRefresh.Add_Click({ RefreshNetworks })
 
-    RefreshNetworks()
+    RefreshNetworks
 
-    $dlg.ShowDialog() | Out-Null
+    $null = $dlg.ShowDialog()
     if ($list.SelectedItems.Count -gt 0) {
         $selected = $list.SelectedItems[0]
         $netSSID = $selected.Text
         $netAuth = $selected.SubItems[2].Text
-        $pwd = ''
+        $clearPassword = ''
         if ($netAuth -notmatch 'Open') {
-            $pwd = Read-Host -Prompt "Password for '$netSSID'" -AsSecureString
-            $pwd = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($pwd))
+            $clearPassword = Read-Host -Prompt "Password for '$netSSID'" -AsSecureString
+            $clearPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($clearPassword))
         }
-        Connect-WiFiNetwork -SSID $netSSID -Password $pwd -Auth $netAuth
+        Connect-WiFiNetwork -SSID $netSSID -WiFiKey $clearPassword -Auth $netAuth
         return (Wait-ForConnection -Timeout 40)
     }
     return $false
@@ -483,7 +483,7 @@ function Update-Step { param([int]$s)
     }
 }
 
-function Toggle-DarkMode {
+function Switch-DarkMode {
     $script:IsDarkMode = -not $IsDarkMode
     $form.BackColor = if ($IsDarkMode) { $DarkBg } else { $LightBg }
     $content.BackColor = if ($IsDarkMode) { $DarkCard } else { $LightCard }
@@ -492,12 +492,12 @@ function Toggle-DarkMode {
     $btnDark.Text = if ($IsDarkMode) { "☀️" } else { "🌙" }
     $form.Refresh()
 }
-$btnDark.Add_Click({ Toggle-DarkMode })
+$btnDark.Add_Click({ Switch-DarkMode })
 #endregion
 
 #region ── Final Completion Screen ──────────────────────────────────────────
 function Show-CompletionScreen {
-    Play-Sound 1200 400
+    Invoke-Sound 1200 400
     $finalForm = New-Object System.Windows.Forms.Form
     $finalForm.Text = $S.Complete
     $finalForm.Size = New-Object System.Drawing.Size(620, 380)
@@ -519,7 +519,7 @@ function Show-CompletionScreen {
     $btnPower.Add_Click({ shutdown /s /t 0 })
     $btnShell.Add_Click({ $finalForm.Close(); & cmd.exe /k })
 
-    $finalForm.ShowDialog() | Out-Null
+    $null = $finalForm.ShowDialog()
 }
 #endregion
 
@@ -527,7 +527,7 @@ function Show-CompletionScreen {
 function ProceedToEngine {
     Update-Step 3
     Write-Status $S.Connected 'Green'
-    Play-Sound 900 300
+    Invoke-Sound 900 300
     $ringPanel.Visible = $true
     $ringTimer.Start()
 
@@ -554,7 +554,7 @@ function ProceedToEngine {
 }
 
 function Show-Failure {
-    Play-Sound 400 600
+    Invoke-Sound 400 600
     Write-Status "❌ Could not connect to the internet.`nPlease check your network." 'Red'
     $btnRetry.Visible = $true
     $btnRetry.Add_Click({
@@ -592,6 +592,6 @@ $form.Add_Shown({
 })
 
 # Launch
-$form.ShowDialog() | Out-Null
+$null = $form.ShowDialog()
 Stop-Transcript -ErrorAction SilentlyContinue
 #endregion
