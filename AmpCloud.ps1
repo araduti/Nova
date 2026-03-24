@@ -232,8 +232,9 @@ function Get-WindowsESDCatalog {
     # Extract catalog.cab using expand.exe (Windows native CAB extractor).
     # There is no pure PowerShell equivalent for CAB expansion that is reliable
     # in WinPE; Shell.Application.CopyHere is asynchronous and not safe here.
-    # The cab contains products.xml; extract to a temporary directory so we
-    # find the XML regardless of how expand.exe names the output.
+    # The cab typically contains products.xml; extract to a temporary
+    # directory and locate the XML by extension for resilience against
+    # filename changes in future catalog releases.
     $extractDir = Join-Path $ScratchDir 'catalog_extract'
     New-ScratchDirectory -Path $extractDir
     & expand.exe $catalogPath -F:* $extractDir | Out-Null

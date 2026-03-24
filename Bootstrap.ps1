@@ -753,8 +753,9 @@ function Select-WindowsEdition {
         if ($task.IsFaulted) { throw $task.Exception.InnerException }
 
         # Extract catalog.cab — expand.exe is available in every WinPE image.
-        # The cab contains products.xml; extract to a temporary directory so we
-        # find the XML regardless of how expand.exe names the output.
+        # The cab typically contains products.xml; extract to a temporary
+        # directory and locate the XML by extension for resilience against
+        # filename changes in future catalog releases.
         $extractDir = Join-Path $scratchPath 'catalog_extract'
         if (-not (Test-Path $extractDir)) { New-Item -ItemType Directory -Path $extractDir -Force | Out-Null }
         & expand.exe $catalogCab -F:* $extractDir | Out-Null
