@@ -71,6 +71,13 @@ $ErrorActionPreference = 'Stop'
 # setting does not carry over.  Enforce TLS 1.2 before any HTTPS traffic.
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+# ── Logging ─────────────────────────────────────────────────────────────────
+# This engine runs in a dedicated process (Start-Process from Bootstrap.ps1),
+# so the parent's Start-Transcript does not carry over.  Start our own
+# transcript so every Write-Host, warning, and error is captured to disk.
+$script:EngineLogPath = 'X:\AmpCloud-Engine.log'
+Start-Transcript -Path $script:EngineLogPath -Force -ErrorAction SilentlyContinue | Out-Null
+
 # Resolved once so WinPE's X:\ path is used correctly in the error handler.
 $script:PsBin = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
@@ -1058,6 +1065,8 @@ try {
     # ampcloud-start.cmd, so an interactive prompt appears automatically
     # once the form is dismissed.
     throw
+} finally {
+    Stop-Transcript -ErrorAction SilentlyContinue
 }
 
 #endregion
