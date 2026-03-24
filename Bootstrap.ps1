@@ -161,14 +161,43 @@ function Optimize-WinPENetwork {
             }
         }
 
-        # Renew DHCP leases (ipconfig is always available in WinPE)
-        ipconfig /renew 2>$null | Out-Null
+        # Retry DHCP acquisition up to 3 times.  A single ipconfig /renew can
+        # fail when adapters finish initialising after wpeinit returns.
+        # OSDCloud uses a similar 20-second retry loop for robust DHCP.
+        $dhcpOk = $false
+        for ($attempt = 1; $attempt -le 3; $attempt++) {
+            ipconfig /renew 2>$null | Out-Null
+            # Check for a valid (non-APIPA) IPv4 address
+            $ipOut = ipconfig 2>$null
+            if ($ipOut -match 'IPv4 Address[\s.:]+([\d.]+)' -and $Matches[1] -notmatch '^169\.254\.') {
+                $dhcpOk = $true
+                break
+            }
+            Start-Sleep -Seconds 5
+        }
+        if (-not $dhcpOk) {
+            Write-Status 'DHCP did not return a valid IP after retries.' 'Yellow'
+        }
     } catch {} finally {
         $ErrorActionPreference = $prev
     }
 }
 
 function Invoke-WpeInit {
+    # ── Set WinPE environment variables ─────────────────────────────────────
+    # OSDCloud sets these so PowerShell modules and profile scripts that
+    # reference standard user-profile paths do not fail in WinPE.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        if (-not $env:APPDATA)       { $env:APPDATA       = "$env:USERPROFILE\AppData\Roaming" }
+        if (-not $env:LOCALAPPDATA)  { $env:LOCALAPPDATA  = "$env:USERPROFILE\AppData\Local"   }
+        if (-not $env:HOMEDRIVE)     { $env:HOMEDRIVE     = 'X:'  }
+        if (-not $env:HOMEPATH)      { $env:HOMEPATH      = '\' }
+    } catch {} finally {
+        $ErrorActionPreference = $prev
+    }
+
     Write-Status "🌐 Initialising WinPE network stack..." 'Cyan'
     try {
         $proc = Start-Process -FilePath 'wpeinit.exe' -Wait -NoNewWindow -PassThru -ErrorAction Stop
@@ -179,6 +208,18 @@ function Invoke-WpeInit {
         }
     } catch {
         Write-Status "wpeinit.exe unavailable: $_" 'Yellow'
+    }
+
+    # Capture boot-method information (BIOS vs UEFI, PXE vs local, etc.).
+    # OSDCloud calls this via wpeutil UpdateBootInfo; it populates the
+    # HKLM:\SYSTEM\CurrentControlSet\Control\PEFirmwareType registry value
+    # that downstream tools rely on for firmware-aware partitioning.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        Start-Process -FilePath 'wpeutil' -ArgumentList 'UpdateBootInfo' -Wait -NoNewWindow -ErrorAction SilentlyContinue
+    } catch {} finally {
+        $ErrorActionPreference = $prev
     }
 
     # Disable the WinPE firewall so outgoing HTTPS requests are not blocked.
@@ -383,6 +424,18 @@ $form.WindowState = "Maximized"
 $form.BackColor = $LightCard
 $form.Font = $BodyFont
 
+# ── F8 command prompt shortcut ──────────────────────────────────────────────
+# Enable KeyPreview so the form sees key events before child controls.
+# F8 opens a new PowerShell console for diagnostics (similar to Shift+F10
+# in Windows Setup).  cmd.exe could be used, but PowerShell is more useful
+# in WinPE and is already the engine behind AmpCloud.
+$form.KeyPreview = $true
+$form.Add_KeyDown({
+    if ($_.KeyCode -eq [System.Windows.Forms.Keys]::F8) {
+        Start-Process $script:PsBin -ArgumentList '-NoProfile', '-NoExit'
+    }
+})
+
 # ── Dark mode toggle (top-right corner) ─────────────────────────────────────
 $btnDark = New-Object System.Windows.Forms.Button
 $btnDark.Size = New-Object System.Drawing.Size(44, 44)
@@ -532,6 +585,15 @@ $btnRetry.FlatAppearance.BorderSize = 0
 $btnRetry.Visible = $false
 $form.Controls.Add($btnRetry)
 
+# ── F8 hint (bottom-left) ───────────────────────────────────────────────────
+$f8Hint = New-Object System.Windows.Forms.Label
+$f8Hint.Text = "Press F8 for command prompt"
+$f8Hint.Font = $SmallFont
+$f8Hint.ForeColor = [System.Drawing.Color]::Gray
+$f8Hint.AutoSize = $true
+$f8Hint.Anchor = [System.Windows.Forms.AnchorStyles]::None
+$form.Controls.Add($f8Hint)
+
 # ── Dynamic centering ───────────────────────────────────────────────────────
 # Positions all controls relative to the form centre on every resize.
 $contentW = 600
@@ -566,6 +628,9 @@ function Center-AllControls {
 
     # Dark mode button stays top-right
     $btnDark.Location = New-Object System.Drawing.Point(($cw - 60), 16)
+
+    # F8 hint anchored to bottom-left
+    $f8Hint.Location = New-Object System.Drawing.Point(16, ($ch - 30))
 }
 
 $form.Add_Resize({ Center-AllControls })
@@ -617,6 +682,14 @@ function Show-CompletionScreen {
     $finalForm.BackColor = if ($script:IsDarkMode) { $DarkBg } else { $LightCard }
     $finalForm.Font = $BodyFont
 
+    # F8 command prompt shortcut (same as main form)
+    $finalForm.KeyPreview = $true
+    $finalForm.Add_KeyDown({
+        if ($_.KeyCode -eq [System.Windows.Forms.Keys]::F8) {
+            Start-Process $script:PsBin -ArgumentList '-NoProfile', '-NoExit'
+        }
+    })
+
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text = $S.Complete + "`n`nAmpCloud imaging engine is ready."
     $lbl.Font = $TitleFont
@@ -662,6 +735,13 @@ function Show-CompletionScreen {
         & $script:PsBin -NoProfile -NoExit
     })
 
+    $f8HintFinal = New-Object System.Windows.Forms.Label
+    $f8HintFinal.Text = "Press F8 for command prompt"
+    $f8HintFinal.Font = $SmallFont
+    $f8HintFinal.ForeColor = [System.Drawing.Color]::Gray
+    $f8HintFinal.AutoSize = $true
+    $finalForm.Controls.Add($f8HintFinal)
+
     # Center controls on resize
     $finalForm.Add_Resize({
         $cw = $finalForm.ClientSize.Width
@@ -675,6 +755,7 @@ function Show-CompletionScreen {
         $btnReboot.Location = New-Object System.Drawing.Point($bx, $by)
         $btnPower.Location  = New-Object System.Drawing.Point(($bx + 200 + $gap), $by)
         $btnShell.Location  = New-Object System.Drawing.Point(($bx + 400 + $gap * 2), $by)
+        $f8HintFinal.Location = New-Object System.Drawing.Point(16, ($ch - 30))
     })
 
     $finalForm.ShowDialog() | Out-Null
