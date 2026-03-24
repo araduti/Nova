@@ -1110,8 +1110,13 @@ function Publish-BootImage {
         Write-Success "GitHub Release '$Tag' created."
     }
 
-    # Upload assets
+    # Upload assets using streaming HttpWebRequest — avoids the massive
+    # overhead of Invoke-WebRequest's built-in progress bar on large files.
     $uploadUrlBase = $release.upload_url -replace '\{[^}]*\}', ''
+    $bufferSize    = 4 * 1MB          # 4 MB upload chunks
+    $progressMs    = 1000             # minimum ms between progress updates
+    $connectTimeMs = [int]([TimeSpan]::FromHours(2).TotalMilliseconds)    # generous for slow links
+    $ioTimeMs      = [int]([TimeSpan]::FromMinutes(10).TotalMilliseconds) # per read/write op
 
     foreach ($file in @(
         @{ Path = $BootWimPath; Name = 'boot.wim' },
@@ -1121,16 +1126,63 @@ function Publish-BootImage {
             Write-Warn "File not found, skipping upload: $($file.Name)"
             continue
         }
-        $uploadUrl    = "${uploadUrlBase}?name=$($file.Name)"
-        $fileSizeMB   = (Get-Item $file.Path).Length / 1MB
-        $uploadHeaders = @{
-            Authorization  = "token $GitHubToken"
-            'Content-Type' = 'application/octet-stream'
-        }
+        $uploadUrl  = "${uploadUrlBase}?name=$($file.Name)"
+        $fileLength = (Get-Item $file.Path).Length
+        $fileSizeMB = $fileLength / 1MB
         Write-Step "Uploading $($file.Name) ($('{0:N0}' -f $fileSizeMB) MB)..."
-        $null = Invoke-WebRequest -Uri $uploadUrl -Method Post -Headers $uploadHeaders `
-                                   -InFile $file.Path -UseBasicParsing -ErrorAction Stop
-        Write-Success "$($file.Name) uploaded."
+
+        $fs        = $null
+        $reqStream = $null
+        $response  = $null
+        try {
+            $wr             = [System.Net.HttpWebRequest]::Create($uploadUrl)
+            $wr.Method      = 'POST'
+            $wr.ContentType = 'application/octet-stream'
+            $wr.Headers['Authorization'] = "token $GitHubToken"
+            $wr.ContentLength = $fileLength
+            $wr.AllowWriteStreamBuffering = $false   # stream directly, no RAM copy
+            $wr.SendChunked   = $false
+            $wr.Timeout       = $connectTimeMs
+            $wr.ReadWriteTimeout = $ioTimeMs
+
+            $reqStream = $wr.GetRequestStream()
+            $fs        = [System.IO.FileStream]::new(
+                             $file.Path,
+                             [System.IO.FileMode]::Open,
+                             [System.IO.FileAccess]::Read,
+                             [System.IO.FileShare]::Read,
+                             $bufferSize)
+            $buffer   = New-Object byte[] $bufferSize
+            $uploaded = [long]0
+            $sw       = [System.Diagnostics.Stopwatch]::StartNew()
+
+            do {
+                $read = $fs.Read($buffer, 0, $buffer.Length)
+                if ($read -gt 0) {
+                    $reqStream.Write($buffer, 0, $read)
+                    $uploaded += $read
+                    if ($sw.ElapsedMilliseconds -gt $progressMs) {
+                        $pct   = [int]($uploaded * 100 / $fileLength)
+                        $speed = if ($sw.Elapsed.TotalSeconds -gt 0) {
+                                     '{0:N1} MB/s' -f ($uploaded / 1MB / $sw.Elapsed.TotalSeconds)
+                                 } else { '—' }
+                        Write-Host ("  Progress: {0}% ({1:N0} / {2:N0} MB) @ {3}" -f
+                            $pct, ($uploaded / 1MB), $fileSizeMB, $speed) -NoNewline
+                        Write-Host "`r" -NoNewline
+                    }
+                }
+            } while ($read -gt 0)
+            Write-Host ''
+
+            $response = $wr.GetResponse()
+            Write-Success "$($file.Name) uploaded."
+        } catch {
+            throw "Upload failed for '$($file.Name)' to ${uploadUrl}: $_"
+        } finally {
+            if ($fs)        { $fs.Close() }
+            if ($reqStream) { $reqStream.Close() }
+            if ($response)  { $response.Close() }
+        }
     }
 }
 
