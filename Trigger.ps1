@@ -441,7 +441,7 @@ function Assert-ADKInstalled {
 
 #region ── copype — Pure PowerShell ─────────────────────────────────────────────
 
-function Copy-WinPEFiles {
+function Copy-WinPEFile {
     <#
     .SYNOPSIS
         Pure-PowerShell replacement for copype.cmd.
@@ -526,7 +526,7 @@ $script:WinPEPackages = @(
     'WinPE-DismCmdlets.cab',     'en-us\WinPE-DismCmdlets_en-us.cab'
 )
 
-function Remove-WinRERecoveryPackages {
+function Remove-WinRERecoveryPackage {
     <#
     .SYNOPSIS
         Removes WinRE-specific recovery tools from a mounted WinRE image to
@@ -614,7 +614,7 @@ function Build-WinPE {
     # that Microsoft delivers via Windows Update, enabling wireless on most laptops.
 
     # $wimSourceToDelete tracks any temp WIM file that must be removed once
-    # Copy-WinPEFiles has finished (it copies the file into the workspace).
+    # Copy-WinPEFile has finished (it copies the file into the workspace).
     $wimSourceToDelete = $null
 
     if ($_ISOWinREPath) {
@@ -622,7 +622,7 @@ function Build-WinPE {
         Write-Warn 'Using WinRE extracted from Windows ISO (fresh copy).'
         $winrePath   = $_ISOWinREPath
         $usingWinRE  = $true
-        $wimSourceToDelete = $_ISOWinREPath   # clean up after Copy-WinPEFiles
+        $wimSourceToDelete = $_ISOWinREPath   # clean up after Copy-WinPEFile
     } else {
         # ── First attempt: try the machine's local WinRE ─────────────────────────
         Write-Step 'Locating WinRE.wim to use as base image (built-in WiFi drivers)...'
@@ -684,10 +684,10 @@ function Build-WinPE {
 
     # ── 1. Create workspace ──────────────────────────────────────────────────
     try {
-        $paths = Copy-WinPEFiles -ADKRoot $ADKRoot -Destination $WorkDir `
+        $paths = Copy-WinPEFile -ADKRoot $ADKRoot -Destination $WorkDir `
                                  -Architecture $Architecture -WimSource $winrePath
     } finally {
-        # Release the temp WinRE file once Copy-WinPEFiles has copied it into the
+        # Release the temp WinRE file once Copy-WinPEFile has copied it into the
         # workspace.  This covers all temp sources: recovery-partition copies,
         # ISO-extracted WinRE files, and retry-path pre-extracted WinREs.
         if ($wimSourceToDelete -and (Test-Path $wimSourceToDelete)) {
@@ -703,7 +703,7 @@ function Build-WinPE {
     try {
         # ── 3. Slim WinRE by removing recovery tools (not needed for deployment) ──
         if ($usingWinRE) {
-            Remove-WinRERecoveryPackages -MountDir $paths.MountDir
+            Remove-WinRERecoveryPackage -MountDir $paths.MountDir
         }
 
         # ── 4. Inject optional components ────────────────────────────────────
