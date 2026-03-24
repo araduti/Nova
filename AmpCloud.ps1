@@ -764,6 +764,11 @@ try {
         -FirmwareType  $FirmwareType `
         -OSDriveLetter $OSDrive
 
+    # Redirect scratch to the OS drive so large downloads (ESD images) do not
+    # fill the size-limited WinPE ramdisk on X:.
+    $ScratchDir = Join-Path "${OSDrive}:" 'AmpCloud'
+    New-ScratchDirectory -Path $ScratchDir
+
     # Step 2: Download Windows image
     $imagePath = Get-WindowsImageSource `
         -ImageUrl    $WindowsImageUrl `
@@ -827,6 +832,12 @@ try {
 [AmpCloud]  Rebooting in 15 seconds...
 [AmpCloud] ══════════════════════════════════════════════════════════
 "@ -ForegroundColor Green
+
+    # Clean up scratch directory so temporary files do not persist in the
+    # final Windows installation.
+    if (Test-Path $ScratchDir) {
+        Remove-Item $ScratchDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 
     Start-Sleep -Seconds 15
     Restart-Computer -Force
