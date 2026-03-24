@@ -167,9 +167,20 @@ function Optimize-WinPENetwork {
         $dhcpOk = $false
         for ($attempt = 1; $attempt -le 3; $attempt++) {
             ipconfig /renew 2>$null | Out-Null
-            # Check for a valid (non-APIPA) IPv4 address
-            $ipOut = ipconfig 2>$null
-            if ($ipOut -match 'IPv4 Address[\s.:]+([\d.]+)' -and $Matches[1] -notmatch '^169\.254\.') {
+            # Check for a valid (non-APIPA) IPv4 address.  Match the dotted-
+            # decimal pattern directly instead of the "IPv4 Address" label so
+            # the check works regardless of WinPE display language.
+            $ipOut = ipconfig 2>$null | Out-String
+            $ipMatches = [regex]::Matches($ipOut, '(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
+            $validIp = $false
+            foreach ($m in $ipMatches) {
+                $ip = $m.Groups[1].Value
+                if ($ip -notmatch '^(169\.254\.|127\.|0\.0\.0\.0|255\.)') {
+                    $validIp = $true
+                    break
+                }
+            }
+            if ($validIp) {
                 $dhcpOk = $true
                 break
             }
@@ -591,7 +602,6 @@ $f8Hint.Text = "Press F8 for command prompt"
 $f8Hint.Font = $SmallFont
 $f8Hint.ForeColor = [System.Drawing.Color]::Gray
 $f8Hint.AutoSize = $true
-$f8Hint.Anchor = [System.Windows.Forms.AnchorStyles]::None
 $form.Controls.Add($f8Hint)
 
 # ── Dynamic centering ───────────────────────────────────────────────────────
