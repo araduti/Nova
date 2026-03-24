@@ -871,7 +871,8 @@ function ProceedToEngine {
 
     # Download the ESD catalog and let the user pick a Windows edition.
     $script:SelectedEdition = Select-WindowsEdition
-    $editionArgs = if ($script:SelectedEdition) { @('-WindowsEdition', $script:SelectedEdition) } else { @() }
+    $editionArgs = @{}
+    if ($script:SelectedEdition) { $editionArgs['WindowsEdition'] = $script:SelectedEdition }
 
     # Prefer the pre-staged copy embedded in the WinPE image by Trigger.ps1.
     # Fall back to downloading from GitHub when the local copy is absent.
