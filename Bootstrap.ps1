@@ -82,51 +82,86 @@ function Select-Language {
     [System.Windows.Forms.Application]::EnableVisualStyles()
 
     $accentBlue = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $bgColor    = [System.Drawing.Color]::FromArgb(32, 32, 32)
-    $cardColor  = [System.Drawing.Color]::FromArgb(45, 45, 45)
-    $fgColor    = [System.Drawing.Color]::White
-    $subtleText = [System.Drawing.Color]::FromArgb(170, 170, 170)
-    $inputBg    = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $gradTop    = [System.Drawing.Color]::FromArgb(218, 232, 252)
+    $gradBot    = [System.Drawing.Color]::FromArgb(234, 240, 250)
+    $cardColor  = [System.Drawing.Color]::White
+    $fgColor    = [System.Drawing.Color]::FromArgb(32, 32, 32)
+    $subtleText = [System.Drawing.Color]::FromArgb(100, 100, 100)
+    $inputBg    = [System.Drawing.Color]::FromArgb(245, 247, 250)
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text            = "AmpCloud"
-    $dlg.Size            = New-Object System.Drawing.Size(520, 380)
+    $dlg.Size            = New-Object System.Drawing.Size(540, 400)
     $dlg.StartPosition   = "CenterScreen"
     $dlg.FormBorderStyle = "None"
-    $dlg.BackColor       = $bgColor
+    $dlg.BackColor       = $gradTop
     $dlg.Font            = New-Object System.Drawing.Font("Segoe UI", 10)
     $dlg.ShowInTaskbar   = $true
+
+    # Double-buffer for gradient paint
+    try {
+        $dlgType = $dlg.GetType()
+        $dlgDb   = $dlgType.GetProperty('DoubleBuffered',
+            [System.Reflection.BindingFlags]'Instance,NonPublic')
+        if ($dlgDb) { $dlgDb.SetValue($dlg, $true, $null) }
+    } catch { Write-Verbose "Language dialog double-buffering unavailable: $_" }
+    $dlg.Add_Paint({
+        $g = $_.Graphics
+        $dw = $dlg.ClientSize.Width;  $dh = $dlg.ClientSize.Height
+        if ($dw -le 0 -or $dh -le 0) { return }
+        $gr = New-Object System.Drawing.Rectangle(0, 0, $dw, $dh)
+        $gb = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                  $gr, $gradTop, $gradBot,
+                  [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+        $g.FillRectangle($gb, $gr)
+        $gb.Dispose()
+    })
+
+    # ── Card panel (white, centred) ────────────────────────────────────────
+    $card = New-Object System.Windows.Forms.Panel
+    $card.Location  = New-Object System.Drawing.Point(50, 50)
+    $card.Size      = New-Object System.Drawing.Size(440, 300)
+    $card.BackColor = $cardColor
+    $dlg.Controls.Add($card)
+
+    # Rounded corners on card
+    $card.Add_SizeChanged({
+        if ($card.Width -le 0 -or $card.Height -le 0) { return }
+        $p = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $rr = 12
+        $p.AddArc(0, 0, $rr * 2, $rr * 2, 180, 90)
+        $p.AddArc($card.Width - $rr * 2, 0, $rr * 2, $rr * 2, 270, 90)
+        $p.AddArc($card.Width - $rr * 2, $card.Height - $rr * 2, $rr * 2, $rr * 2, 0, 90)
+        $p.AddArc(0, $card.Height - $rr * 2, $rr * 2, $rr * 2, 90, 90)
+        $p.CloseFigure()
+        if ($card.Region) { $card.Region.Dispose() }
+        $card.Region = New-Object System.Drawing.Region($p)
+        $p.Dispose()
+    })
 
     # ── Title label ─────────────────────────────────────────────────────────
     $titleLbl = New-Object System.Windows.Forms.Label
     $titleLbl.Text      = "A M P C L O U D"
-    $titleLbl.Location  = New-Object System.Drawing.Point(0, 40)
-    $titleLbl.Size      = New-Object System.Drawing.Size(520, 40)
-    $titleLbl.Font      = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
-    $titleLbl.ForeColor = $fgColor
+    $titleLbl.Location  = New-Object System.Drawing.Point(0, 30)
+    $titleLbl.Size      = New-Object System.Drawing.Size(440, 40)
+    $titleLbl.Font      = New-Object System.Drawing.Font("Segoe UI Light", 20)
+    $titleLbl.ForeColor = $accentBlue
     $titleLbl.TextAlign = "MiddleCenter"
-    $dlg.Controls.Add($titleLbl)
+    $card.Controls.Add($titleLbl)
 
     # ── Subtitle ────────────────────────────────────────────────────────────
     $subLbl = New-Object System.Windows.Forms.Label
     $subLbl.Text      = "Choose your language / Choisissez votre langue / Elija su idioma"
-    $subLbl.Location  = New-Object System.Drawing.Point(0, 90)
-    $subLbl.Size      = New-Object System.Drawing.Size(520, 30)
+    $subLbl.Location  = New-Object System.Drawing.Point(0, 80)
+    $subLbl.Size      = New-Object System.Drawing.Size(440, 30)
     $subLbl.ForeColor = $subtleText
     $subLbl.TextAlign = "MiddleCenter"
-    $dlg.Controls.Add($subLbl)
-
-    # ── Card panel ──────────────────────────────────────────────────────────
-    $card = New-Object System.Windows.Forms.Panel
-    $card.Location  = New-Object System.Drawing.Point(60, 140)
-    $card.Size      = New-Object System.Drawing.Size(400, 180)
-    $card.BackColor = $cardColor
-    $dlg.Controls.Add($card)
+    $card.Controls.Add($subLbl)
 
     $combo = New-Object System.Windows.Forms.ComboBox
     $combo.Items.AddRange(@("English (EN)", "Français (FR)", "Español (ES)"))
     $combo.SelectedIndex  = 0
-    $combo.Location       = New-Object System.Drawing.Point(30, 30)
+    $combo.Location       = New-Object System.Drawing.Point(50, 130)
     $combo.Width          = 340
     $combo.Height         = 32
     $combo.DropDownStyle  = "DropDownList"
@@ -137,8 +172,8 @@ function Select-Language {
     $card.Controls.Add($combo)
 
     $btn = New-Object System.Windows.Forms.Button
-    $btn.Text                      = "Continue →"
-    $btn.Location                  = New-Object System.Drawing.Point(100, 110)
+    $btn.Text                      = "Continue  $([char]0x2192)"
+    $btn.Location                  = New-Object System.Drawing.Point(120, 200)
     $btn.Size                      = New-Object System.Drawing.Size(200, 46)
     $btn.BackColor                 = $accentBlue
     $btn.ForeColor                 = [System.Drawing.Color]::White
@@ -226,6 +261,30 @@ $script:IsDarkMode  = $false
 $TitleFont   = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
 $BodyFont    = New-Object System.Drawing.Font("Segoe UI", 11)
 $SmallFont   = New-Object System.Drawing.Font("Segoe UI", 9.5)
+$HeroFont    = New-Object System.Drawing.Font("Segoe UI Light", 32)
+$InfoFont    = New-Object System.Drawing.Font("Segoe UI", 9)
+
+# ── Gradient & OOBE-style card constants ────────────────────────────────────
+$script:GradientTop        = [System.Drawing.Color]::FromArgb(218, 232, 252)
+$script:GradientBottom     = [System.Drawing.Color]::FromArgb(234, 240, 250)
+$script:DarkGradientTop    = [System.Drawing.Color]::FromArgb(25, 25, 30)
+$script:DarkGradientBottom = [System.Drawing.Color]::FromArgb(38, 38, 44)
+$script:CardRadius         = 16
+$script:CardShadowColor    = [System.Drawing.Color]::FromArgb(30, 0, 0, 0)
+$script:CardMaxW           = 820
+$script:CardPadTop         = 40
+$script:CardPadBottom      = 36
+$script:IllustH            = 110      # space reserved for the illustration
+
+# Illustration circle colours (Azure · Teal · Violet — matching the OOBE palette)
+$script:IllustBlue   = [System.Drawing.Color]::FromArgb(0, 120, 212)
+$script:IllustGreen  = [System.Drawing.Color]::FromArgb(16, 137, 62)
+$script:IllustViolet = [System.Drawing.Color]::FromArgb(135, 100, 184)
+
+# Segoe MDL2 Assets is present in Windows 10/11 PE and provides Fluent icons.
+$script:IconFont = $null
+try { $script:IconFont = New-Object System.Drawing.Font("Segoe MDL2 Assets", 18) }
+catch { Write-Verbose "Segoe MDL2 Assets font not available: $_" }
 
 # Reusable pen for ring (performance win — avoids per-frame GDI allocation).
 # Width is updated in-place by the breathing-pulse timer tick.
@@ -236,9 +295,10 @@ $RingPen.EndCap = "Round"
 # ── Layout spacing constants ────────────────────────────────────────────────
 # Named offsets keep Set-ControlLayout readable and easy to tweak.
 $Spacing = @{
+    IllustH      = 110; IllustGap    = 0      # illustration area + gap
     LogoH        = 50;  LogoGap      = 4      # logo height + gap below
-    SubH         = 25;  SubGap       = 3      # subtitle height + gap
-    DeviceH      = 22;  DeviceGap    = 28     # device label height + gap
+    SubH         = 25;  SubGap       = 6      # subtitle height + gap
+    DeviceH      = 60;  DeviceGap    = 20     # device-info card height + gap
     RingH        = 80;  RingGap      = 16     # ring panel height + gap
     StatusH      = 55;  StatusGap    = 3      # status label height + gap
     ProgressH    = 24;  ProgressGap  = 12     # progress text height + gap
@@ -247,7 +307,8 @@ $Spacing = @{
     RetryBtnH    = 42                          # Retry button height
 }
 # Total content block height (used to vertically centre the UI).
-$script:BlockH = $Spacing.LogoH   + $Spacing.LogoGap    +
+$script:BlockH = $Spacing.IllustH   + $Spacing.IllustGap   +
+                 $Spacing.LogoH   + $Spacing.LogoGap    +
                  $Spacing.SubH    + $Spacing.SubGap      +
                  $Spacing.DeviceH + $Spacing.DeviceGap   +
                  $Spacing.RingH   + $Spacing.RingGap     +
@@ -482,9 +543,146 @@ $form = New-Object System.Windows.Forms.Form
 $form.Text = "AmpCloud - Cloud Imaging Engine"
 $form.FormBorderStyle = "None"
 $form.WindowState = "Maximized"
-$form.BackColor = $LightCard
+$form.BackColor = $script:GradientTop   # gradient base colour; Paint handler overlays
 $form.Font = $BodyFont
 $form.Opacity = 0.0   # start transparent for fade-in animation
+
+# Enable double-buffering so the gradient + card paint are flicker-free.
+try {
+    $formType = $form.GetType()
+    $dbProp = $formType.GetProperty('DoubleBuffered',
+        [System.Reflection.BindingFlags]'Instance,NonPublic')
+    if ($dbProp) { $dbProp.SetValue($form, $true, $null) }
+} catch { Write-Verbose "Form double-buffering unavailable: $_" }
+
+# ── Card panel (centred white rounded-corner surface) ───────────────────────
+# All content controls live inside this panel so they inherit its white
+# BackColor.  The panel gets a rounded Region for OOBE-style rounded corners.
+$cardPanel = New-Object System.Windows.Forms.Panel
+$cardPanel.BackColor = $LightCard
+try {
+    $cpType  = $cardPanel.GetType()
+    $cpDbProp = $cpType.GetProperty('DoubleBuffered',
+        [System.Reflection.BindingFlags]'Instance,NonPublic')
+    if ($cpDbProp) { $cpDbProp.SetValue($cardPanel, $true, $null) }
+} catch { Write-Verbose "Card double-buffering unavailable: $_" }
+$form.Controls.Add($cardPanel)
+
+$cardPanel.Add_SizeChanged({
+    if ($cardPanel.Width -le 0 -or $cardPanel.Height -le 0) { return }
+    $path = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $r    = $script:CardRadius
+    $w    = $cardPanel.Width
+    $h    = $cardPanel.Height
+    $path.AddArc(0,             0,             $r * 2, $r * 2, 180, 90)
+    $path.AddArc($w - $r * 2,   0,             $r * 2, $r * 2, 270, 90)
+    $path.AddArc($w - $r * 2,   $h - $r * 2,  $r * 2, $r * 2, 0,   90)
+    $path.AddArc(0,             $h - $r * 2,  $r * 2, $r * 2, 90,  90)
+    $path.CloseFigure()
+    if ($cardPanel.Region) { $cardPanel.Region.Dispose() }
+    $cardPanel.Region = New-Object System.Drawing.Region($path)
+    $path.Dispose()
+})
+
+# ── Form Paint — gradient background + card shadow ──────────────────────────
+$form.Add_Paint({
+    $g  = $_.Graphics
+    $cw = $form.ClientSize.Width
+    $ch = $form.ClientSize.Height
+    if ($cw -le 0 -or $ch -le 0) { return }
+
+    # Vertical gradient fill
+    $gTop = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
+    $gBot = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
+    $gRect  = New-Object System.Drawing.Rectangle(0, 0, $cw, $ch)
+    $gBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                  $gRect, $gTop, $gBot,
+                  [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+    $g.FillRectangle($gBrush, $gRect)
+    $gBrush.Dispose()
+
+    # Soft shadow behind the card panel
+    if ($cardPanel.Width -gt 0 -and $cardPanel.Height -gt 0) {
+        $g.SmoothingMode = 'AntiAlias'
+        $sx = $cardPanel.Left + 4;  $sy = $cardPanel.Top + 4
+        $sw = $cardPanel.Width;     $sh = $cardPanel.Height
+        $r  = $script:CardRadius
+        $sp = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $sp.AddArc($sx,            $sy,            $r * 2, $r * 2, 180, 90)
+        $sp.AddArc($sx + $sw - $r * 2, $sy,        $r * 2, $r * 2, 270, 90)
+        $sp.AddArc($sx + $sw - $r * 2, $sy + $sh - $r * 2, $r * 2, $r * 2, 0, 90)
+        $sp.AddArc($sx,            $sy + $sh - $r * 2, $r * 2, $r * 2, 90, 90)
+        $sp.CloseFigure()
+        $sBrush = New-Object System.Drawing.SolidBrush($script:CardShadowColor)
+        $g.FillPath($sBrush, $sp)
+        $sBrush.Dispose();  $sp.Dispose()
+    }
+})
+
+# ── Card Paint — OOBE illustration (three overlapping icon circles) ─────────
+$cardPanel.Add_Paint({
+    $g = $_.Graphics
+    $g.SmoothingMode = 'AntiAlias'
+    $pw = $cardPanel.Width
+    if ($pw -le 0) { return }
+    $cx = [int]($pw / 2)      # horizontal centre of card
+    $cy = 58                   # vertical centre of illustration row
+
+    # Circle sizes
+    $big   = 58                # centre circle diameter
+    $small = 46                # side circle diameter
+    $gap   = 10                # overlap offset
+
+    # Left circle — blue (network / globe)
+    $b1 = New-Object System.Drawing.SolidBrush($script:IllustBlue)
+    $g.FillEllipse($b1,
+        ($cx - $big / 2 - $small + $gap), ($cy - $small / 2),
+        $small, $small)
+    $b1.Dispose()
+
+    # Centre circle — white with light-blue border (cloud)
+    $g.FillEllipse([System.Drawing.Brushes]::White,
+        ($cx - $big / 2), ($cy - $big / 2), $big, $big)
+    $borderPen = New-Object System.Drawing.Pen($script:IllustBlue, 2)
+    $g.DrawEllipse($borderPen,
+        ($cx - $big / 2), ($cy - $big / 2), $big, $big)
+    $borderPen.Dispose()
+
+    # Right circle — violet (deploy / download)
+    $b3 = New-Object System.Drawing.SolidBrush($script:IllustViolet)
+    $g.FillEllipse($b3,
+        ($cx + $big / 2 - $gap), ($cy - $small / 2),
+        $small, $small)
+    $b3.Dispose()
+
+    # Draw Segoe MDL2 Assets icons inside the circles
+    if ($null -ne $script:IconFont) {
+        $sf = New-Object System.Drawing.StringFormat
+        $sf.Alignment     = 'Center'
+        $sf.LineAlignment = 'Center'
+
+        # Globe (E774) in blue circle
+        $r1 = New-Object System.Drawing.RectangleF(
+            ($cx - $big / 2 - $small + $gap), ($cy - $small / 2), $small, $small)
+        $g.DrawString([string][char]0xE774, $script:IconFont,
+            [System.Drawing.Brushes]::White, $r1, $sf)
+
+        # Cloud (E753) in centre circle
+        $r2 = New-Object System.Drawing.RectangleF(
+            ($cx - $big / 2), ($cy - $big / 2), $big, $big)
+        $cloudBr = New-Object System.Drawing.SolidBrush($script:IllustBlue)
+        $g.DrawString([string][char]0xE753, $script:IconFont, $cloudBr, $r2, $sf)
+        $cloudBr.Dispose()
+
+        # Download (E896) in violet circle
+        $r3 = New-Object System.Drawing.RectangleF(
+            ($cx + $big / 2 - $gap), ($cy - $small / 2), $small, $small)
+        $g.DrawString([string][char]0xE896, $script:IconFont,
+            [System.Drawing.Brushes]::White, $r3, $sf)
+
+        $sf.Dispose()
+    }
+})
 
 # ── F8 command prompt shortcut ──────────────────────────────────────────────
 # Enable KeyPreview so the form sees key events before child controls.
@@ -506,18 +704,18 @@ $btnDark.FlatAppearance.BorderSize = 0
 $btnDark.Font = New-Object System.Drawing.Font("Segoe UI", 14)
 $btnDark.Text = [char]0x263D          # crescent moon (safe in WinPE fonts)
 $btnDark.ForeColor = [System.Drawing.Color]::Gray
-$btnDark.BackColor = $LightCard
+$btnDark.BackColor = $script:GradientTop
 $btnDark.Anchor = [System.Windows.Forms.AnchorStyles]::None
 $form.Controls.Add($btnDark)
 
 # ── Logo ────────────────────────────────────────────────────────────────────
 $logo = New-Object System.Windows.Forms.Label
 $logo.Text = $S.Header
-$logo.Font = New-Object System.Drawing.Font("Segoe UI", 28, [System.Drawing.FontStyle]::Bold)
+$logo.Font = $HeroFont
 $logo.ForeColor = $LightBlue
 $logo.TextAlign = "MiddleCenter"
 $logo.AutoSize = $false
-$form.Controls.Add($logo)
+$cardPanel.Controls.Add($logo)
 
 # ── Subtitle ────────────────────────────────────────────────────────────────
 $subtitleLabel = New-Object System.Windows.Forms.Label
@@ -526,22 +724,33 @@ $subtitleLabel.Font = $BodyFont
 $subtitleLabel.ForeColor = [System.Drawing.Color]::Gray
 $subtitleLabel.TextAlign = "MiddleCenter"
 $subtitleLabel.AutoSize = $false
-$form.Controls.Add($subtitleLabel)
+$cardPanel.Controls.Add($subtitleLabel)
 
-# ── Device info ─────────────────────────────────────────────────────────────
+# ── Device info (enhanced — CPU, RAM, Disk alongside model & serial) ────────
 $deviceLabel = New-Object System.Windows.Forms.Label
 try {
     $model  = (Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).Model
     $serial = (Get-CimInstance Win32_Bios -ErrorAction SilentlyContinue).SerialNumber
-    $deviceLabel.Text = "Device: $model  -  $serial"
+    $cpuRaw = (Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue |
+                   Select-Object -First 1).Name
+    $cpu    = ($cpuRaw -replace '\s+', ' ').Trim()
+    $ramObj = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
+    $ramGB  = [Math]::Round($ramObj.TotalPhysicalMemory / 1GB, 1)
+    $diskObj = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+    $diskGB  = if ($diskObj) { [Math]::Round($diskObj.Size / 1GB) } else { '?' }
+    $dot     = "  $([char]0x2022)  "
+    $deviceLabel.Text = "$model${dot}S/N $serial`n$cpu${dot}${ramGB} GB RAM${dot}${diskGB} GB Disk"
 } catch {
     $deviceLabel.Text = "Device: Unknown"
 }
-$deviceLabel.Font = $SmallFont
-$deviceLabel.ForeColor = [System.Drawing.Color]::DarkGray
+$deviceLabel.Font      = $InfoFont
+$deviceLabel.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
+$deviceLabel.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
 $deviceLabel.TextAlign = "MiddleCenter"
-$deviceLabel.AutoSize = $false
-$form.Controls.Add($deviceLabel)
+$deviceLabel.AutoSize  = $false
+$deviceLabel.Padding   = New-Object System.Windows.Forms.Padding(12, 4, 12, 4)
+$cardPanel.Controls.Add($deviceLabel)
 
 # ── Animated Progress Ring ──────────────────────────────────────────────────
 $ringPanel = New-Object System.Windows.Forms.Panel
@@ -566,7 +775,7 @@ try {
 } catch {
     Write-Verbose "Double-buffering unavailable: $_"
 }
-$form.Controls.Add($ringPanel)
+$cardPanel.Controls.Add($ringPanel)
 
 $script:ringAngle = 0
 $ringTimer = New-Object System.Windows.Forms.Timer
@@ -592,7 +801,7 @@ $statusLabel.Font = $TitleFont
 $statusLabel.ForeColor = $TextLight
 $statusLabel.TextAlign = "MiddleCenter"
 $statusLabel.AutoSize = $false
-$form.Controls.Add($statusLabel)
+$cardPanel.Controls.Add($statusLabel)
 
 # ── Progress / download text ────────────────────────────────────────────────
 $progressText = New-Object System.Windows.Forms.Label
@@ -600,7 +809,7 @@ $progressText.Font = $SmallFont
 $progressText.ForeColor = [System.Drawing.Color]::Gray
 $progressText.TextAlign = "MiddleCenter"
 $progressText.AutoSize = $false
-$form.Controls.Add($progressText)
+$cardPanel.Controls.Add($progressText)
 
 # ── Step indicators ─────────────────────────────────────────────────────────
 $stepPanel = New-Object System.Windows.Forms.FlowLayoutPanel
@@ -608,7 +817,7 @@ $stepPanel.FlowDirection = "LeftToRight"
 $stepPanel.AutoSize = $true
 $stepPanel.WrapContents = $false
 $stepPanel.BackColor = [System.Drawing.Color]::Transparent
-$form.Controls.Add($stepPanel)
+$cardPanel.Controls.Add($stepPanel)
 
 $stepLabels = [System.Collections.Generic.List[System.Windows.Forms.Label]]::new()
 $stepNum = 0
@@ -634,7 +843,7 @@ $btnWiFi.ForeColor = [System.Drawing.Color]::White
 $btnWiFi.FlatStyle = "Flat"
 $btnWiFi.FlatAppearance.BorderSize = 0
 $btnWiFi.Visible = $false
-$form.Controls.Add($btnWiFi)
+$cardPanel.Controls.Add($btnWiFi)
 
 $btnRetry = New-Object System.Windows.Forms.Button
 $btnRetry.Text = "Retry"
@@ -645,48 +854,70 @@ $btnRetry.ForeColor = $TextLight
 $btnRetry.FlatStyle = "Flat"
 $btnRetry.FlatAppearance.BorderSize = 0
 $btnRetry.Visible = $false
-$form.Controls.Add($btnRetry)
+$cardPanel.Controls.Add($btnRetry)
 
 # ── F8 hint (bottom-left) ───────────────────────────────────────────────────
 $f8Hint = New-Object System.Windows.Forms.Label
 $f8Hint.Text = "Press F8 for command prompt"
 $f8Hint.Font = $SmallFont
-$f8Hint.ForeColor = [System.Drawing.Color]::Gray
+$f8Hint.ForeColor = [System.Drawing.Color]::FromArgb(120, 130, 150)
+$f8Hint.BackColor = $script:GradientBottom
 $f8Hint.AutoSize = $true
 $form.Controls.Add($f8Hint)
 
 # ── Dynamic centering ───────────────────────────────────────────────────────
-# Positions all controls relative to the form centre on every resize.
+# Positions the card panel centred on the form, then lays out all child
+# controls within the card.
 $contentW = 600
 function Set-ControlLayout {
     $cw = $form.ClientSize.Width
     $ch = $form.ClientSize.Height
-    $cx = [int]($cw / 2)
 
-    $y = [int][Math]::Max(40, ($ch - $script:BlockH) / 2)
+    # ── Card panel position + size ──────────────────────────────────────────
+    $cardW = [Math]::Min($script:CardMaxW, $cw - 100)
+    $cardH = [Math]::Min($ch - 80, $script:BlockH + $script:CardPadTop + $script:CardPadBottom)
+    $cardX = [int](($cw - $cardW) / 2)
+    $cardY = [int](($ch - $cardH) / 2)
+    $cardPanel.SetBounds($cardX, $cardY, $cardW, $cardH)
 
-    $logo.SetBounds(($cx - $contentW / 2), $y, $contentW, $Spacing.LogoH)
+    # ── Content within card ─────────────────────────────────────────────────
+    $cpw = $cardPanel.Width
+    $cx  = [int]($cpw / 2)
+    $cntW = [Math]::Min($contentW, $cpw - 60)
+
+    $y = $script:CardPadTop + $Spacing.IllustH + $Spacing.IllustGap
+
+    $logo.SetBounds(($cx - $cntW / 2), $y, $cntW, $Spacing.LogoH)
     $y += $Spacing.LogoH + $Spacing.LogoGap
-    $subtitleLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, $Spacing.SubH)
+
+    $subtitleLabel.SetBounds(($cx - $cntW / 2), $y, $cntW, $Spacing.SubH)
     $y += $Spacing.SubH + $Spacing.SubGap
-    $deviceLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, $Spacing.DeviceH)
+
+    $deviceLabel.SetBounds(30, $y, ($cpw - 60), $Spacing.DeviceH)
     $y += $Spacing.DeviceH + $Spacing.DeviceGap
+
     $ringPanel.Location = New-Object System.Drawing.Point(($cx - 40), $y)
     $y += $Spacing.RingH + $Spacing.RingGap
-    $statusLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, $Spacing.StatusH)
+
+    $statusLabel.SetBounds(($cx - $cntW / 2), $y, $cntW, $Spacing.StatusH)
     $y += $Spacing.StatusH + $Spacing.StatusGap
-    $progressText.SetBounds(($cx - $contentW / 2), $y, $contentW, $Spacing.ProgressH)
+
+    $progressText.SetBounds(($cx - $cntW / 2), $y, $cntW, $Spacing.ProgressH)
     $y += $Spacing.ProgressH + $Spacing.ProgressGap
-    $stepPanel.Location = New-Object System.Drawing.Point([int]($cx - $stepPanel.Width / 2), $y)
+
+    $stepPanel.Location = New-Object System.Drawing.Point(
+        [int]($cx - $stepPanel.Width / 2), $y)
     $y += $Spacing.StepH + $Spacing.StepGap
-    $btnWiFi.Location = New-Object System.Drawing.Point(($cx - 130), $y)
+
+    $btnWiFi.Location  = New-Object System.Drawing.Point(($cx - 130), $y)
     $y += $Spacing.WiFiBtnH + $Spacing.WiFiBtnGap
+
     $btnRetry.Location = New-Object System.Drawing.Point(($cx - 80), $y)
 
-    # Dark mode button stays top-right
+    # Dark mode button stays top-right of form (outside card)
     $btnDark.Location = New-Object System.Drawing.Point(($cw - 60), 16)
 
-    # F8 hint anchored to bottom-left
+    # F8 hint anchored to bottom-left of form
     $f8Hint.Location = New-Object System.Drawing.Point(16, ($ch - 30))
 }
 
@@ -714,16 +945,21 @@ function Update-Step { param([int]$s)
 
 function Switch-DarkMode {
     $script:IsDarkMode = -not $script:IsDarkMode
-    $bg  = if ($script:IsDarkMode) { $DarkBg }   else { $LightCard }
+    $bg  = if ($script:IsDarkMode) { $script:DarkGradientTop } else { $script:GradientTop }
     $fg  = if ($script:IsDarkMode) { $TextDark }  else { $TextLight }
     $form.BackColor          = $bg
+    $cardPanel.BackColor     = if ($script:IsDarkMode) { $DarkCard } else { $LightCard }
     $btnDark.BackColor       = $bg
     $btnDark.ForeColor       = $fg
     $statusLabel.ForeColor   = $fg
     $logo.ForeColor          = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(100, 180, 255) } else { $LightBlue }
     $subtitleLabel.ForeColor = if ($script:IsDarkMode) { [System.Drawing.Color]::Silver } else { [System.Drawing.Color]::Gray }
-    $deviceLabel.ForeColor   = if ($script:IsDarkMode) { [System.Drawing.Color]::Silver } else { [System.Drawing.Color]::DarkGray }
+    $deviceLabel.ForeColor   = if ($script:IsDarkMode) { [System.Drawing.Color]::Silver } else { [System.Drawing.Color]::FromArgb(100, 100, 100) }
+    $deviceLabel.BackColor   = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(50, 50, 55) } else { [System.Drawing.Color]::FromArgb(245, 247, 250) }
+    $f8Hint.BackColor        = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
+    $f8Hint.ForeColor        = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(120, 120, 130) } else { [System.Drawing.Color]::FromArgb(120, 130, 150) }
     $btnDark.Text            = if ($script:IsDarkMode) { [char]0x2600 } else { [char]0x263D }
+    $form.Invalidate()
     $form.Refresh()
 }
 $btnDark.Add_Click({ Switch-DarkMode })
@@ -776,8 +1012,17 @@ function Show-CompletionScreen {
     $finalForm.Text = $S.Complete
     $finalForm.FormBorderStyle = "None"
     $finalForm.WindowState = "Maximized"
-    $finalForm.BackColor = if ($script:IsDarkMode) { $DarkBg } else { $LightCard }
+    $fBg = if ($script:IsDarkMode) { $script:DarkGradientTop } else { $script:GradientTop }
+    $finalForm.BackColor = $fBg
     $finalForm.Font = $BodyFont
+
+    # Double-buffer the final form for gradient painting
+    try {
+        $fType = $finalForm.GetType()
+        $fDb   = $fType.GetProperty('DoubleBuffered',
+            [System.Reflection.BindingFlags]'Instance,NonPublic')
+        if ($fDb) { $fDb.SetValue($finalForm, $true, $null) }
+    } catch { Write-Verbose "Final form double-buffering unavailable: $_" }
 
     # F8 command prompt shortcut (same as main form)
     $finalForm.KeyPreview = $true
@@ -787,13 +1032,89 @@ function Show-CompletionScreen {
         }
     })
 
+    # ── Card panel for completion content ────────────────────────────────────
+    $fCard = New-Object System.Windows.Forms.Panel
+    $fCard.BackColor = if ($script:IsDarkMode) { $DarkCard } else { $LightCard }
+    try {
+        $fcType = $fCard.GetType()
+        $fcDb   = $fcType.GetProperty('DoubleBuffered',
+            [System.Reflection.BindingFlags]'Instance,NonPublic')
+        if ($fcDb) { $fcDb.SetValue($fCard, $true, $null) }
+    } catch { Write-Verbose "Card double-buffering unavailable: $_" }
+    $finalForm.Controls.Add($fCard)
+
+    # Rounded corners
+    $fCard.Add_SizeChanged({
+        if ($fCard.Width -le 0 -or $fCard.Height -le 0) { return }
+        $p = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $r = $script:CardRadius
+        $p.AddArc(0, 0, $r * 2, $r * 2, 180, 90)
+        $p.AddArc($fCard.Width - $r * 2, 0, $r * 2, $r * 2, 270, 90)
+        $p.AddArc($fCard.Width - $r * 2, $fCard.Height - $r * 2, $r * 2, $r * 2, 0, 90)
+        $p.AddArc(0, $fCard.Height - $r * 2, $r * 2, $r * 2, 90, 90)
+        $p.CloseFigure()
+        if ($fCard.Region) { $fCard.Region.Dispose() }
+        $fCard.Region = New-Object System.Drawing.Region($p)
+        $p.Dispose()
+    })
+
+    # Gradient + shadow Paint handler
+    $finalForm.Add_Paint({
+        $g  = $_.Graphics
+        $fw = $finalForm.ClientSize.Width
+        $fh = $finalForm.ClientSize.Height
+        if ($fw -le 0 -or $fh -le 0) { return }
+        $gt = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
+        $gb = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
+        $gr = New-Object System.Drawing.Rectangle(0, 0, $fw, $fh)
+        $gb2 = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                   $gr, $gt, $gb,
+                   [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+        $g.FillRectangle($gb2, $gr)
+        $gb2.Dispose()
+        if ($fCard.Width -gt 0 -and $fCard.Height -gt 0) {
+            $g.SmoothingMode = 'AntiAlias'
+            $sx = $fCard.Left + 4;  $sy = $fCard.Top + 4
+            $r  = $script:CardRadius
+            $sp = New-Object System.Drawing.Drawing2D.GraphicsPath
+            $sp.AddArc($sx, $sy, $r * 2, $r * 2, 180, 90)
+            $sp.AddArc($sx + $fCard.Width - $r * 2, $sy, $r * 2, $r * 2, 270, 90)
+            $sp.AddArc($sx + $fCard.Width - $r * 2, $sy + $fCard.Height - $r * 2, $r * 2, $r * 2, 0, 90)
+            $sp.AddArc($sx, $sy + $fCard.Height - $r * 2, $r * 2, $r * 2, 90, 90)
+            $sp.CloseFigure()
+            $sb = New-Object System.Drawing.SolidBrush($script:CardShadowColor)
+            $g.FillPath($sb, $sp)
+            $sb.Dispose(); $sp.Dispose()
+        }
+    })
+
+    # ── Checkmark illustration on card ──────────────────────────────────────
+    $fCard.Add_Paint({
+        $g = $_.Graphics
+        $g.SmoothingMode = 'AntiAlias'
+        $fcx = [int]($fCard.Width / 2)
+        $fcy = 50
+        $circBrush = New-Object System.Drawing.SolidBrush($script:IllustGreen)
+        $g.FillEllipse($circBrush, ($fcx - 30), ($fcy - 30), 60, 60)
+        $circBrush.Dispose()
+        if ($null -ne $script:IconFont) {
+            $isf = New-Object System.Drawing.StringFormat
+            $isf.Alignment     = 'Center'
+            $isf.LineAlignment = 'Center'
+            $ir = New-Object System.Drawing.RectangleF(($fcx - 30), ($fcy - 30), 60, 60)
+            $g.DrawString([string][char]0xE73E, $script:IconFont,
+                [System.Drawing.Brushes]::White, $ir, $isf)
+            $isf.Dispose()
+        }
+    })
+
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text = "$($S.Complete)`n`nAmpCloud imaging engine is ready."
-    $lbl.Font = $TitleFont
+    $lbl.Font = $HeroFont
     $lbl.ForeColor = if ($script:IsDarkMode) { $TextDark } else { $TextLight }
     $lbl.TextAlign = "MiddleCenter"
     $lbl.AutoSize = $false
-    $finalForm.Controls.Add($lbl)
+    $fCard.Controls.Add($lbl)
 
     $btnReboot = New-Object System.Windows.Forms.Button
     $btnReboot.Text      = $S.Reboot
@@ -803,7 +1124,7 @@ function Show-CompletionScreen {
     $btnReboot.FlatStyle = "Flat"
     $btnReboot.FlatAppearance.BorderSize = 0
     $btnReboot.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
-    $finalForm.Controls.Add($btnReboot)
+    $fCard.Controls.Add($btnReboot)
 
     $btnPower = New-Object System.Windows.Forms.Button
     $btnPower.Text      = $S.PowerOff
@@ -813,7 +1134,7 @@ function Show-CompletionScreen {
     $btnPower.FlatStyle = "Flat"
     $btnPower.FlatAppearance.BorderSize = 0
     $btnPower.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
-    $finalForm.Controls.Add($btnPower)
+    $fCard.Controls.Add($btnPower)
 
     $btnShell = New-Object System.Windows.Forms.Button
     $btnShell.Text     = $S.Shell
@@ -823,7 +1144,7 @@ function Show-CompletionScreen {
     $btnShell.FlatStyle = "Flat"
     $btnShell.FlatAppearance.BorderSize = 0
     $btnShell.Font = New-Object System.Drawing.Font("Segoe UI", 11)
-    $finalForm.Controls.Add($btnShell)
+    $fCard.Controls.Add($btnShell)
 
     $btnReboot.Add_Click({ Restart-Computer -Force })
     $btnPower.Add_Click({ Stop-Computer -Force })
@@ -835,24 +1156,28 @@ function Show-CompletionScreen {
     $f8HintFinal = New-Object System.Windows.Forms.Label
     $f8HintFinal.Text = "Press F8 for command prompt"
     $f8HintFinal.Font = $SmallFont
-    $f8HintFinal.ForeColor = [System.Drawing.Color]::Gray
+    $f8HintFinal.ForeColor = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(120, 120, 130) } else { [System.Drawing.Color]::FromArgb(120, 130, 150) }
+    $f8HintFinal.BackColor = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
     $f8HintFinal.AutoSize = $true
     $finalForm.Controls.Add($f8HintFinal)
 
-    # Center controls on resize
+    # Centre card + controls on resize
     $finalForm.Add_Resize({
-        $cw = $finalForm.ClientSize.Width
-        $ch = $finalForm.ClientSize.Height
-        $cx = [int]($cw / 2)
-        $lbl.SetBounds(($cx - 300), [int](($ch / 2) - 80), 600, 100)
+        $fw = $finalForm.ClientSize.Width
+        $fh = $finalForm.ClientSize.Height
+        $cW = [Math]::Min(720, $fw - 100)
+        $cH = 320
+        $fCard.SetBounds([int](($fw - $cW) / 2), [int](($fh - $cH) / 2), $cW, $cH)
+        $ccx = [int]($fCard.Width / 2)
+        $lbl.SetBounds(($ccx - 300), 90, 600, 100)
         $gap = 16
         $totalBtnW = 200 * 3 + $gap * 2
-        $bx = [int]($cx - $totalBtnW / 2)
-        $by = [int]($ch / 2) + 50
+        $bx = [int]($ccx - $totalBtnW / 2)
+        $by = 220
         $btnReboot.Location = New-Object System.Drawing.Point($bx, $by)
         $btnPower.Location  = New-Object System.Drawing.Point(($bx + 200 + $gap), $by)
         $btnShell.Location  = New-Object System.Drawing.Point(($bx + 400 + $gap * 2), $by)
-        $f8HintFinal.Location = New-Object System.Drawing.Point(16, ($ch - 30))
+        $f8HintFinal.Location = New-Object System.Drawing.Point(16, ($fh - 30))
     })
 
     $null = $finalForm.ShowDialog()
@@ -940,57 +1265,91 @@ function Select-WindowsEdition {
         return ''
     }
 
-    # ── Edition selector dialog (Fluent dark style) ──────────────────────────
+    # ── Edition selector dialog (OOBE gradient style) ──────────────────────────
     $accentBlue = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $bgColor    = [System.Drawing.Color]::FromArgb(32, 32, 32)
-    $cardColor  = [System.Drawing.Color]::FromArgb(45, 45, 45)
-    $fgColor    = [System.Drawing.Color]::White
-    $subtleText = [System.Drawing.Color]::FromArgb(170, 170, 170)
-    $inputBg    = [System.Drawing.Color]::FromArgb(60, 60, 60)
+    $edGradTop  = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
+    $edGradBot  = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
+    $edCardBg   = if ($script:IsDarkMode) { $DarkCard }     else { $LightCard }
+    $edFg       = if ($script:IsDarkMode) { $TextDark }     else { [System.Drawing.Color]::FromArgb(32, 32, 32) }
+    $edSubtle   = if ($script:IsDarkMode) { [System.Drawing.Color]::Silver } else { [System.Drawing.Color]::FromArgb(100, 100, 100) }
+    $edInputBg  = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(60, 60, 60) } else { [System.Drawing.Color]::FromArgb(245, 247, 250) }
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text            = $S.EditionTitle
-    $dlg.Size            = New-Object System.Drawing.Size(520, 380)
+    $dlg.Size            = New-Object System.Drawing.Size(540, 400)
     $dlg.StartPosition   = 'CenterScreen'
     $dlg.FormBorderStyle = 'None'
-    $dlg.BackColor       = $bgColor
+    $dlg.BackColor       = $edGradTop
     $dlg.Font            = New-Object System.Drawing.Font('Segoe UI', 10)
     $dlg.ShowInTaskbar   = $true
+
+    try {
+        $edType = $dlg.GetType()
+        $edDb   = $edType.GetProperty('DoubleBuffered',
+            [System.Reflection.BindingFlags]'Instance,NonPublic')
+        if ($edDb) { $edDb.SetValue($dlg, $true, $null) }
+    } catch { Write-Verbose "Edition dialog double-buffering unavailable: $_" }
+
+    $dlg.Add_Paint({
+        $g = $_.Graphics
+        $dw = $dlg.ClientSize.Width;  $dh = $dlg.ClientSize.Height
+        if ($dw -le 0 -or $dh -le 0) { return }
+        $gr = New-Object System.Drawing.Rectangle(0, 0, $dw, $dh)
+        $gb = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                  $gr, $edGradTop, $edGradBot,
+                  [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+        $g.FillRectangle($gb, $gr)
+        $gb.Dispose()
+    })
+
+    # ── Card panel ──────────────────────────────────────────────────────────
+    $card = New-Object System.Windows.Forms.Panel
+    $card.Location  = New-Object System.Drawing.Point(50, 50)
+    $card.Size      = New-Object System.Drawing.Size(440, 300)
+    $card.BackColor = $edCardBg
+    $dlg.Controls.Add($card)
+
+    $card.Add_SizeChanged({
+        if ($card.Width -le 0 -or $card.Height -le 0) { return }
+        $p = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $rr = 12
+        $p.AddArc(0, 0, $rr * 2, $rr * 2, 180, 90)
+        $p.AddArc($card.Width - $rr * 2, 0, $rr * 2, $rr * 2, 270, 90)
+        $p.AddArc($card.Width - $rr * 2, $card.Height - $rr * 2, $rr * 2, $rr * 2, 0, 90)
+        $p.AddArc(0, $card.Height - $rr * 2, $rr * 2, $rr * 2, 90, 90)
+        $p.CloseFigure()
+        if ($card.Region) { $card.Region.Dispose() }
+        $card.Region = New-Object System.Drawing.Region($p)
+        $p.Dispose()
+    })
 
     # ── Title ───────────────────────────────────────────────────────────────
     $titleLbl = New-Object System.Windows.Forms.Label
     $titleLbl.Text      = $S.EditionTitle
-    $titleLbl.Location  = New-Object System.Drawing.Point(0, 40)
-    $titleLbl.Size      = New-Object System.Drawing.Size(520, 40)
-    $titleLbl.Font      = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
-    $titleLbl.ForeColor = $fgColor
+    $titleLbl.Location  = New-Object System.Drawing.Point(0, 30)
+    $titleLbl.Size      = New-Object System.Drawing.Size(440, 40)
+    $titleLbl.Font      = New-Object System.Drawing.Font('Segoe UI Light', 20)
+    $titleLbl.ForeColor = $accentBlue
     $titleLbl.TextAlign = 'MiddleCenter'
-    $dlg.Controls.Add($titleLbl)
+    $card.Controls.Add($titleLbl)
 
     # ── Subtitle ────────────────────────────────────────────────────────────
     $subLbl = New-Object System.Windows.Forms.Label
     $subLbl.Text      = $S.EditionLabel
-    $subLbl.Location  = New-Object System.Drawing.Point(0, 90)
-    $subLbl.Size      = New-Object System.Drawing.Size(520, 30)
-    $subLbl.ForeColor = $subtleText
+    $subLbl.Location  = New-Object System.Drawing.Point(0, 80)
+    $subLbl.Size      = New-Object System.Drawing.Size(440, 30)
+    $subLbl.ForeColor = $edSubtle
     $subLbl.TextAlign = 'MiddleCenter'
-    $dlg.Controls.Add($subLbl)
-
-    # ── Card panel ──────────────────────────────────────────────────────────
-    $card = New-Object System.Windows.Forms.Panel
-    $card.Location  = New-Object System.Drawing.Point(60, 140)
-    $card.Size      = New-Object System.Drawing.Size(400, 180)
-    $card.BackColor = $cardColor
-    $dlg.Controls.Add($card)
+    $card.Controls.Add($subLbl)
 
     $combo = New-Object System.Windows.Forms.ComboBox
     $combo.Items.AddRange($editions)
     $combo.DropDownStyle = 'DropDownList'
     $combo.FlatStyle     = 'Flat'
-    $combo.Location      = New-Object System.Drawing.Point(30, 30)
+    $combo.Location      = New-Object System.Drawing.Point(50, 130)
     $combo.Width         = 340
-    $combo.BackColor     = $inputBg
-    $combo.ForeColor     = $fgColor
+    $combo.BackColor     = $edInputBg
+    $combo.ForeColor     = $edFg
     $combo.Font          = New-Object System.Drawing.Font('Segoe UI', 11)
 
     # Pre-select Professional if available; fall back to any Pro-like edition.
@@ -1013,7 +1372,7 @@ function Select-WindowsEdition {
 
     $btn = New-Object System.Windows.Forms.Button
     $btn.Text                        = $S.EditionBtn
-    $btn.Location                    = New-Object System.Drawing.Point(100, 110)
+    $btn.Location                    = New-Object System.Drawing.Point(120, 210)
     $btn.Size                        = New-Object System.Drawing.Size(200, 46)
     $btn.BackColor                   = $accentBlue
     $btn.ForeColor                   = [System.Drawing.Color]::White
