@@ -149,7 +149,7 @@ function Update-BootstrapStatus {
     try {
         $obj = @{ Message = $Message; Progress = $Progress; Step = $Step; Done = [bool]$Done }
         $obj | ConvertTo-Json -Compress | Set-Content -Path $StatusFile -Force -ErrorAction SilentlyContinue
-    } catch { }
+    } catch { <# Status reporting is non-critical; suppress errors to keep the engine running #> }
 }
 
 function New-ScratchDirectory {
@@ -449,7 +449,7 @@ $script:EditionNameMap = @{
     'EnterpriseN'             = 'Enterprise N'
 }
 
-function Apply-WindowsImage {
+function Install-WindowsImage {
     param(
         [string]$ImagePath,
         [string]$Edition,
@@ -496,7 +496,7 @@ function Apply-WindowsImage {
 
         Write-Success 'Windows image applied successfully.'
     } catch {
-        throw "Apply-WindowsImage failed at step '$stepName': $_"
+        throw "Install-WindowsImage failed at step '$stepName': $_"
     }
 }
 
@@ -554,7 +554,7 @@ function Set-Bootloader {
 
 #region ── Driver Injection ─────────────────────────────────────────────────────
 
-function Add-Drivers {
+function Add-Driver {
     param(
         [string]$DriverPath,
         [string]$OSDriveLetter
@@ -587,7 +587,7 @@ function Add-Drivers {
 
         Write-Success "Drivers injected from: $DriverPath"
     } catch {
-        throw "Add-Drivers failed at step '$stepName': $_"
+        throw "Add-Driver failed at step '$stepName': $_"
     }
 }
 
@@ -635,7 +635,7 @@ function Get-SystemManufacturer {
     return ''
 }
 
-function Add-DellDrivers {
+function Add-DellDriver {
     <#
     .SYNOPSIS
         Downloads and injects the latest Dell drivers using Dell Command | Update.
@@ -672,11 +672,11 @@ function Add-DellDrivers {
             -ErrorAction Continue
         Write-Success 'Dell drivers injected successfully.'
     } catch {
-        throw "Add-DellDrivers failed at step '$stepName': $_"
+        throw "Add-DellDriver failed at step '$stepName': $_"
     }
 }
 
-function Add-HpDrivers {
+function Add-HpDriver {
     <#
     .SYNOPSIS
         Downloads and injects the latest HP drivers using HP Client Management
@@ -704,11 +704,11 @@ function Add-HpDrivers {
         Add-HPDrivers -Path "${OSDriveLetter}:\" -TempPath $driverTemp -ErrorAction Stop
         Write-Success 'HP drivers injected successfully.'
     } catch {
-        throw "Add-HpDrivers failed at step '$stepName': $_"
+        throw "Add-HpDriver failed at step '$stepName': $_"
     }
 }
 
-function Add-LenovoDrivers {
+function Add-LenovoDriver {
     <#
     .SYNOPSIS
         Downloads and injects the latest Lenovo drivers using LSUClient.
@@ -758,7 +758,7 @@ function Add-LenovoDrivers {
             -ErrorAction Continue
         Write-Success 'Lenovo drivers injected successfully.'
     } catch {
-        throw "Add-LenovoDrivers failed at step '$stepName': $_"
+        throw "Add-LenovoDriver failed at step '$stepName': $_"
     }
 }
 
@@ -782,10 +782,10 @@ function Invoke-OemDriverInjection {
 
         $stepName = "Inject drivers for '$manufacturer'"
         switch -Wildcard ($manufacturer) {
-            '*Dell*'    { Add-DellDrivers   -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
-            '*HP*'      { Add-HpDrivers     -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
-            '*Hewlett*' { Add-HpDrivers     -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
-            '*Lenovo*'  { Add-LenovoDrivers -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+            '*Dell*'    { Add-DellDriver    -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+            '*HP*'      { Add-HpDriver      -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+            '*Hewlett*' { Add-HpDriver      -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+            '*Lenovo*'  { Add-LenovoDriver  -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
             default {
                 Write-Warn "Manufacturer '$manufacturer' is not supported for OEM driver automation. Use -DriverPath for manual driver injection."
             }
@@ -948,7 +948,7 @@ function Set-OOBECustomization {
 
 #region ── Post-Provisioning Scripts ────────────────────────────────────────────
 
-function Invoke-PostScripts {
+function Invoke-PostScript {
     param(
         [string[]]$ScriptUrls,
         [string]$OSDriveLetter,
@@ -988,7 +988,7 @@ function Invoke-PostScripts {
 
         Write-Success "Post-provisioning scripts staged in: $scriptDir"
     } catch {
-        throw "Invoke-PostScripts failed at step '$stepName': $_"
+        throw "Invoke-PostScript failed at step '$stepName': $_"
     }
 }
 
@@ -1043,7 +1043,7 @@ try {
     # Step 3: Apply Windows image
     $stepName = 'Apply Windows image'
     Update-BootstrapStatus -Message 'Applying Windows image...' -Step 2 -Progress 50
-    Apply-WindowsImage `
+    Install-WindowsImage `
         -ImagePath     $imagePath `
         -Edition       $WindowsEdition `
         -OSDriveLetter $OSDrive `
@@ -1060,7 +1060,7 @@ try {
     # Step 5: Inject drivers
     $stepName = 'Inject drivers'
     Update-BootstrapStatus -Message 'Injecting drivers...' -Step 2 -Progress 75
-    Add-Drivers `
+    Add-Driver `
         -DriverPath    $DriverPath `
         -OSDriveLetter $OSDrive
 
@@ -1097,7 +1097,7 @@ try {
 
     # Step 9: Stage post-provisioning scripts
     $stepName = 'Stage post-provisioning scripts'
-    Invoke-PostScripts `
+    Invoke-PostScript `
         -ScriptUrls    $PostScriptUrls `
         -OSDriveLetter $OSDrive `
         -ScratchDir    $ScratchDir
