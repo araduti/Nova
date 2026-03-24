@@ -18,11 +18,15 @@
 [CmdletBinding()]
 param(
     # GitHub source
+    [ValidateNotNullOrEmpty()]
     [string]$GitHubUser   = 'araduti',
+    [ValidateNotNullOrEmpty()]
     [string]$GitHubRepo   = 'AmpCloud',
+    [ValidateNotNullOrEmpty()]
     [string]$GitHubBranch = 'main',
 
     # Disk configuration
+    [ValidateRange(0, [int]::MaxValue)]
     [int]$TargetDiskNumber = 0,
     [ValidateSet('UEFI','BIOS')]
     [string]$FirmwareType  = 'UEFI',
@@ -30,7 +34,9 @@ param(
     # Windows image source
     # Set to a direct URL to a .wim/.esd, or leave empty to use products.xml from the repository
     [string]$WindowsImageUrl = '',
+    [ValidateNotNullOrEmpty()]
     [string]$WindowsEdition  = 'Professional',
+    [ValidateNotNullOrEmpty()]
     [string]$WindowsLanguage = 'en-us',
 
     # Driver injection
@@ -56,10 +62,16 @@ param(
     [string[]]$PostScriptUrls = @(),  # URLs to PS1 scripts to run after imaging
 
     # Scratch / temp directory inside WinPE
+    [ValidateNotNullOrEmpty()]
     [string]$ScratchDir = 'X:\AmpCloud',
 
     # Target OS drive letter (assigned during partitioning)
-    [string]$OSDrive = 'C'
+    [ValidatePattern('^[A-Za-z]$')]
+    [string]$OSDrive = 'C',
+
+    # IPC status file — Bootstrap.ps1 polls this JSON file to show live progress
+    # in the WinForms UI.  Leave empty to disable status reporting.
+    [string]$StatusFile = ''
 )
 
 Set-StrictMode -Version Latest
@@ -76,10 +88,25 @@ $ErrorActionPreference = 'Stop'
 # so the parent's Start-Transcript does not carry over.  Start our own
 # transcript so every Write-Host, warning, and error is captured to disk.
 $script:EngineLogPath = 'X:\AmpCloud-Engine.log'
-Start-Transcript -Path $script:EngineLogPath -Force -ErrorAction SilentlyContinue | Out-Null
+$null = Start-Transcript -Path $script:EngineLogPath -Force -ErrorAction SilentlyContinue
 
 # Resolved once so WinPE's X:\ path is used correctly in the error handler.
 $script:PsBin = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+
+# ── Constants ───────────────────────────────────────────────────────────────
+# Partition GUIDs (GPT type identifiers)
+$script:GptTypeEsp = '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'   # EFI System Partition
+$script:GptTypeMsr = '{e3c9e316-0b5c-4db8-817d-f92df00215ae}'   # Microsoft Reserved
+$script:GptTypeBasicData = '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}'   # Basic Data (OS)
+
+# Partition sizes
+$script:EspSize = 260MB
+$script:MsrSize = 16MB
+$script:MbrSystemSize = 500MB
+
+# Download settings
+$script:DownloadBufferSize  = 65536   # 64 KB read buffer
+$script:ProgressIntervalMs  = 1000    # Minimum ms between progress updates
 
 #region ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -103,10 +130,32 @@ function Write-Fail {
     Write-Host "[FAIL] $Message" -ForegroundColor Red
 }
 
+function Update-BootstrapStatus {
+    <#
+    .SYNOPSIS  Writes live progress to a JSON file for Bootstrap.ps1 to display.
+    .DESCRIPTION
+        Bootstrap.ps1 polls $StatusFile every ~650 ms and updates its WinForms UI
+        with the message, progress percentage, and step number.  When imaging is
+        done, set -Done to signal the spinner to stop.
+    #>
+    param(
+        [string]$Message  = '',
+        [int]$Progress    = 0,
+        [int]$Step        = 0,
+        [switch]$Done
+    )
+    # No-op when StatusFile is empty (disables IPC reporting by design).
+    if (-not $StatusFile) { return }
+    try {
+        $obj = @{ Message = $Message; Progress = $Progress; Step = $Step; Done = [bool]$Done }
+        $obj | ConvertTo-Json -Compress | Set-Content -Path $StatusFile -Force -ErrorAction SilentlyContinue
+    } catch { }
+}
+
 function New-ScratchDirectory {
     param([string]$Path)
     if (-not (Test-Path $Path)) {
-        New-Item -ItemType Directory -Path $Path -Force | Out-Null
+        $null = New-Item -ItemType Directory -Path $Path -Force
     }
 }
 
@@ -116,7 +165,7 @@ function Add-SetupCompleteEntry {
         [string]$Line
     )
     $dir = Split-Path $FilePath
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    if (-not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
     # Windows OOBE calls SetupComplete.cmd by convention — it must be a .cmd file.
     # ASCII encoding ensures broadest compatibility with cmd.exe's file parser.
     if (Test-Path $FilePath) {
@@ -155,7 +204,7 @@ function Invoke-DownloadWithProgress {
         $totalBytes = $response.ContentLength
         $stream     = $response.GetResponseStream()
         $fs         = [System.IO.File]::Create($OutFile)
-        $buffer     = New-Object byte[] 65536
+        $buffer     = New-Object byte[] $script:DownloadBufferSize
         $downloaded = 0
         $sw         = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -164,7 +213,7 @@ function Invoke-DownloadWithProgress {
             if ($read -gt 0) {
                 $fs.Write($buffer, 0, $read)
                 $downloaded += $read
-                if ($sw.ElapsedMilliseconds -gt 1000) {
+                if ($sw.ElapsedMilliseconds -gt $script:ProgressIntervalMs) {
                     $pct = if ($totalBytes -gt 0) { [int]($downloaded * 100 / $totalBytes) } else { 0 }
                     $speed = if ($sw.Elapsed.TotalSeconds -gt 0) { [long]($downloaded / $sw.Elapsed.TotalSeconds) } else { 0 }
                     Write-Host "  Progress: $pct% ($(Get-FileSizeReadable $downloaded) / $(Get-FileSizeReadable $totalBytes)) @ $(Get-FileSizeReadable $speed)/s" -NoNewline
@@ -219,23 +268,23 @@ function Initialize-TargetDisk {
         $stepName = 'Initialize-Disk (GPT)'
         Initialize-Disk -Number $DiskNumber -PartitionStyle GPT -ErrorAction Stop
 
-        # EFI System Partition (ESP) - 260 MB
-        $stepName = 'New-Partition (ESP 260 MB)'
-        $esp = New-Partition -DiskNumber $DiskNumber -Size 260MB -GptType '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'
+        # EFI System Partition (ESP)
+        $stepName = 'New-Partition (ESP)'
+        $esp = New-Partition -DiskNumber $DiskNumber -Size $script:EspSize -GptType $script:GptTypeEsp
         $stepName = 'Format-Volume (ESP FAT32)'
-        Format-Volume -Partition $esp -FileSystem FAT32 -NewFileSystemLabel 'System' -Confirm:$false | Out-Null
+        $null = Format-Volume -Partition $esp -FileSystem FAT32 -NewFileSystemLabel 'System' -Confirm:$false
         $stepName = 'Add-PartitionAccessPath (ESP)'
         Add-PartitionAccessPath -DiskNumber $DiskNumber -PartitionNumber $esp.PartitionNumber -AssignDriveLetter
 
-        # Microsoft Reserved Partition (MSR) - 16 MB
-        $stepName = 'New-Partition (MSR 16 MB)'
-        New-Partition -DiskNumber $DiskNumber -Size 16MB -GptType '{e3c9e316-0b5c-4db8-817d-f92df00215ae}' | Out-Null
+        # Microsoft Reserved Partition (MSR)
+        $stepName = 'New-Partition (MSR)'
+        $null = New-Partition -DiskNumber $DiskNumber -Size $script:MsrSize -GptType $script:GptTypeMsr
 
         # Windows OS Partition - all remaining space
         $stepName = 'New-Partition (OS)'
-        $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -GptType '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}'
+        $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -GptType $script:GptTypeBasicData
         $stepName = 'Format-Volume (OS NTFS)'
-        $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false | Out-Null
+        $null = $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false
         # Format-Volume may auto-assign the drive letter; only reassign if needed.
         $stepName = 'Set-Partition (drive letter)'
         $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
@@ -253,11 +302,11 @@ function Initialize-TargetDisk {
         $stepName = 'Initialize-Disk (MBR)'
         Initialize-Disk -Number $DiskNumber -PartitionStyle MBR -ErrorAction Stop
 
-        # System/Active partition - 500 MB
-        $stepName = 'New-Partition (System 500 MB)'
-        $sysPartition = New-Partition -DiskNumber $DiskNumber -Size 500MB -IsActive -MbrType 7
+        # System/Active partition
+        $stepName = 'New-Partition (System)'
+        $sysPartition = New-Partition -DiskNumber $DiskNumber -Size $script:MbrSystemSize -IsActive -MbrType 7
         $stepName = 'Format-Volume (System NTFS)'
-        $sysPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'System' -Confirm:$false | Out-Null
+        $null = $sysPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'System' -Confirm:$false
         $stepName = 'Add-PartitionAccessPath (System)'
         Add-PartitionAccessPath -DiskNumber $DiskNumber -PartitionNumber $sysPartition.PartitionNumber -AssignDriveLetter
 
@@ -265,7 +314,7 @@ function Initialize-TargetDisk {
         $stepName = 'New-Partition (OS)'
         $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -MbrType 7
         $stepName = 'Format-Volume (OS NTFS)'
-        $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false | Out-Null
+        $null = $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false
         # Format-Volume may auto-assign the drive letter; only reassign if needed.
         $stepName = 'Set-Partition (drive letter)'
         $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
@@ -438,12 +487,12 @@ function Apply-WindowsImage {
         $scratch = Join-Path $ScratchDir 'scratch'
         New-ScratchDirectory -Path $scratch
 
-        Expand-WindowsImage `
+        $null = Expand-WindowsImage `
             -ImagePath       $ImagePath `
             -Index           $targetImage.ImageIndex `
             -ApplyPath       "${OSDriveLetter}:\" `
             -ScratchDirectory $scratch `
-            -ErrorAction Stop | Out-Null
+            -ErrorAction Stop
 
         Write-Success 'Windows image applied successfully.'
     } catch {
@@ -472,7 +521,7 @@ function Set-Bootloader {
             # Find the EFI system partition
             $stepName = 'Find EFI System Partition'
             $espDrive = (Get-Partition -DiskNumber $DiskNumber |
-                Where-Object { $_.GptType -eq '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}' } |
+                Where-Object { $_.GptType -eq $script:GptTypeEsp } |
                 Get-Volume |
                 Select-Object -First 1).DriveLetter
 
@@ -480,7 +529,7 @@ function Set-Bootloader {
                 # Assign a temporary drive letter to ESP
                 $stepName = 'Assign ESP drive letter'
                 $esp = Get-Partition -DiskNumber $DiskNumber |
-                    Where-Object { $_.GptType -eq '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}' } |
+                    Where-Object { $_.GptType -eq $script:GptTypeEsp } |
                     Select-Object -First 1
                 Add-PartitionAccessPath -DiskNumber $DiskNumber -PartitionNumber $esp.PartitionNumber -AssignDriveLetter
                 $espDrive = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $esp.PartitionNumber | Get-Volume).DriveLetter
@@ -530,11 +579,11 @@ function Add-Drivers {
         Write-Host "  Found $($infFiles.Count) driver(s)."
 
         $stepName = 'Add-WindowsDriver'
-        Add-WindowsDriver `
+        $null = Add-WindowsDriver `
             -Path        "${OSDriveLetter}:\" `
             -Driver      $DriverPath `
             -Recurse `
-            -ErrorAction Continue | Out-Null
+            -ErrorAction Continue
 
         Write-Success "Drivers injected from: $DriverPath"
     } catch {
@@ -553,7 +602,7 @@ function Initialize-NuGetProvider {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
         Write-Host '  Bootstrapping NuGet package provider...'
-        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -ErrorAction Stop | Out-Null
+        $null = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -ErrorAction Stop
     }
     $gallery = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
     if (-not $gallery -or $gallery.InstallationPolicy -ne 'Trusted') {
@@ -606,7 +655,7 @@ function Add-DellDrivers {
 
         $stepName = 'Invoke-DCUUpdate'
         $driverTemp = Join-Path $ScratchDir 'Dell-Drivers'
-        New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+        $null = New-Item -ItemType Directory -Path $driverTemp -Force
 
         # Download applicable driver updates without applying them to the live OS.
         Invoke-DCUUpdate -UpdateType driver -DownloadPath $driverTemp -ApplyUpdates:$false
@@ -619,8 +668,8 @@ function Add-DellDrivers {
         }
 
         Write-Host "  Injecting $($infFiles.Count) Dell driver(s) into ${OSDriveLetter}:\..."
-        Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
-            -ErrorAction Continue | Out-Null
+        $null = Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
+            -ErrorAction Continue
         Write-Success 'Dell drivers injected successfully.'
     } catch {
         throw "Add-DellDrivers failed at step '$stepName': $_"
@@ -648,7 +697,7 @@ function Add-HpDrivers {
 
         $stepName = 'Add-HPDrivers'
         $driverTemp = Join-Path $ScratchDir 'HP-Drivers'
-        New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+        $null = New-Item -ItemType Directory -Path $driverTemp -Force
 
         # Add-HPDrivers handles platform detection, SoftPaq download, extraction,
         # and offline DISM injection in a single call.
@@ -678,7 +727,7 @@ function Add-LenovoDrivers {
         Import-Module LSUClient -ErrorAction Stop
 
         $driverTemp = Join-Path $ScratchDir 'Lenovo-Drivers'
-        New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+        $null = New-Item -ItemType Directory -Path $driverTemp -Force
 
         $stepName = 'Get-LSUpdate'
         $updates = $null
@@ -705,8 +754,8 @@ function Add-LenovoDrivers {
         }
 
         Write-Host "  Injecting $($infFiles.Count) driver(s) into ${OSDriveLetter}:\..."
-        Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
-            -ErrorAction Continue | Out-Null
+        $null = Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
+            -ErrorAction Continue
         Write-Success 'Lenovo drivers injected successfully.'
     } catch {
         throw "Add-LenovoDrivers failed at step '$stepName': $_"
@@ -738,8 +787,7 @@ function Invoke-OemDriverInjection {
             '*Hewlett*' { Add-HpDrivers     -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
             '*Lenovo*'  { Add-LenovoDrivers -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
             default {
-                Write-Warn ("Manufacturer '$manufacturer' is not supported for OEM driver automation. " +
-                            'Use -DriverPath for manual driver injection.')
+                Write-Warn "Manufacturer '$manufacturer' is not supported for OEM driver automation. Use -DriverPath for manual driver injection."
             }
         }
     } catch {
@@ -769,7 +817,7 @@ function Set-AutopilotConfig {
     try {
         $stepName = 'Create Autopilot directory'
         $autopilotDest = "${OSDriveLetter}:\Windows\Provisioning\Autopilot\AutopilotConfigurationFile.json"
-        New-Item -ItemType Directory -Path (Split-Path $autopilotDest) -Force | Out-Null
+        $null = New-Item -ItemType Directory -Path (Split-Path $autopilotDest) -Force
 
         if ($JsonUrl) {
             $stepName = 'Download Autopilot JSON'
@@ -808,7 +856,7 @@ function Install-CCMSetup {
     try {
         $stepName = 'Create scripts directory'
         $ccmDir  = "${OSDriveLetter}:\Windows\Setup\Scripts"
-        New-Item -ItemType Directory -Path $ccmDir -Force | Out-Null
+        $null = New-Item -ItemType Directory -Path $ccmDir -Force
 
         $stepName = 'Download ccmsetup.exe'
         $ccmExe  = Join-Path $ScratchDir 'ccmsetup.exe'
@@ -845,7 +893,7 @@ function Set-OOBECustomization {
     try {
         $stepName = 'Create Panther directory'
         $unattendDest = "${OSDriveLetter}:\Windows\Panther\unattend.xml"
-        New-Item -ItemType Directory -Path (Split-Path $unattendDest) -Force | Out-Null
+        $null = New-Item -ItemType Directory -Path (Split-Path $unattendDest) -Force
 
         if ($UnattendUrl) {
             $stepName = 'Download unattend.xml'
@@ -918,7 +966,7 @@ function Invoke-PostScripts {
     try {
         $stepName = 'Create scripts directory'
         $scriptDir = "${OSDriveLetter}:\Windows\Setup\Scripts"
-        New-Item -ItemType Directory -Path $scriptDir -Force | Out-Null
+        $null = New-Item -ItemType Directory -Path $scriptDir -Force
 
         $i = 1
         foreach ($url in $ScriptUrls) {
@@ -970,6 +1018,7 @@ try {
 
     # Step 1: Partition the disk
     $stepName = 'Partition disk'
+    Update-BootstrapStatus -Message 'Partitioning disk...' -Step 1 -Progress 10
     Initialize-TargetDisk `
         -DiskNumber    $TargetDiskNumber `
         -FirmwareType  $FirmwareType `
@@ -983,6 +1032,7 @@ try {
 
     # Step 2: Download Windows image
     $stepName = 'Download Windows image'
+    Update-BootstrapStatus -Message 'Downloading Windows image...' -Step 1 -Progress 20
     $imagePath = Get-WindowsImageSource `
         -ImageUrl    $WindowsImageUrl `
         -Edition     $WindowsEdition `
@@ -992,6 +1042,7 @@ try {
 
     # Step 3: Apply Windows image
     $stepName = 'Apply Windows image'
+    Update-BootstrapStatus -Message 'Applying Windows image...' -Step 2 -Progress 50
     Apply-WindowsImage `
         -ImagePath     $imagePath `
         -Edition       $WindowsEdition `
@@ -1000,6 +1051,7 @@ try {
 
     # Step 4: Configure bootloader
     $stepName = 'Configure bootloader'
+    Update-BootstrapStatus -Message 'Configuring bootloader...' -Step 2 -Progress 65
     Set-Bootloader `
         -OSDriveLetter $OSDrive `
         -FirmwareType  $FirmwareType `
@@ -1007,12 +1059,14 @@ try {
 
     # Step 5: Inject drivers
     $stepName = 'Inject drivers'
+    Update-BootstrapStatus -Message 'Injecting drivers...' -Step 2 -Progress 75
     Add-Drivers `
         -DriverPath    $DriverPath `
         -OSDriveLetter $OSDrive
 
     if ($UseOemDrivers) {
         $stepName = 'Inject OEM drivers'
+        Update-BootstrapStatus -Message 'Injecting OEM drivers...' -Step 2 -Progress 80
         Invoke-OemDriverInjection `
             -OSDriveLetter $OSDrive `
             -ScratchDir    $ScratchDir
@@ -1020,6 +1074,7 @@ try {
 
     # Step 6: Apply Autopilot/Intune configuration
     $stepName = 'Apply Autopilot configuration'
+    Update-BootstrapStatus -Message 'Applying Autopilot configuration...' -Step 3 -Progress 85
     Set-AutopilotConfig `
         -JsonUrl       $AutopilotJsonUrl `
         -JsonPath      $AutopilotJsonPath `
@@ -1034,6 +1089,7 @@ try {
 
     # Step 8: Customize OOBE
     $stepName = 'Customize OOBE'
+    Update-BootstrapStatus -Message 'Customizing OOBE...' -Step 3 -Progress 90
     Set-OOBECustomization `
         -UnattendUrl   $UnattendUrl `
         -UnattendPath  $UnattendPath `
@@ -1045,6 +1101,8 @@ try {
         -ScriptUrls    $PostScriptUrls `
         -OSDriveLetter $OSDrive `
         -ScratchDir    $ScratchDir
+
+    Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Step 3 -Progress 100 -Done
 
     Write-Host @"
 

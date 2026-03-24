@@ -54,9 +54,13 @@
 
 [CmdletBinding()]
 param(
+    [ValidateNotNullOrEmpty()]
     [string] $GitHubUser      = 'araduti',
+    [ValidateNotNullOrEmpty()]
     [string] $GitHubRepo      = 'AmpCloud',
+    [ValidateNotNullOrEmpty()]
     [string] $GitHubBranch    = 'main',
+    [ValidateNotNullOrEmpty()]
     [string] $WorkDir         = 'C:\AmpCloud',
     [string] $WindowsISOUrl   = '',
     [switch] $NoReboot
@@ -101,8 +105,7 @@ function Get-WinPEArchitecture {
     $proc = $env:PROCESSOR_ARCHITECTURE   # AMD64 | x86
     $arch = $map[$proc]
     if (-not $arch) {
-        throw "Unsupported processor architecture '$proc'. " +
-              "AmpCloud supports amd64 and x86 only. ARM is not supported."
+        throw "Unsupported processor architecture '$proc'. AmpCloud supports amd64 and x86 only. ARM is not supported."
     }
     return $arch
 }
@@ -168,10 +171,14 @@ function Get-WinREPath {
     }
 
     # Otherwise assign a temporary drive letter, copy the WIM, then release
-    $freeLetter = (68..90 |
-        ForEach-Object { [char]$_ } |
-        Where-Object   { -not (Test-Path "${_}:\") } |
-        Select-Object -First 1)
+    $freeLetter = $null
+    foreach ($code in 68..90) {
+        $letter = [char]$code
+        if (-not (Test-Path "${letter}:\")) {
+            $freeLetter = $letter
+            break
+        }
+    }
     if (-not $freeLetter) {
         Write-Warn 'No free drive letter available to mount recovery partition.'
         return $null
@@ -267,25 +274,19 @@ function Get-WinREPathFromWindowsISO {
             if (-not $ISOUrl) {
                 $ISOUrl = $defaultISOUrls[$Architecture]
                 if (-not $ISOUrl) {
-                    throw ("No Windows ISO is available for architecture '$Architecture' " +
-                           "by default. Provide -WindowsISOUrl pointing to a Windows ISO " +
-                           "file or download URL (e.g. the Windows 11 $Architecture ISO " +
-                           "from https://www.microsoft.com/software-download/windows11).")
+                    throw "No Windows ISO is available for architecture '$Architecture' by default. Provide -WindowsISOUrl pointing to a Windows ISO file or download URL (e.g. the Windows 11 $Architecture ISO from https://www.microsoft.com/software-download/windows11)."
                 }
                 Write-Step "Using built-in default ISO URL for $Architecture..."
             }
 
             $isoPath = Join-Path $env:TEMP `
                 "ampcloud_win_iso_${Architecture}_$([System.Guid]::NewGuid().ToString('N')).iso"
-            Write-Step ('Downloading Windows ISO for ' + $Architecture +
-                        ' — this file is several GB and may take a while...')
+            Write-Step "Downloading Windows ISO for $Architecture — this file is several GB and may take a while..."
             try {
                 Invoke-WebRequest -Uri $ISOUrl -OutFile $isoPath -UseBasicParsing `
                                   -TimeoutSec 7200   # 2-hour ceiling for large ISOs
             } catch {
-                throw ("Failed to download Windows ISO from '$ISOUrl': $_`n" +
-                       'Tip: download the ISO manually and re-run with ' +
-                       "-WindowsISOUrl '<path-to-iso>'.")
+                throw "Failed to download Windows ISO from '$ISOUrl': $_`nTip: download the ISO manually and re-run with -WindowsISOUrl '<path-to-iso>'."
             }
             Write-Success 'Windows ISO downloaded.'
             $isoDownloaded = $true
@@ -293,14 +294,13 @@ function Get-WinREPathFromWindowsISO {
 
         # ── Step 2: Mount the ISO ────────────────────────────────────────────────
         Write-Step 'Mounting Windows ISO...'
-        Mount-DiskImage -ImagePath $isoPath | Out-Null
+        $null = Mount-DiskImage -ImagePath $isoPath
         $isoMounted     = $true
         $isoDriveLetter = (Get-DiskImage -ImagePath $isoPath |
                             Get-Partition | Get-Volume |
                             Select-Object -First 1 -ExpandProperty DriveLetter)
         if (-not $isoDriveLetter) {
-            throw ('Could not determine the drive letter of the mounted ISO. ' +
-                   'The file may be corrupted or not a valid Windows ISO.')
+            throw 'Could not determine the drive letter of the mounted ISO. The file may be corrupted or not a valid Windows ISO.'
         }
         $isoDrive = "${isoDriveLetter}:\"
 
@@ -310,23 +310,21 @@ function Get-WinREPathFromWindowsISO {
         $wimPath = if     (Test-Path $installWim) { $installWim }
                    elseif (Test-Path $installEsd) { $installEsd }
                    else {
-                       throw ('Could not find sources\install.wim or sources\install.esd ' +
-                              "on the mounted ISO at $isoDrive")
+                       throw "Could not find sources\install.wim or sources\install.esd on the mounted ISO at $isoDrive"
                    }
 
         # ── Step 4: Mount the installation image read-only (first index) ──────────
         $wimMountDir = Join-Path $env:TEMP `
             "ampcloud_iso_wim_$([System.Guid]::NewGuid().ToString('N'))"
-        New-Item -ItemType Directory -Path $wimMountDir -Force | Out-Null
+        $null = New-Item -ItemType Directory -Path $wimMountDir -Force
         $imageIndex = (Get-WindowsImage -ImagePath $wimPath |
                         Select-Object -First 1 -ExpandProperty ImageIndex)
         if (-not $imageIndex) {
             throw "Could not read any image index from '$wimPath' — the file may be corrupted."
         }
-        Write-Step ("Mounting $(Split-Path $wimPath -Leaf) " +
-                    "(index $imageIndex — read-only)...")
-        Mount-WindowsImage -ImagePath $wimPath -Index $imageIndex `
-                           -Path $wimMountDir -ReadOnly | Out-Null
+        Write-Step "Mounting $(Split-Path $wimPath -Leaf) (index $imageIndex — read-only)..."
+        $null = Mount-WindowsImage -ImagePath $wimPath -Index $imageIndex `
+                           -Path $wimMountDir -ReadOnly
 
         # ── Step 5: Copy WinRE.wim out of the installation image ──────────────────
         $winreSrc = Join-Path $wimMountDir 'Windows\System32\Recovery\WinRE.wim'
@@ -343,12 +341,12 @@ function Get-WinREPathFromWindowsISO {
     } finally {
         # Clean up in reverse order; every step is always attempted.
         if ($wimMountDir -and (Test-Path $wimMountDir)) {
-            Dismount-WindowsImage -Path $wimMountDir -Discard `
-                                  -ErrorAction SilentlyContinue | Out-Null
+            $null = Dismount-WindowsImage -Path $wimMountDir -Discard `
+                                  -ErrorAction SilentlyContinue
             Remove-Item $wimMountDir -Recurse -Force -ErrorAction SilentlyContinue
         }
         if ($isoMounted) {
-            Dismount-DiskImage -ImagePath $isoPath -ErrorAction SilentlyContinue | Out-Null
+            $null = Dismount-DiskImage -ImagePath $isoPath -ErrorAction SilentlyContinue
         }
         if ($isoDownloaded -and $isoPath -and (Test-Path $isoPath)) {
             Remove-Item $isoPath -Force -ErrorAction SilentlyContinue
@@ -496,7 +494,7 @@ function Copy-WinPEFiles {
     $sourcesDir = Join-Path $mediaDir    'sources'
 
     if (Test-Path $Destination) { Remove-Item $Destination -Recurse -Force }
-    New-Item -ItemType Directory -Path $mediaDir, $mountDir, $sourcesDir -Force | Out-Null
+    $null = New-Item -ItemType Directory -Path $mediaDir, $mountDir, $sourcesDir -Force
 
     # Mirror the arch Media tree (EFI, bootmgr, fonts, resources …)
     Write-Step 'Copying WinPE media files...'
@@ -576,8 +574,8 @@ function Remove-WinRERecoveryPackages {
 
         Write-Step "Removing recovery package: $name"
         try {
-            Remove-WindowsPackage -Path $MountDir -PackageName $name `
-                                  -NoRestart -ErrorAction Stop | Out-Null
+            $null = Remove-WindowsPackage -Path $MountDir -PackageName $name `
+                                  -NoRestart -ErrorAction Stop
             Write-Success "Removed: $name"
         } catch {
             Write-Warn "Could not remove $name (non-fatal): $_"
@@ -644,13 +642,11 @@ function Build-WinPE {
                 $wimInfo = Get-WindowsImage -ImagePath $localWinRE -Index 1 -ErrorAction Stop
                 $archInt = $wimInfo.Architecture -as [int]
                 if ($null -eq $archInt) {
-                    Write-Warn ("WinRE image returned a non-integer Architecture value " +
-                                "('$($wimInfo.Architecture)') — skipping arch check.")
+                    Write-Warn "WinRE image returned a non-integer Architecture value ('$($wimInfo.Architecture)') — skipping arch check."
                 } else {
                     $wimArch = $script:WimArchIntMap[$archInt]
                     if (-not $wimArch) {
-                        Write-Warn ("Unrecognized WinRE image architecture value " +
-                                    "($archInt) — skipping arch check.")
+                        Write-Warn "Unrecognized WinRE image architecture value ($archInt) — skipping arch check."
                     }
                 }
             } catch {
@@ -660,8 +656,7 @@ function Build-WinPE {
             if ($wimArch -and $wimArch -ne $Architecture) {
                 # Architecture mismatch — clean up the local temp WinRE (if any)
                 # and obtain a correct-arch WinRE from a Windows ISO instead.
-                Write-Warn ("Local WinRE is $wimArch but the build target is $Architecture. " +
-                            'Fetching a fresh WinRE from a Windows ISO...')
+                Write-Warn "Local WinRE is $wimArch but the build target is $Architecture. Fetching a fresh WinRE from a Windows ISO..."
                 if ($localWinRE -like "$env:TEMP\*") {
                     Remove-Item $localWinRE -Force -ErrorAction SilentlyContinue
                 }
@@ -679,8 +674,7 @@ function Build-WinPE {
                 }
             }
         } else {
-            Write-Warn ('WinRE.wim not found on this machine. ' +
-                        'Fetching WinRE from a Windows ISO...')
+            Write-Warn 'WinRE.wim not found on this machine. Fetching WinRE from a Windows ISO...'
             $winrePath         = Get-WinREPathFromWindowsISO -Architecture $Architecture `
                                                               -ISOUrl $WindowsISOUrl
             $usingWinRE        = $true
@@ -703,7 +697,7 @@ function Build-WinPE {
 
     # ── 2. Mount ─────────────────────────────────────────────────────────────
     Write-Step 'Mounting boot.wim...'
-    Mount-WindowsImage -ImagePath $paths.BootWim -Index 1 -Path $paths.MountDir | Out-Null
+    $null = Mount-WindowsImage -ImagePath $paths.BootWim -Index 1 -Path $paths.MountDir
 
     $retryWithISOWinRE = $false   # set to $true inside the try if version mismatch detected
     try {
@@ -724,7 +718,7 @@ function Build-WinPE {
             }
             Write-Step "Adding package: $pkg"
             try {
-                Add-WindowsPackage -Path $paths.MountDir -PackagePath $pkgPath | Out-Null
+                $null = Add-WindowsPackage -Path $paths.MountDir -PackagePath $pkgPath
             } catch {
                 # Package may already be present in the WinRE base image (expected)
                 # or there may be a version mismatch with the ADK (non-fatal warning).
@@ -748,14 +742,14 @@ function Build-WinPE {
             Write-Step "Fetching VirtIO netkvm driver from repo ($driverRepoPath)..."
             try {
                 $fileList = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
-                New-Item -ItemType Directory -Path $driverTmpDir -Force | Out-Null
+                $null = New-Item -ItemType Directory -Path $driverTmpDir -Force
                 foreach ($entry in $fileList) {
                     if ($entry.type -eq 'file' -and $entry.download_url) {
                         $dest = Join-Path $driverTmpDir $entry.name
                         Invoke-WebRequest -Uri $entry.download_url -OutFile $dest -UseBasicParsing -ErrorAction Stop
                     }
                 }
-                Add-WindowsDriver -Path $paths.MountDir -Driver $driverTmpDir -Recurse | Out-Null
+                $null = Add-WindowsDriver -Path $paths.MountDir -Driver $driverTmpDir -Recurse
                 Write-Success 'VirtIO network driver (netkvm) injected.'
             } catch {
                 Write-Warn "Could not inject VirtIO network driver (non-fatal): $_"
@@ -807,9 +801,7 @@ function Build-WinPE {
                 $retryWithISOWinRE = $true
                 throw 'PowerShell not found in WinRE image — ADK / WinRE version mismatch.'
             }
-            throw ('PowerShell executable not found in the mounted image ' +
-                   '(Windows\System32\WindowsPowerShell\v1.0\powershell.exe). ' +
-                   'Ensure WinPE-PowerShell.cab is compatible with the base WIM.')
+            throw 'PowerShell executable not found in the mounted image (Windows\System32\WindowsPowerShell\v1.0\powershell.exe). Ensure WinPE-PowerShell.cab is compatible with the base WIM.'
         }
 
         $launcherPath = Join-Path $paths.MountDir 'Windows\System32\ampcloud-start.cmd'
@@ -827,7 +819,7 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\ampcloud-start.cmd
     } catch {
         # Always clean up a dangling mount on failure
         Write-Warn 'Customisation failed — discarding mounted image to avoid corruption.'
-        Dismount-WindowsImage -Path $paths.MountDir -Discard -ErrorAction SilentlyContinue | Out-Null
+        $null = Dismount-WindowsImage -Path $paths.MountDir -Discard -ErrorAction SilentlyContinue
 
         # ── WinRE / ADK version mismatch — fetch fresh WinRE from Windows ISO ──────
         # WinPE-PowerShell.cab could not be applied because the ADK package set
@@ -837,9 +829,7 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\ampcloud-start.cmd
         # ADK perfectly, but since we are now on the second attempt the hard error
         # path is taken if PowerShell is still absent.
         if ($retryWithISOWinRE) {
-            Write-Warn ('WinPE-PowerShell.cab is not compatible with the local WinRE image ' +
-                        '(ADK / WinRE version mismatch). ' +
-                        'Fetching a fresh WinRE from a Windows ISO and retrying...')
+            Write-Warn 'WinPE-PowerShell.cab is not compatible with the local WinRE image (ADK / WinRE version mismatch). Fetching a fresh WinRE from a Windows ISO and retrying...'
             $freshWinRE = Get-WinREPathFromWindowsISO -Architecture $originalArchitecture `
                                                        -ISOUrl $WindowsISOUrl
             if (Test-Path $WorkDir) {
@@ -858,7 +848,7 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\ampcloud-start.cmd
 
     # ── 7. Commit & unmount ───────────────────────────────────────────────────
     Write-Step 'Committing and unmounting image...'
-    Dismount-WindowsImage -Path $paths.MountDir -Save | Out-Null
+    $null = Dismount-WindowsImage -Path $paths.MountDir -Save
 
     # ── 8. Re-export with maximum compression to reduce WIM size ─────────────
     # Maximum compression can shrink WinRE by 100–200 MB compared to the default
@@ -869,8 +859,8 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\ampcloud-start.cmd
     $slimWim = $paths.BootWim + '.slim'
     $bakWim  = $paths.BootWim + '.bak'
     try {
-        Export-WindowsImage -SourceImagePath $paths.BootWim -SourceIndex 1 `
-                            -DestinationImagePath $slimWim -CompressionType max | Out-Null
+        $null = Export-WindowsImage -SourceImagePath $paths.BootWim -SourceIndex 1 `
+                            -DestinationImagePath $slimWim -CompressionType max
         # Rename original as .bak (same filesystem — atomic rename)
         Move-Item $paths.BootWim $bakWim  -Force -ErrorAction Stop
         # Promote slim WIM to final path
@@ -966,7 +956,7 @@ function New-BCDRamdiskEntry {
     Write-Step 'Staging ramdisk boot files...'
 
     # Ensure output directory
-    New-Item -ItemType Directory -Path $RamdiskDir -Force | Out-Null
+    $null = New-Item -ItemType Directory -Path $RamdiskDir -Force
 
     # Copy boot.sdi (required by the BCD ramdisk device)
     $sdiSrc  = Join-Path $MediaDir 'boot\boot.sdi'
@@ -993,8 +983,8 @@ function New-BCDRamdiskEntry {
 
     # ── Ramdisk device options ────────────────────────────────────────────────
     $rdGuid = New-BcdEntry '/create', '/d', 'AmpCloud Ramdisk Options', '/device'
-    Invoke-Bcdedit '/set', $rdGuid, 'ramdisksdidevice', "partition=$drive" | Out-Null
-    Invoke-Bcdedit '/set', $rdGuid, 'ramdisksdipath',   $sdiBcd             | Out-Null
+    $null = Invoke-Bcdedit '/set', $rdGuid, 'ramdisksdidevice', "partition=$drive"
+    $null = Invoke-Bcdedit '/set', $rdGuid, 'ramdisksdipath',   $sdiBcd
     Write-Success "Ramdisk options: $rdGuid"
 
     # ── OS loader ─────────────────────────────────────────────────────────────
@@ -1006,18 +996,18 @@ function New-BCDRamdiskEntry {
     $ramdiskVal = "[$drive]$wimBcd,$rdGuid"
     $osGuid     = New-BcdEntry '/create', '/d', 'AmpCloud Boot', '/application', 'osloader'
 
-    Invoke-Bcdedit '/set', $osGuid, 'device',     "ramdisk=$ramdiskVal" | Out-Null
-    Invoke-Bcdedit '/set', $osGuid, 'osdevice',   "ramdisk=$ramdiskVal" | Out-Null
-    Invoke-Bcdedit '/set', $osGuid, 'path',       $winload               | Out-Null
-    Invoke-Bcdedit '/set', $osGuid, 'systemroot', '\windows'             | Out-Null
-    Invoke-Bcdedit '/set', $osGuid, 'detecthal',  'yes'                  | Out-Null
-    Invoke-Bcdedit '/set', $osGuid, 'winpe',      'yes'                  | Out-Null
-    Invoke-Bcdedit '/set', $osGuid, 'nx',         'OptIn'                | Out-Null
-    Invoke-Bcdedit '/set', $osGuid, 'ems',        'no'                   | Out-Null
+    $null = Invoke-Bcdedit '/set', $osGuid, 'device',     "ramdisk=$ramdiskVal"
+    $null = Invoke-Bcdedit '/set', $osGuid, 'osdevice',   "ramdisk=$ramdiskVal"
+    $null = Invoke-Bcdedit '/set', $osGuid, 'path',       $winload
+    $null = Invoke-Bcdedit '/set', $osGuid, 'systemroot', '\windows'
+    $null = Invoke-Bcdedit '/set', $osGuid, 'detecthal',  'yes'
+    $null = Invoke-Bcdedit '/set', $osGuid, 'winpe',      'yes'
+    $null = Invoke-Bcdedit '/set', $osGuid, 'nx',         'OptIn'
+    $null = Invoke-Bcdedit '/set', $osGuid, 'ems',        'no'
 
     # Add to menu and arm as one-time next boot
-    Invoke-Bcdedit '/displayorder', $osGuid, '/addlast' | Out-Null
-    Invoke-Bcdedit '/bootsequence', $osGuid             | Out-Null
+    $null = Invoke-Bcdedit '/displayorder', $osGuid, '/addlast'
+    $null = Invoke-Bcdedit '/bootsequence', $osGuid
 
     Write-Success "OS loader entry: $osGuid (armed as one-time next boot)"
     return $osGuid
