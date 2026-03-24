@@ -196,24 +196,33 @@ function Initialize-TargetDisk {
         Write-Warn "Clear-Disk failed on disk ${DiskNumber}: $clearError"
     }
 
+    $stepName = ''
     try {
 
     if ($FirmwareType -eq 'UEFI') {
         # Initialize as GPT
+        $stepName = 'Initialize-Disk (GPT)'
         Initialize-Disk -Number $DiskNumber -PartitionStyle GPT -ErrorAction Stop
 
         # EFI System Partition (ESP) - 260 MB
+        $stepName = 'New-Partition (ESP 260 MB)'
         $esp = New-Partition -DiskNumber $DiskNumber -Size 260MB -GptType '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'
+        $stepName = 'Format-Volume (ESP FAT32)'
         Format-Volume -Partition $esp -FileSystem FAT32 -NewFileSystemLabel 'System' -Confirm:$false | Out-Null
+        $stepName = 'Add-PartitionAccessPath (ESP)'
         Add-PartitionAccessPath -DiskNumber $DiskNumber -PartitionNumber $esp.PartitionNumber -AssignDriveLetter
 
         # Microsoft Reserved Partition (MSR) - 16 MB
+        $stepName = 'New-Partition (MSR 16 MB)'
         New-Partition -DiskNumber $DiskNumber -Size 16MB -GptType '{e3c9e316-0b5c-4db8-817d-f92df00215ae}' | Out-Null
 
         # Windows OS Partition - all remaining space
+        $stepName = 'New-Partition (OS)'
         $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -GptType '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}'
+        $stepName = 'Format-Volume (OS NTFS)'
         $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false | Out-Null
         # Format-Volume may auto-assign the drive letter; only reassign if needed.
+        $stepName = 'Set-Partition (drive letter)'
         $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
         if ([string]$currentLetter -ne [string]$OSDriveLetter) {
             Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
@@ -221,17 +230,24 @@ function Initialize-TargetDisk {
 
     } else {
         # Initialize as MBR
+        $stepName = 'Initialize-Disk (MBR)'
         Initialize-Disk -Number $DiskNumber -PartitionStyle MBR -ErrorAction Stop
 
         # System/Active partition - 500 MB
+        $stepName = 'New-Partition (System 500 MB)'
         $sysPartition = New-Partition -DiskNumber $DiskNumber -Size 500MB -IsActive -MbrType 7
+        $stepName = 'Format-Volume (System NTFS)'
         $sysPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'System' -Confirm:$false | Out-Null
+        $stepName = 'Add-PartitionAccessPath (System)'
         Add-PartitionAccessPath -DiskNumber $DiskNumber -PartitionNumber $sysPartition.PartitionNumber -AssignDriveLetter
 
         # Windows OS Partition - remaining
+        $stepName = 'New-Partition (OS)'
         $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -MbrType 7
+        $stepName = 'Format-Volume (OS NTFS)'
         $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false | Out-Null
         # Format-Volume may auto-assign the drive letter; only reassign if needed.
+        $stepName = 'Set-Partition (drive letter)'
         $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
         if ([string]$currentLetter -ne [string]$OSDriveLetter) {
             Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
@@ -239,10 +255,11 @@ function Initialize-TargetDisk {
     }
 
     } catch {
+        $msg = "Disk $DiskNumber partitioning failed at step '$stepName': $_"
         if ($clearError) {
-            throw "Partitioning disk $DiskNumber failed after Clear-Disk error. Clear-Disk error: $clearError -- Partition error: $_"
+            $msg += " (preceded by Clear-Disk error: $clearError)"
         }
-        throw
+        throw $msg
     }
 
     Write-Success "Disk $DiskNumber partitioned. OS drive: ${OSDriveLetter}:"
