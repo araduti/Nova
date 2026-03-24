@@ -7,6 +7,9 @@
 .DESCRIPTION
     One-liner entry point. Runs on any Windows PC.
     - Auto-installs the Windows ADK + WinPE add-on if missing.
+    - Presents an interactive configuration menu (preselected with sensible
+      defaults) that lets OSD admins choose which ADK packages, language packs,
+      and drivers to include in the boot image before building.
     - Builds a custom boot image in pure PowerShell (no copype.cmd / cmd.exe).
       Always uses WinRE (Windows Recovery Environment) as the base WIM because WinRE
       ships with WiFi hardware drivers (Intel, Realtek, MediaTek, Qualcomm) that
@@ -513,18 +516,197 @@ function Copy-WinPEFile {
 
 #region ── WinPE Customisation ──────────────────────────────────────────────────
 
-# Packages to inject — order matters (language packs must follow their base cab)
-$script:WinPEPackages = @(
-    'WinPE-WMI.cab',             'en-us\WinPE-WMI_en-us.cab',
-    'WinPE-NetFX.cab',           'en-us\WinPE-NetFX_en-us.cab',
-    'WinPE-Scripting.cab',       'en-us\WinPE-Scripting_en-us.cab',
-    'WinPE-PowerShell.cab',      'en-us\WinPE-PowerShell_en-us.cab',
-    'WinPE-SecureStartup.cab',   'en-us\WinPE-SecureStartup_en-us.cab',
-    'WinPE-Dot3Svc.cab',         'en-us\WinPE-Dot3Svc_en-us.cab',
-    'WinPE-WiFi-Package.cab',    'en-us\WinPE-WiFi-Package_en-us.cab',
-    'WinPE-StorageWMI.cab',      'en-us\WinPE-StorageWMI_en-us.cab',
-    'WinPE-DismCmdlets.cab',     'en-us\WinPE-DismCmdlets_en-us.cab'
+# Default language for WinPE optional-component language packs.
+$script:DefaultLanguage = 'en-us'
+
+# Available WinPE optional components — order matters (dependency chain).
+# Name        : base cab name (without .cab extension or language prefix)
+# Description : human-readable label shown in the configuration menu
+# Default     : $true = pre-selected in the menu
+# Required    : $true = cannot be deselected (needed for Bootstrap.ps1)
+$script:AvailableWinPEPackages = @(
+    @{ Name = 'WinPE-WMI';           Description = 'Windows Management Instrumentation'; Default = $true;  Required = $false }
+    @{ Name = 'WinPE-NetFX';         Description = '.NET Framework';                     Default = $true;  Required = $false }
+    @{ Name = 'WinPE-Scripting';     Description = 'Windows Script Host';                Default = $true;  Required = $false }
+    @{ Name = 'WinPE-PowerShell';    Description = 'PowerShell';                         Default = $true;  Required = $true  }
+    @{ Name = 'WinPE-SecureStartup'; Description = 'BitLocker and TPM support';          Default = $true;  Required = $false }
+    @{ Name = 'WinPE-Dot3Svc';       Description = '802.1X wired authentication';        Default = $true;  Required = $false }
+    @{ Name = 'WinPE-WiFi-Package';  Description = 'Wireless networking';                Default = $true;  Required = $false }
+    @{ Name = 'WinPE-StorageWMI';    Description = 'Storage management cmdlets';         Default = $true;  Required = $false }
+    @{ Name = 'WinPE-DismCmdlets';   Description = 'DISM PowerShell cmdlets';            Default = $true;  Required = $false }
 )
+
+function Resolve-WinPEPackagePath {
+    <#
+    .SYNOPSIS  Expands package names + language into the ordered cab-path list that
+               Add-WindowsPackage expects (base cab first, then its language pack).
+    #>
+    param(
+        [string[]] $PackageNames,
+        [string]   $Language
+    )
+    $paths = @()
+    foreach ($name in $PackageNames) {
+        $paths += "$name.cab"
+        $paths += "$Language\${name}_$Language.cab"
+    }
+    return $paths
+}
+
+function Show-BuildConfiguration {
+    <#
+    .SYNOPSIS  Interactive menu that lets OSD admins customise the boot image before
+               building.  All items are pre-selected with sensible defaults.
+    .OUTPUTS   [hashtable] Keys: Language, Packages, InjectVirtIO, ExtraDriverPaths
+    #>
+    param([string] $Architecture)
+
+    $language         = $script:DefaultLanguage
+    $injectVirtIO     = $true
+    $extraDriverPaths = [System.Collections.Generic.List[string]]::new()
+
+    # Pre-select defaults
+    $pkgCount = $script:AvailableWinPEPackages.Count
+    $selected = [bool[]]::new($pkgCount)
+    for ($i = 0; $i -lt $pkgCount; $i++) {
+        $selected[$i] = $script:AvailableWinPEPackages[$i].Default
+    }
+
+    while ($true) {
+        Write-Host ''
+        Write-Host '  ════════════════════════════════════════════════════════════════' -ForegroundColor Cyan
+        Write-Host '  Boot Image Configuration                      (edit or Enter ⏎)' -ForegroundColor Cyan
+        Write-Host '  ════════════════════════════════════════════════════════════════' -ForegroundColor Cyan
+        Write-Host ''
+        Write-Host "  Architecture : $Architecture" -ForegroundColor White
+        Write-Host "  Language     : $language" -ForegroundColor White
+        Write-Host ''
+        Write-Host '  WinPE Optional Components' -ForegroundColor White
+        Write-Host '  ─────────────────────────' -ForegroundColor DarkGray
+
+        for ($i = 0; $i -lt $pkgCount; $i++) {
+            $pkg  = $script:AvailableWinPEPackages[$i]
+            $mark = if ($selected[$i]) { 'x' } else { ' ' }
+            $tag  = if ($pkg.Required) { ' (required)' } else { '' }
+            $num  = '{0,2}' -f ($i + 1)
+            $padName = $pkg.Name.PadRight(22)
+            $color   = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
+            Write-Host "    [$mark] $num. $padName $($pkg.Description)$tag" -ForegroundColor $color
+        }
+
+        Write-Host ''
+        Write-Host '  Drivers' -ForegroundColor White
+        Write-Host '  ───────' -ForegroundColor DarkGray
+        $vMark  = if ($injectVirtIO) { 'x' } else { ' ' }
+        $vColor = if ($injectVirtIO) { 'Green' } else { 'DarkGray' }
+        Write-Host "    [$vMark]  V. VirtIO network driver (netkvm)" -ForegroundColor $vColor
+
+        if ($extraDriverPaths.Count -gt 0) {
+            for ($i = 0; $i -lt $extraDriverPaths.Count; $i++) {
+                Write-Host "    [+] D$($i + 1). $($extraDriverPaths[$i])" -ForegroundColor Green
+            }
+        }
+
+        Write-Host ''
+        Write-Host '  ┌──────────────────────────────────────────────────────────┐' -ForegroundColor DarkGray
+        Write-Host '  │  1-9  toggle package   L  change language               │' -ForegroundColor DarkGray
+        Write-Host '  │  V    toggle VirtIO    D  add driver path               │' -ForegroundColor DarkGray
+        Write-Host '  │  A    select all pkgs  N  deselect optional pkgs        │' -ForegroundColor DarkGray
+        Write-Host '  │  R    remove driver    Enter  continue with settings ⏎  │' -ForegroundColor DarkGray
+        Write-Host '  └──────────────────────────────────────────────────────────┘' -ForegroundColor DarkGray
+
+        $menuChoice = Read-Host "`n  >"
+        $cmd = $menuChoice.Trim()
+
+        # Enter — accept current configuration
+        if ($cmd -eq '') {
+            # Re-enable required packages that were somehow deselected
+            for ($i = 0; $i -lt $pkgCount; $i++) {
+                if ($script:AvailableWinPEPackages[$i].Required -and -not $selected[$i]) {
+                    $selected[$i] = $true
+                    Write-Warn "$($script:AvailableWinPEPackages[$i].Name) is required and has been re-enabled."
+                }
+            }
+            break
+        }
+
+        # Toggle package by number (1-9)
+        if ($cmd -match '^\d+$') {
+            $idx = [int]$cmd - 1
+            if ($idx -ge 0 -and $idx -lt $pkgCount) {
+                if ($script:AvailableWinPEPackages[$idx].Required -and $selected[$idx]) {
+                    Write-Warn "$($script:AvailableWinPEPackages[$idx].Name) is required and cannot be deselected."
+                } else {
+                    $selected[$idx] = -not $selected[$idx]
+                }
+            }
+            continue
+        }
+
+        switch ($cmd.ToUpper()) {
+            'V' { $injectVirtIO = -not $injectVirtIO }
+            'L' {
+                $newLang = Read-Host '  Enter language code (e.g. en-us, de-de, fr-fr, ja-jp)'
+                $newLang = $newLang.Trim().ToLower()
+                if ($newLang -match '^[a-z]{2,3}-[a-z]{2}$') {
+                    $language = $newLang
+                } else {
+                    Write-Warn "Invalid language code format. Expected pattern: xx-xx (e.g. en-us)"
+                }
+            }
+            'D' {
+                $driverPath = Read-Host '  Enter driver folder path (local or UNC)'
+                $driverPath = $driverPath.Trim().TrimEnd('\')
+                if ($driverPath) {
+                    if (-not (Test-Path $driverPath)) {
+                        Write-Warn "Path not found: $driverPath (will be re-checked at build time)"
+                    }
+                    $extraDriverPaths.Add($driverPath)
+                    Write-Success "Added driver path: $driverPath"
+                }
+            }
+            'R' {
+                if ($extraDriverPaths.Count -eq 0) {
+                    Write-Warn 'No extra driver paths to remove.'
+                } else {
+                    for ($j = 0; $j -lt $extraDriverPaths.Count; $j++) {
+                        Write-Host "    $($j + 1). $($extraDriverPaths[$j])"
+                    }
+                    $removeIdx = Read-Host '  Enter number to remove'
+                    if ($removeIdx -match '^\d+$') {
+                        $ri = [int]$removeIdx - 1
+                        if ($ri -ge 0 -and $ri -lt $extraDriverPaths.Count) {
+                            $removed = $extraDriverPaths[$ri]
+                            $extraDriverPaths.RemoveAt($ri)
+                            Write-Success "Removed: $removed"
+                        }
+                    }
+                }
+            }
+            'A' {
+                for ($i = 0; $i -lt $pkgCount; $i++) { $selected[$i] = $true }
+            }
+            'N' {
+                for ($i = 0; $i -lt $pkgCount; $i++) {
+                    if (-not $script:AvailableWinPEPackages[$i].Required) { $selected[$i] = $false }
+                }
+            }
+        }
+    }
+
+    # Build the selected package name list (preserves dependency order)
+    $selectedPkgs = @()
+    for ($i = 0; $i -lt $pkgCount; $i++) {
+        if ($selected[$i]) { $selectedPkgs += $script:AvailableWinPEPackages[$i].Name }
+    }
+
+    return @{
+        Language         = $language
+        Packages         = $selectedPkgs
+        InjectVirtIO     = $injectVirtIO
+        ExtraDriverPaths = @($extraDriverPaths)
+    }
+}
 
 function Remove-WinRERecoveryPackage {
     <#
@@ -594,15 +776,26 @@ function Build-WinPE {
     .OUTPUTS   [hashtable] Keys: MediaDir, MountDir, BootWim
     #>
     param(
-        [string] $ADKRoot,
-        [string] $WorkDir,
-        [string] $Architecture,
-        [string] $GitHubUser,
-        [string] $GitHubRepo,
-        [string] $GitHubBranch,
-        [string] $WindowsISOUrl  = '',   # User-supplied ISO path or URL for WinRE extraction
-        [string] $_ISOWinREPath  = ''    # Internal — pre-extracted ISO WinRE path (retry only)
+        [string]   $ADKRoot,
+        [string]   $WorkDir,
+        [string]   $Architecture,
+        [string]   $GitHubUser,
+        [string]   $GitHubRepo,
+        [string]   $GitHubBranch,
+        [string]   $WindowsISOUrl     = '',           # User-supplied ISO path or URL for WinRE extraction
+        [string]   $_ISOWinREPath     = '',           # Internal — pre-extracted ISO WinRE path (retry only)
+        [string]   $Language          = $script:DefaultLanguage,
+        [string[]] $PackageNames      = @(),          # Selected package base names (from Show-BuildConfiguration)
+        [bool]     $InjectVirtIO      = $true,
+        [string[]] $ExtraDriverPaths  = @()
     )
+
+    # If no packages were specified, fall back to the required defaults so that
+    # a direct call to Build-WinPE without Show-BuildConfiguration still works.
+    if ($PackageNames.Count -eq 0) {
+        $PackageNames = @($script:AvailableWinPEPackages |
+            Where-Object { $_.Default } | ForEach-Object { $_.Name })
+    }
 
     # Preserve the caller-supplied architecture.  On a retry the recursive call
     # always passes the original host architecture so the ISO WinRE, the ADK
@@ -710,10 +903,11 @@ function Build-WinPE {
         $pkgRoot = Join-Path $ADKRoot `
             "Assessment and Deployment Kit\Windows Preinstallation Environment\$Architecture\WinPE_OCs"
 
-        foreach ($pkg in $script:WinPEPackages) {
+        $resolvedPkgPaths = Resolve-WinPEPackagePath -PackageNames $PackageNames -Language $Language
+        foreach ($pkg in $resolvedPkgPaths) {
             $pkgPath = Join-Path $pkgRoot $pkg
             if (-not (Test-Path $pkgPath)) {
-                Write-Warn "Package not found, skipping: $pkg"
+                Write-Warn "Package not found, skipping: $pkgPath"
                 continue
             }
             Write-Step "Adding package: $pkg"
@@ -733,31 +927,50 @@ function Build-WinPE {
         # in Drivers/NetKVM/w10/<arch>/ in the repo — fetched directly from GitHub,
         # no ISO download required.
         # ARM is not supported — only amd64 and x86 driver folders are used.
-        $virtioArchMap = @{ amd64 = 'amd64'; x86 = 'x86' }
-        $virtioArch    = $virtioArchMap[$Architecture]
-        if ($virtioArch) {
-            $driverRepoPath = "Drivers/NetKVM/w10/$virtioArch"
-            $apiUrl         = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/$driverRepoPath`?ref=$GitHubBranch"
-            $driverTmpDir   = Join-Path $env:TEMP "ampcloud_netkvm_$([System.Guid]::NewGuid().ToString('N'))"
-            Write-Step "Fetching VirtIO netkvm driver from repo ($driverRepoPath)..."
-            try {
-                $fileList = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
-                $null = New-Item -ItemType Directory -Path $driverTmpDir -Force
-                foreach ($entry in $fileList) {
-                    if ($entry.type -eq 'file' -and $entry.download_url) {
-                        $dest = Join-Path $driverTmpDir $entry.name
-                        Invoke-WebRequest -Uri $entry.download_url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+        if ($InjectVirtIO) {
+            $virtioArchMap = @{ amd64 = 'amd64'; x86 = 'x86' }
+            $virtioArch    = $virtioArchMap[$Architecture]
+            if ($virtioArch) {
+                $driverRepoPath = "Drivers/NetKVM/w10/$virtioArch"
+                $apiUrl         = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/$driverRepoPath`?ref=$GitHubBranch"
+                $driverTmpDir   = Join-Path $env:TEMP "ampcloud_netkvm_$([System.Guid]::NewGuid().ToString('N'))"
+                Write-Step "Fetching VirtIO netkvm driver from repo ($driverRepoPath)..."
+                try {
+                    $fileList = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
+                    $null = New-Item -ItemType Directory -Path $driverTmpDir -Force
+                    foreach ($entry in $fileList) {
+                        if ($entry.type -eq 'file' -and $entry.download_url) {
+                            $dest = Join-Path $driverTmpDir $entry.name
+                            Invoke-WebRequest -Uri $entry.download_url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+                        }
                     }
+                    $null = Add-WindowsDriver -Path $paths.MountDir -Driver $driverTmpDir -Recurse
+                    Write-Success 'VirtIO network driver (netkvm) injected.'
+                } catch {
+                    Write-Warn "Could not inject VirtIO network driver (non-fatal): $_"
+                } finally {
+                    Remove-Item $driverTmpDir -Recurse -Force -ErrorAction SilentlyContinue
                 }
-                $null = Add-WindowsDriver -Path $paths.MountDir -Driver $driverTmpDir -Recurse
-                Write-Success 'VirtIO network driver (netkvm) injected.'
-            } catch {
-                Write-Warn "Could not inject VirtIO network driver (non-fatal): $_"
-            } finally {
-                Remove-Item $driverTmpDir -Recurse -Force -ErrorAction SilentlyContinue
+            } else {
+                Write-Warn "VirtIO network driver not available for architecture '$Architecture' — skipping."
             }
         } else {
-            Write-Warn "VirtIO network driver not available for architecture '$Architecture' — skipping."
+            Write-Step 'VirtIO network driver injection skipped (disabled in configuration).'
+        }
+
+        # ── 4c. Inject extra drivers (user-supplied paths) ──────────────────
+        foreach ($drvPath in $ExtraDriverPaths) {
+            Write-Step "Injecting drivers from: $drvPath"
+            if (-not (Test-Path $drvPath)) {
+                Write-Warn "Driver path not found, skipping: $drvPath"
+                continue
+            }
+            try {
+                $null = Add-WindowsDriver -Path $paths.MountDir -Driver $drvPath -Recurse
+                Write-Success "Drivers injected from: $drvPath"
+            } catch {
+                Write-Warn "Could not inject drivers from '$drvPath' (non-fatal): $_"
+            }
         }
 
         # ── 5. Embed Bootstrap.ps1 ────────────────────────────────────────────
@@ -840,7 +1053,11 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\ampcloud-start.cmd
                                -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo `
                                -GitHubBranch $GitHubBranch `
                                -WindowsISOUrl $WindowsISOUrl `
-                               -_ISOWinREPath $freshWinRE
+                               -_ISOWinREPath $freshWinRE `
+                               -Language $Language `
+                               -PackageNames $PackageNames `
+                               -InjectVirtIO $InjectVirtIO `
+                               -ExtraDriverPaths $ExtraDriverPaths
         }
 
         throw
@@ -1272,15 +1489,22 @@ try {
         # ── 1. ADK ────────────────────────────────────────────────────────────
         $adkRoot = Assert-ADKInstalled -Architecture $arch
 
+        # ── 1b. Show configuration menu (preselected defaults) ────────────────
+        $buildConfig = Show-BuildConfiguration -Architecture $arch
+
         # ── 2. Boot image (WinRE preferred, WinPE fallback) ──────────────────
         $paths = Build-WinPE `
-            -ADKRoot        $adkRoot `
-            -WorkDir        $script:WinPEWorkDir `
-            -Architecture   $arch `
-            -GitHubUser     $GitHubUser `
-            -GitHubRepo     $GitHubRepo `
-            -GitHubBranch   $GitHubBranch `
-            -WindowsISOUrl  $WindowsISOUrl
+            -ADKRoot           $adkRoot `
+            -WorkDir           $script:WinPEWorkDir `
+            -Architecture      $arch `
+            -GitHubUser        $GitHubUser `
+            -GitHubRepo        $GitHubRepo `
+            -GitHubBranch      $GitHubBranch `
+            -WindowsISOUrl     $WindowsISOUrl `
+            -Language          $buildConfig.Language `
+            -PackageNames      $buildConfig.Packages `
+            -InjectVirtIO      $buildConfig.InjectVirtIO `
+            -ExtraDriverPaths  $buildConfig.ExtraDriverPaths
 
         # ── 2b. Offer to upload boot image to GitHub ─────────────────────────
         Write-Host ''
