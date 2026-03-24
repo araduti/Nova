@@ -30,7 +30,7 @@ param(
     # Windows image source
     # Set to a direct URL to a .wim/.esd, or leave empty to use products.xml from the repository
     [string]$WindowsImageUrl = '',
-    [string]$WindowsEdition  = 'Windows 11 Pro',
+    [string]$WindowsEdition  = 'Professional',
     [string]$WindowsLanguage = 'en-us',
 
     # Driver injection
@@ -252,6 +252,19 @@ function Find-WindowsESD {
         Select-Object -First 1
 
     if (-not $matchedEsd) {
+        # Dump available entries to aid troubleshooting.
+        $available = $allFiles |
+            Where-Object { $_.LanguageCode -eq $Language -and $_.Architecture -eq $arch } |
+            Select-Object -ExpandProperty Edition -ErrorAction SilentlyContinue |
+            Sort-Object -Unique
+        if ($available) {
+            Write-Warn "Available editions in catalog for Language='$Language', Arch='$arch':"
+            $available | ForEach-Object { Write-Host "    $_" }
+        } else {
+            Write-Warn "No entries found for Language='$Language', Arch='$arch'. Available architectures:"
+            $allFiles | Select-Object -ExpandProperty Architecture -ErrorAction SilentlyContinue |
+                Sort-Object -Unique | ForEach-Object { Write-Host "    $_" }
+        }
         throw "No ESD found in catalog for: Edition='$Edition', Language='$Language', Arch='$arch'"
     }
 
@@ -297,6 +310,21 @@ function Get-WindowsImageSource {
 
 #region ── Image Application ────────────────────────────────────────────────────
 
+# Maps Microsoft ESD catalog edition identifiers to the keywords used
+# in WIM/ESD ImageName fields (e.g. 'Professional' → 'Pro').
+$script:EditionNameMap = @{
+    'Professional'            = 'Pro'
+    'ProfessionalN'           = 'Pro N'
+    'ProfessionalWorkstation' = 'Pro for Workstations'
+    'HomePremium'             = 'Home'
+    'HomePremiumN'            = 'Home N'
+    'CoreSingleLanguage'      = 'Home Single Language'
+    'Education'               = 'Education'
+    'EducationN'              = 'Education N'
+    'Enterprise'              = 'Enterprise'
+    'EnterpriseN'             = 'Enterprise N'
+}
+
 function Apply-WindowsImage {
     param(
         [string]$ImagePath,
@@ -313,6 +341,14 @@ function Apply-WindowsImage {
     $images | ForEach-Object { Write-Host "    [$($_.ImageIndex)] $($_.ImageName)" }
 
     $targetImage = $images | Where-Object { $_.ImageName -like "*$Edition*" } | Select-Object -First 1
+
+    # The catalog uses short IDs (e.g. 'Professional') while WIM ImageName
+    # uses friendly names (e.g. 'Windows 11 Pro').  Try the mapped name.
+    if (-not $targetImage -and $script:EditionNameMap.ContainsKey($Edition)) {
+        $mappedName = $script:EditionNameMap[$Edition]
+        $targetImage = $images | Where-Object { $_.ImageName -like "*$mappedName" } | Select-Object -First 1
+    }
+
     if (-not $targetImage) {
         Write-Warn "Edition '$Edition' not found. Using index 1."
         $targetImage = $images | Select-Object -First 1

@@ -102,6 +102,7 @@ $Strings = @{
             StatusInit="🌐 Initialising network stack..."; StatusNoNet="No wired internet detected`nTap below to connect via WiFi";
             Connected="✅ Connected! Loading imaging engine..."; Download="📥 Downloading AmpCloud.ps1 ({0}%)";
             Complete="🎉 Setup complete!"; Reboot="Reboot Now"; PowerOff="Power Off"; Shell="Drop to Shell";
+            Imaging="💻 Imaging in progress...";
             CatalogFetch="📋 Fetching available Windows editions...";
             CatalogFail="⚠️ Could not fetch edition catalog. Using default edition.";
             EditionTitle="Select Windows Edition";
@@ -111,6 +112,7 @@ $Strings = @{
             StatusInit="🌐 Initialisation du réseau..."; StatusNoNet="Pas de connexion filaire`nAppuyez ci-dessous pour le WiFi";
             Connected="✅ Connecté ! Lancement du moteur..."; Download="📥 Téléchargement AmpCloud.ps1 ({0}%)";
             Complete="🎉 Configuration terminée !"; Reboot="Redémarrer maintenant"; PowerOff="Éteindre"; Shell="Ouvrir le shell";
+            Imaging="💻 Imagerie en cours...";
             CatalogFetch="📋 Récupération des éditions Windows disponibles...";
             CatalogFail="⚠️ Impossible de récupérer le catalogue. Édition par défaut utilisée.";
             EditionTitle="Sélectionner l'édition Windows";
@@ -120,6 +122,7 @@ $Strings = @{
             StatusInit="🌐 Inicializando red..."; StatusNoNet="Sin internet cableado`nToque abajo para WiFi";
             Connected="✅ ¡Conectado! Cargando motor..."; Download="📥 Descargando AmpCloud.ps1 ({0}%)";
             Complete="🎉 ¡Configuración completa!"; Reboot="Reiniciar ahora"; PowerOff="Apagar"; Shell="Abrir shell";
+            Imaging="💻 Creación de imagen en curso...";
             CatalogFetch="📋 Obteniendo ediciones de Windows disponibles...";
             CatalogFail="⚠️ No se pudo obtener el catálogo. Usando edición predeterminada.";
             EditionTitle="Seleccionar edición de Windows";
@@ -820,11 +823,11 @@ function Select-WindowsEdition {
     $combo.Location      = New-Object System.Drawing.Point(30, 72)
     $combo.Width         = 440
 
-    # Pre-select Windows 11 Pro if available; fall back to any plain Pro edition.
+    # Pre-select Professional if available; fall back to any Pro-like edition.
     $defaultIdx = 0
     $foundPref  = $false
     for ($i = 0; $i -lt $editions.Count; $i++) {
-        if ($editions[$i] -eq 'Windows 11 Pro') { $defaultIdx = $i; $foundPref = $true; break }
+        if ($editions[$i] -eq 'Professional') { $defaultIdx = $i; $foundPref = $true; break }
     }
     if (-not $foundPref) {
         for ($i = 0; $i -lt $editions.Count; $i++) {
@@ -879,25 +882,34 @@ function ProceedToEngine {
     $engineFailed = $false
     try {
         $localAmpCloud = Join-Path $env:SystemRoot 'System32\AmpCloud.ps1'
-        if (Test-Path $localAmpCloud) {
-            & $localAmpCloud @editionArgs
-        } else {
+        if (-not (Test-Path $localAmpCloud)) {
             $url    = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
-            $dlPath = 'X:\AmpCloud.ps1'
+            $localAmpCloud = 'X:\AmpCloud.ps1'
             Write-Status ($S.Download -f 0)
             $web = New-Object System.Net.WebClient
             $web.add_DownloadProgressChanged({
                 param($sender, $e)
                 Write-Status ($S.Download -f $e.ProgressPercentage)
             })
-            $task = $web.DownloadFileTaskAsync($url, $dlPath)
+            $task = $web.DownloadFileTaskAsync($url, $localAmpCloud)
             while (-not $task.IsCompleted) {
                 [System.Windows.Forms.Application]::DoEvents()
                 Start-Sleep -Milliseconds 100
             }
             if ($task.IsFaulted) { throw $task.Exception.InnerException }
-            & $dlPath @editionArgs
         }
+
+        # Run AmpCloud.ps1 in a dedicated process so the WinForms UI thread
+        # stays responsive and the spinner keeps animating.
+        $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $localAmpCloud) + $editionArgs
+        $engineProc = Start-Process -FilePath $script:PsBin -ArgumentList $psArgs -PassThru
+
+        Write-Status $S.Imaging 'Cyan'
+        while (-not $engineProc.HasExited) {
+            [System.Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Milliseconds 200
+        }
+        if ($engineProc.ExitCode -ne 0) { $engineFailed = $true }
     } catch {
         # Engine already printed diagnostics; close the UI so the console
         # is usable.  The -NoExit PowerShell host from ampcloud-start.cmd
