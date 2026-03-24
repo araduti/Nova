@@ -244,7 +244,7 @@ function Invoke-NetworkTuning {
                 $null = netsh interface ipv6 set interface "$($matches[2].Trim())" admin=disabled 2>$null
             }
         }
-    } catch {<# Non-critical tuning; continue on failure #>} finally { $ErrorActionPreference = $prev }
+    } catch { Write-Verbose "Network tuning failed: $_" } finally { $ErrorActionPreference = $prev }
 }
 
 function Test-HasValidIP {
@@ -267,7 +267,7 @@ function Test-InternetConnectivity {
         try {
             $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
             if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 300) { return $true }
-        } catch {<# Suppress regex/parse errors; treat as no valid IP #>}
+        } catch { Write-Verbose "Connectivity probe failed for ${url}: $_" }
     }
     return $false
 }
@@ -313,7 +313,7 @@ function Get-WiFiNetwork {
 function Get-SignalBar { param([int]$s) ('█' * [Math]::Round($s/20)) + ('░' * (5-[Math]::Round($s/20))) }
 
 function Connect-WiFiNetwork {
-    param([string]$SSID, [string]$Passphrase, [string]$Auth)
+    param([string]$SSID, [string]$WiFiKey, [string]$Auth)
     $safeSsid = [System.Security.SecurityElement]::Escape($SSID)
     $isOpen   = $Auth -match 'Open'
 
@@ -334,7 +334,7 @@ function Connect-WiFiNetwork {
 </WLANProfile>
 "@
     } else {
-        $safePwd  = if ($Passphrase) { [System.Security.SecurityElement]::Escape($Passphrase) } else { '' }
+        $safePwd  = if ($WiFiKey) { [System.Security.SecurityElement]::Escape($WiFiKey) } else { '' }
         $authType = if ($Auth -match 'WPA3') { 'WPA3SAE' } else { 'WPA2PSK' }
         $xml = @"
 <?xml version="1.0"?>
@@ -424,7 +424,7 @@ function Show-WiFiSelector {
                 }
             }
         }
-        Connect-WiFiNetwork -SSID $netSSID -Passphrase $password -Auth $netAuth
+        Connect-WiFiNetwork -SSID $netSSID -WiFiKey $password -Auth $netAuth
         $password = $null
         Write-Status 'Waiting for IP address...' 'Yellow'
         Start-Sleep -Seconds 6
@@ -540,7 +540,7 @@ $ringPanel.Add_Paint({
         $g = $_.Graphics
         $g.SmoothingMode = "AntiAlias"
         $g.DrawArc($RingPen, 6, 6, 66, 66, $script:ringAngle, 280)
-    } catch {<# Suppress GDI rendering errors to avoid UI crash #>}
+    } catch { Write-Verbose "Ring paint error: $_" }
 })
 
 # ── Status label ────────────────────────────────────────────────────────────
@@ -722,7 +722,7 @@ $script:uiUpdateTimer.Add_Tick({
                 $ringTimer.Stop()
             }
         }
-    } catch {<# Suppress JSON parse errors; stale status is acceptable #>}
+    } catch { Write-Verbose "Status JSON parse error: $_" }
 })
 #endregion
 
@@ -989,6 +989,7 @@ function ProceedToEngine {
             $web = New-Object System.Net.WebClient
             $web.add_DownloadProgressChanged({
                 param($eventSender, $e)
+                $null = $eventSender  # Required by .NET delegate signature
                 Write-Status ($S.Download -f $e.ProgressPercentage)
             })
             $task = $web.DownloadFileTaskAsync($url, $localAmpCloud)
@@ -1089,7 +1090,7 @@ $script:initTimer.Add_Tick({
             if ($null -eq $script:_proc -or $script:_proc.HasExited -or
                 ++$script:_wait -ge $script:WpeInitTimeoutTicks) {
                 if ($script:_proc -and -not $script:_proc.HasExited) {
-                    try { $script:_proc.Kill() } catch {}
+                    try { $script:_proc.Kill() } catch { Write-Verbose "Process already exited: $_" }
                 }
                 # wpeutil UpdateBootInfo populates PEFirmwareType in the
                 # registry — needed by downstream partitioning logic.
@@ -1098,7 +1099,7 @@ $script:initTimer.Add_Tick({
                 try {
                     Start-Process -FilePath 'wpeutil' -ArgumentList 'UpdateBootInfo' `
                         -Wait -WindowStyle Hidden -ErrorAction SilentlyContinue
-                } catch {<# Non-critical boot info update; proceed regardless #>} finally { $ErrorActionPreference = $prev }
+                } catch { Write-Verbose "wpeutil UpdateBootInfo failed: $_" } finally { $ErrorActionPreference = $prev }
 
                 Invoke-NetworkTuning
                 Write-Status 'Acquiring network address...' 'Cyan'
@@ -1117,7 +1118,7 @@ $script:initTimer.Add_Tick({
                 try {
                     Start-Process -FilePath 'net.exe' -ArgumentList 'start', 'dhcp' `
                         -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue
-                } catch {<# DHCP service may not be available in minimal WinPE #>}
+                } catch { Write-Verbose "DHCP service start failed: $_" }
                 $script:_dhcp = 0
                 $script:_initState = 'DHCP'
             }
@@ -1138,7 +1139,7 @@ $script:initTimer.Add_Tick({
             if ($null -eq $script:_proc -or $script:_proc.HasExited -or
                 ++$script:_wait -ge $script:DhcpTimeoutTicks) {
                 if ($script:_proc -and -not $script:_proc.HasExited) {
-                    try { $script:_proc.Kill() } catch {}
+                    try { $script:_proc.Kill() } catch { Write-Verbose "Process already exited: $_" }
                 }
                 if (Test-HasValidIP) {
                     $script:_initState = 'CHECK'

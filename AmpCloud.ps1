@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     AmpCloud - Full cloud imaging engine for GitHub-native OS deployment.
@@ -149,7 +149,7 @@ function Update-BootstrapStatus {
     try {
         $obj = @{ Message = $Message; Progress = $Progress; Step = $Step; Done = [bool]$Done }
         $obj | ConvertTo-Json -Compress | Set-Content -Path $StatusFile -Force -ErrorAction SilentlyContinue
-    } catch { <# Status reporting is non-critical; suppress errors to keep the engine running #> }
+    } catch { Write-Verbose "Status update suppressed: $_" <# Non-critical; keep the engine running #> }
 }
 
 function New-ScratchDirectory {

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     AmpCloud Bootstrap v7.3 - SUPER-FLUENT WinForms (UI Animations OPTIMIZED)
@@ -138,7 +138,7 @@ function Invoke-WpeInit {
 function Test-InternetConnectivity {
     $urls = @('https://www.msftconnecttest.com/connecttest.txt', 'https://clients3.google.com/generate_204')
     foreach ($url in $urls) {
-        try { if ((Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 6).StatusCode -eq 200) { return $true } } catch { <# Connectivity probe; failure means URL unreachable #> }
+        try { if ((Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 6).StatusCode -eq 200) { return $true } } catch { Write-Verbose "Connectivity probe failed for ${url}: $_" }
     }
     return $false
 }
@@ -188,9 +188,9 @@ function Get-WiFiNetwork {
 function Get-SignalBar { param([int]$s) ('█' * [Math]::Round($s/20)) + ('░' * (5-[Math]::Round($s/20))) }
 
 function Connect-WiFiNetwork {
-    param([string]$SSID, [string]$Passphrase, [string]$Auth)
+    param([string]$SSID, [string]$WiFiKey, [string]$Auth)
     $safeSSID = [System.Security.SecurityElement]::Escape($SSID)
-    $safePwd  = if ($Passphrase) { [System.Security.SecurityElement]::Escape($Passphrase) } else { '' }
+    $safePwd  = if ($WiFiKey) { [System.Security.SecurityElement]::Escape($WiFiKey) } else { '' }
     $isOpen = $Auth -match 'Open'
     $authType = if ($isOpen) { 'open' } elseif ($Auth -match 'WPA3') { 'WPA3SAE' } else { 'WPA2PSK' }
     $enc = if ($isOpen) { 'none' } else { 'AES' }
@@ -276,7 +276,7 @@ function Show-WiFiSelector {
     $dlg.Controls.Add($btnRefresh)
     $btnRefresh.Add_Click({ RefreshNetworks })
 
-    RefreshNetworks()
+    RefreshNetworks
 
     $null = $dlg.ShowDialog()
     if ($list.SelectedItems.Count -gt 0) {
@@ -288,7 +288,7 @@ function Show-WiFiSelector {
             $clearPassword = Read-Host -Prompt "Password for '$netSSID'" -AsSecureString
             $clearPassword = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($clearPassword))
         }
-        Connect-WiFiNetwork -SSID $netSSID -Passphrase $clearPassword -Auth $netAuth
+        Connect-WiFiNetwork -SSID $netSSID -WiFiKey $clearPassword -Auth $netAuth
         return (Wait-ForConnection -Timeout 40)
     }
     return $false

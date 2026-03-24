@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 #Requires -Version 5.1
 <#
 .SYNOPSIS
@@ -927,7 +927,7 @@ function Get-FirmwareType {
         if ($val -eq 2) { return 'UEFI' }
         if ($val -eq 1) { return 'BIOS' }
         # Any other value (e.g. 0 = unknown) — fall through to secondary check
-    } catch { <# key or property absent — fall through #> }
+    } catch { Write-Verbose "Registry firmware type unavailable: $_" }
 
     # Fallback: Confirm-SecureBootUEFI throws PlatformNotSupportedException on BIOS
     try {
