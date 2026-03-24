@@ -74,7 +74,7 @@ $script:SettlePauseTicks       = 10    # 5  seconds  (10  × 500 ms)
 $script:DhcpWaitPauseTicks     = 10    # 5  seconds  (10  × 500 ms)
 $script:MaxDhcpAttempts        = 5
 $script:ConnectCheckIntervalMs = 5000  # 5  seconds
-$script:BulletChar             = '-'   # used in progress text (ASCII-safe)
+$script:BulletChar             = [char]0x2022  # '•' used in progress text
 
 #region ── Language System ───────────────────────────────────────────────────
 $script:Lang = 'EN'
@@ -172,7 +172,7 @@ function Select-Language {
     $card.Controls.Add($combo)
 
     $btn = New-Object System.Windows.Forms.Button
-    $btn.Text                      = "Continue  >>"
+    $btn.Text                      = "Continue  $([char]0x2192)"
     $btn.Location                  = New-Object System.Drawing.Point(120, 200)
     $btn.Size                      = New-Object System.Drawing.Size(200, 46)
     $btn.BackColor                 = $accentBlue
@@ -286,9 +286,13 @@ $script:IllustBlue   = [System.Drawing.Color]::FromArgb(0, 120, 212)
 $script:IllustGreen  = [System.Drawing.Color]::FromArgb(16, 137, 62)
 $script:IllustViolet = [System.Drawing.Color]::FromArgb(135, 100, 184)
 
-# ── GDI+ icon drawing helpers ───────────────────────────────────────────────
-# Pure GDI+ shapes are used instead of Segoe MDL2 Assets font glyphs because
-# WinPE does not include that font — glyph references render as empty boxes.
+# ── Icon font + GDI+ fallback helpers ───────────────────────────────────────
+# Segoe MDL2 Assets provides Fluent icons when available (injected during
+# WinPE build via Build-WinPE).  If the font is missing, pure GDI+ shapes
+# are drawn instead — no garbage glyphs.
+$script:IconFont = $null
+try { $script:IconFont = New-Object System.Drawing.Font("Segoe MDL2 Assets", 18) }
+catch { Write-Verbose "Segoe MDL2 Assets font not available — using GDI+ shapes: $_" }
 
 function Invoke-GlobeIcon {
     <# Draws a simple globe (circle + crosshairs + equator arc) inside a rect. #>
@@ -722,24 +726,53 @@ $cardPanel.Add_Paint({
         $small, $small)
     $b3.Dispose()
 
-    # Draw GDI+ shape icons inside the circles (no font dependency)
-    $iconPenW = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 2)
-    $iconPenB = New-Object System.Drawing.Pen($script:IllustBlue, 2)
+    # Draw icons inside the circles
+    if ($null -ne $script:IconFont) {
+        # Segoe MDL2 Assets available — use crisp font glyphs
+        $sf = New-Object System.Drawing.StringFormat
+        $sf.Alignment     = 'Center'
+        $sf.LineAlignment = 'Center'
 
-    $r1 = New-Object System.Drawing.Rectangle(
-        ($cx - $big / 2 - $small + $gap), ($cy - $small / 2), $small, $small)
-    Invoke-GlobeIcon -Graphics $g -Rect $r1 -Pen $iconPenW
+        # Globe (E774) in blue circle
+        $r1 = New-Object System.Drawing.RectangleF(
+            ($cx - $big / 2 - $small + $gap), ($cy - $small / 2), $small, $small)
+        $g.DrawString([string][char]0xE774, $script:IconFont,
+            [System.Drawing.Brushes]::White, $r1, $sf)
 
-    $r2 = New-Object System.Drawing.Rectangle(
-        ($cx - $big / 2), ($cy - $big / 2), $big, $big)
-    Invoke-CloudIcon -Graphics $g -Rect $r2 -Pen $iconPenB
+        # Cloud (E753) in centre circle
+        $r2 = New-Object System.Drawing.RectangleF(
+            ($cx - $big / 2), ($cy - $big / 2), $big, $big)
+        $cloudBr = New-Object System.Drawing.SolidBrush($script:IllustBlue)
+        $g.DrawString([string][char]0xE753, $script:IconFont, $cloudBr, $r2, $sf)
+        $cloudBr.Dispose()
 
-    $r3 = New-Object System.Drawing.Rectangle(
-        ($cx + $big / 2 - $gap), ($cy - $small / 2), $small, $small)
-    Invoke-DownloadIcon -Graphics $g -Rect $r3 -Pen $iconPenW
+        # Download (E896) in violet circle
+        $r3 = New-Object System.Drawing.RectangleF(
+            ($cx + $big / 2 - $gap), ($cy - $small / 2), $small, $small)
+        $g.DrawString([string][char]0xE896, $script:IconFont,
+            [System.Drawing.Brushes]::White, $r3, $sf)
 
-    $iconPenW.Dispose()
-    $iconPenB.Dispose()
+        $sf.Dispose()
+    } else {
+        # Fallback — draw GDI+ shapes (no font dependency)
+        $iconPenW = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 2)
+        $iconPenB = New-Object System.Drawing.Pen($script:IllustBlue, 2)
+
+        $r1 = New-Object System.Drawing.Rectangle(
+            ($cx - $big / 2 - $small + $gap), ($cy - $small / 2), $small, $small)
+        Invoke-GlobeIcon -Graphics $g -Rect $r1 -Pen $iconPenW
+
+        $r2 = New-Object System.Drawing.Rectangle(
+            ($cx - $big / 2), ($cy - $big / 2), $big, $big)
+        Invoke-CloudIcon -Graphics $g -Rect $r2 -Pen $iconPenB
+
+        $r3 = New-Object System.Drawing.Rectangle(
+            ($cx + $big / 2 - $gap), ($cy - $small / 2), $small, $small)
+        Invoke-DownloadIcon -Graphics $g -Rect $r3 -Pen $iconPenW
+
+        $iconPenW.Dispose()
+        $iconPenB.Dispose()
+    }
 })
 
 # ── F8 command prompt shortcut ──────────────────────────────────────────────
@@ -760,7 +793,7 @@ $btnDark.Size = New-Object System.Drawing.Size(44, 44)
 $btnDark.FlatStyle = "Flat"
 $btnDark.FlatAppearance.BorderSize = 0
 $btnDark.Font = New-Object System.Drawing.Font("Segoe UI", 14)
-$btnDark.Text = "D/L"            # Dark/Light toggle — ASCII-safe
+$btnDark.Text = [char]0x263D          # crescent moon ☽
 $btnDark.ForeColor = [System.Drawing.Color]::Gray
 $btnDark.BackColor = $script:GradientTop
 $btnDark.Anchor = [System.Windows.Forms.AnchorStyles]::None
@@ -799,7 +832,7 @@ try {
     $diskObj = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue |
                    Select-Object -First 1
     $diskGB  = if ($diskObj -and $diskObj.Size) { [Math]::Round($diskObj.Size / 1GB) } else { '?' }
-    $dot     = "  -  "
+    $dot     = "  $([char]0x2022)  "
     $deviceLabel.Text = "$model${dot}S/N $serial`n$cpu${dot}${ramGB} GB RAM${dot}${diskGB} GB Disk"
 } catch {
     $deviceLabel.Text = "Device: Unknown"
@@ -884,7 +917,7 @@ $stepNum = 0
 foreach ($stepText in @($S.Step1, $S.Step2, $S.Step3)) {
     $stepNum++
     $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = "* $stepNum $stepText"
+    $lbl.Text = "$([char]0x25CF) $stepNum $stepText"
     $lbl.Font = $SmallFont
     $lbl.ForeColor = [System.Drawing.Color]::Gray
     $lbl.AutoSize = $true
@@ -1018,7 +1051,7 @@ function Switch-DarkMode {
     $deviceLabel.BackColor   = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(50, 50, 55) } else { [System.Drawing.Color]::FromArgb(245, 247, 250) }
     $f8Hint.BackColor        = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
     $f8Hint.ForeColor        = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(120, 120, 130) } else { [System.Drawing.Color]::FromArgb(120, 130, 150) }
-    $btnDark.Text            = if ($script:IsDarkMode) { "L" } else { "D" }
+    $btnDark.Text            = if ($script:IsDarkMode) { [char]0x2600 } else { [char]0x263D }
     $form.Invalidate()
     $form.Refresh()
 }
@@ -1145,11 +1178,21 @@ function Show-CompletionScreen {
         $circBrush = New-Object System.Drawing.SolidBrush($script:IllustGreen)
         $g.FillEllipse($circBrush, ($fcx - 30), ($fcy - 30), 60, 60)
         $circBrush.Dispose()
-        $checkPen = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 3)
-        $checkPen.StartCap = 'Round'; $checkPen.EndCap = 'Round'
-        $ir = New-Object System.Drawing.Rectangle(($fcx - 30), ($fcy - 30), 60, 60)
-        Invoke-CheckmarkIcon -Graphics $g -Rect $ir -Pen $checkPen
-        $checkPen.Dispose()
+        if ($null -ne $script:IconFont) {
+            $isf = New-Object System.Drawing.StringFormat
+            $isf.Alignment     = 'Center'
+            $isf.LineAlignment = 'Center'
+            $ir = New-Object System.Drawing.RectangleF(($fcx - 30), ($fcy - 30), 60, 60)
+            $g.DrawString([string][char]0xE73E, $script:IconFont,
+                [System.Drawing.Brushes]::White, $ir, $isf)
+            $isf.Dispose()
+        } else {
+            $checkPen = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 3)
+            $checkPen.StartCap = 'Round'; $checkPen.EndCap = 'Round'
+            $ir = New-Object System.Drawing.Rectangle(($fcx - 30), ($fcy - 30), 60, 60)
+            Invoke-CheckmarkIcon -Graphics $g -Rect $ir -Pen $checkPen
+            $checkPen.Dispose()
+        }
     })
 
     $lbl = New-Object System.Windows.Forms.Label

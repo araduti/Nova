@@ -990,6 +990,57 @@ function Build-WinPE {
             }
         }
 
+        # ── 4d. Inject Segoe MDL2 Assets font for UI icons ─────────────────
+        # WinPE does not ship Segoe MDL2 Assets, so icons render as garbled text.
+        # Copy the font from the local system (any Win 10/11 machine has it) into
+        # the offline image and register it in the offline SOFTWARE hive so GDI+
+        # can use it at boot time.  If the local file is missing, download the
+        # official Segoe font package from Microsoft as a fallback.
+        $mdl2Name     = 'segmdl2.ttf'
+        $mdl2Local    = Join-Path $env:SystemRoot "Fonts\$mdl2Name"
+        $mdl2FontDest = Join-Path $paths.MountDir "Windows\Fonts\$mdl2Name"
+        $fontInjected = $false
+        if (Test-Path $mdl2Local) {
+            Write-Step "Copying Segoe MDL2 Assets from local system..."
+            Copy-Item -Path $mdl2Local -Destination $mdl2FontDest -Force
+            $fontInjected = $true
+        } else {
+            Write-Step 'Segoe MDL2 Assets not found locally; downloading from https://aka.ms/SegoeFonts...'
+            $fontZip = Join-Path $env:TEMP "SegoeFont_$([System.Guid]::NewGuid().ToString('N')).zip"
+            $fontTmp = Join-Path $env:TEMP "SegoeFont_$([System.Guid]::NewGuid().ToString('N'))"
+            try {
+                Invoke-WebRequest -Uri 'https://aka.ms/SegoeFonts' -OutFile $fontZip -UseBasicParsing -ErrorAction Stop
+                Expand-Archive -Path $fontZip -DestinationPath $fontTmp -Force
+                $mdl2File = Get-ChildItem -Path $fontTmp -Filter $mdl2Name -Recurse -File | Select-Object -First 1
+                if ($mdl2File) {
+                    Copy-Item -Path $mdl2File.FullName -Destination $mdl2FontDest -Force
+                    $fontInjected = $true
+                } else {
+                    Write-Warn "segmdl2.ttf not found inside the downloaded Segoe font package."
+                }
+            } catch {
+                Write-Warn "Font download failed (non-fatal — icons will use GDI+ shapes): $_"
+            } finally {
+                Remove-Item $fontZip -Force -ErrorAction SilentlyContinue
+                Remove-Item $fontTmp -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+        if ($fontInjected) {
+            # Register font in the offline registry so GDI+ resolves the family name.
+            $hivePath = Join-Path $paths.MountDir 'Windows\System32\config\SOFTWARE'
+            $hiveKey  = 'PE_FONTS'
+            try {
+                $null = & reg.exe load "HKLM\$hiveKey" $hivePath 2>&1
+                $null = & reg.exe add  "HKLM\$hiveKey\Microsoft\Windows NT\CurrentVersion\Fonts" `
+                             /v 'Segoe MDL2 Assets (TrueType)' /t REG_SZ /d $mdl2Name /f 2>&1
+                Write-Success 'Segoe MDL2 Assets font injected and registered.'
+            } catch {
+                Write-Warn "Font registry update failed (non-fatal): $_"
+            } finally {
+                $null = & reg.exe unload "HKLM\$hiveKey" 2>&1
+            }
+        }
+
         # ── 5. Embed Bootstrap.ps1 ────────────────────────────────────────────
         $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
