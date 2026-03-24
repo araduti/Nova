@@ -30,7 +30,7 @@ param(
     # Windows image source
     # Set to a direct URL to a .wim/.esd, or leave empty to use Microsoft ESD catalog
     [string]$WindowsImageUrl = '',
-    [string]$WindowsEdition  = 'Windows 11 Pro',
+    [string]$WindowsEdition  = 'Professional',
     [string]$WindowsLanguage = 'en-us',
 
     # Driver injection
@@ -226,16 +226,21 @@ function Get-WindowsESDCatalog {
     Write-Step 'Fetching Windows ESD catalog from Microsoft...'
     $catalogUrl = "https://go.microsoft.com/fwlink/?LinkId=2156292"
     $catalogPath = Join-Path $ScratchDir 'catalog.cab'
-    $catalogXml  = Join-Path $ScratchDir 'catalog.xml'
 
     Invoke-DownloadWithProgress -Uri $catalogUrl -OutFile $catalogPath -Description 'Downloading Windows ESD catalog'
 
     # Extract catalog.cab using expand.exe (Windows native CAB extractor).
     # There is no pure PowerShell equivalent for CAB expansion that is reliable
     # in WinPE; Shell.Application.CopyHere is asynchronous and not safe here.
-    & expand.exe $catalogPath -F:* $catalogXml | Out-Null
+    # The cab contains products.xml; extract to a temporary directory so we
+    # find the XML regardless of how expand.exe names the output.
+    $extractDir = Join-Path $ScratchDir 'catalog_extract'
+    New-ScratchDirectory -Path $extractDir
+    & expand.exe $catalogPath -F:* $extractDir | Out-Null
 
-    if (-not (Test-Path $catalogXml)) { throw 'ESD catalog XML not found after extraction.' }
+    $catalogXml = Get-ChildItem $extractDir -Filter '*.xml' -ErrorAction SilentlyContinue |
+        Select-Object -First 1 -ExpandProperty FullName
+    if (-not $catalogXml) { throw 'ESD catalog XML not found after extraction.' }
 
     [xml]$catalog = Get-Content $catalogXml
     return $catalog
@@ -250,8 +255,10 @@ function Find-WindowsESD {
         [string]$FirmwareType
     )
 
-    $arch = 'amd64'
-    $matchedEsd = $Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
+    $arch = 'x64'
+    $allFiles = @($Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File)
+
+    $matchedEsd = $allFiles |
         Where-Object {
             $_.LanguageCode -eq $Language -and
             $_.Architecture -eq $arch -and
@@ -261,6 +268,19 @@ function Find-WindowsESD {
         Select-Object -First 1
 
     if (-not $matchedEsd) {
+        # Dump available entries to aid troubleshooting.
+        $available = $allFiles |
+            Where-Object { $_.LanguageCode -eq $Language -and $_.Architecture -eq $arch } |
+            Select-Object -ExpandProperty Edition -ErrorAction SilentlyContinue |
+            Sort-Object -Unique
+        if ($available) {
+            Write-Warn "Available editions in catalog for Language='$Language', Arch='$arch':"
+            $available | ForEach-Object { Write-Host "    $_" }
+        } else {
+            Write-Warn "No entries found for Language='$Language', Arch='$arch'. Available architectures:"
+            $allFiles | Select-Object -ExpandProperty Architecture -ErrorAction SilentlyContinue |
+                Sort-Object -Unique | ForEach-Object { Write-Host "    $_" }
+        }
         throw "No ESD found in catalog for: Edition='$Edition', Language='$Language', Arch='$arch'"
     }
 
@@ -302,6 +322,21 @@ function Get-WindowsImageSource {
 
 #region ── Image Application ────────────────────────────────────────────────────
 
+# Maps Microsoft ESD catalog edition identifiers to the keywords used
+# in WIM/ESD ImageName fields (e.g. 'Professional' → 'Pro').
+$script:EditionNameMap = @{
+    'Professional'            = 'Pro'
+    'ProfessionalN'           = 'Pro N'
+    'ProfessionalWorkstation' = 'Pro for Workstations'
+    'HomePremium'             = 'Home'
+    'HomePremiumN'            = 'Home N'
+    'CoreSingleLanguage'      = 'Home Single Language'
+    'Education'               = 'Education'
+    'EducationN'              = 'Education N'
+    'Enterprise'              = 'Enterprise'
+    'EnterpriseN'             = 'Enterprise N'
+}
+
 function Apply-WindowsImage {
     param(
         [string]$ImagePath,
@@ -318,6 +353,14 @@ function Apply-WindowsImage {
     $images | ForEach-Object { Write-Host "    [$($_.ImageIndex)] $($_.ImageName)" }
 
     $targetImage = $images | Where-Object { $_.ImageName -like "*$Edition*" } | Select-Object -First 1
+
+    # The catalog uses short IDs (e.g. 'Professional') while WIM ImageName
+    # uses friendly names (e.g. 'Windows 11 Pro').  Try the mapped name.
+    if (-not $targetImage -and $script:EditionNameMap.ContainsKey($Edition)) {
+        $mappedName = $script:EditionNameMap[$Edition]
+        $targetImage = $images | Where-Object { $_.ImageName -like "*$mappedName" } | Select-Object -First 1
+    }
+
     if (-not $targetImage) {
         Write-Warn "Edition '$Edition' not found. Using index 1."
         $targetImage = $images | Select-Object -First 1
