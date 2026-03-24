@@ -648,7 +648,7 @@ function Show-BuildConfiguration {
             'L' {
                 $newLang = Read-Host '  Enter language code (e.g. en-us, de-de, fr-fr, ja-jp)'
                 $newLang = $newLang.Trim().ToLower()
-                if ($newLang -match '^[a-z]{2,3}-[a-z]{2,}$') {
+                if ($newLang -match '^[a-z]{2,3}-[a-z]{2}$') {
                     $language = $newLang
                 } else {
                     Write-Warn "Invalid language code format. Expected pattern: xx-xx (e.g. en-us)"
@@ -656,8 +656,11 @@ function Show-BuildConfiguration {
             }
             'D' {
                 $driverPath = Read-Host '  Enter driver folder path (local or UNC)'
-                $driverPath = $driverPath.Trim()
+                $driverPath = $driverPath.Trim().TrimEnd('\')
                 if ($driverPath) {
+                    if (-not (Test-Path $driverPath)) {
+                        Write-Warn "Path not found: $driverPath (will be re-checked at build time)"
+                    }
                     $extraDriverPaths.Add($driverPath)
                     Write-Success "Added driver path: $driverPath"
                 }
@@ -787,6 +790,13 @@ function Build-WinPE {
         [string[]] $ExtraDriverPaths  = @()
     )
 
+    # If no packages were specified, fall back to the required defaults so that
+    # a direct call to Build-WinPE without Show-BuildConfiguration still works.
+    if ($PackageNames.Count -eq 0) {
+        $PackageNames = @($script:AvailableWinPEPackages |
+            Where-Object { $_.Default } | ForEach-Object { $_.Name })
+    }
+
     # Preserve the caller-supplied architecture.  On a retry the recursive call
     # always passes the original host architecture so the ISO WinRE, the ADK
     # media files, and the package set are all guaranteed to be consistent.
@@ -897,7 +907,7 @@ function Build-WinPE {
         foreach ($pkg in $resolvedPkgPaths) {
             $pkgPath = Join-Path $pkgRoot $pkg
             if (-not (Test-Path $pkgPath)) {
-                Write-Warn "Package not found, skipping: $pkg"
+                Write-Warn "Package not found, skipping: $pkgPath"
                 continue
             }
             Write-Step "Adding package: $pkg"
