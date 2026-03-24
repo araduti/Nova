@@ -240,6 +240,11 @@ function Initialize-TargetDisk {
         $stepName = 'Set-Partition (drive letter)'
         $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
         if ([string]$currentLetter -ne [string]$OSDriveLetter) {
+            # Free the target letter if another partition already owns it
+            $conflict = Get-Partition | Where-Object { $_.DriveLetter -eq $OSDriveLetter } | Select-Object -First 1
+            if ($conflict) {
+                Remove-PartitionAccessPath -DiskNumber $conflict.DiskNumber -PartitionNumber $conflict.PartitionNumber -AccessPath "${OSDriveLetter}:\"
+            }
             Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
         }
 
@@ -265,6 +270,11 @@ function Initialize-TargetDisk {
         $stepName = 'Set-Partition (drive letter)'
         $currentLetter = (Get-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber).DriveLetter
         if ([string]$currentLetter -ne [string]$OSDriveLetter) {
+            # Free the target letter if another partition already owns it
+            $conflict = Get-Partition | Where-Object { $_.DriveLetter -eq $OSDriveLetter } | Select-Object -First 1
+            if ($conflict) {
+                Remove-PartitionAccessPath -DiskNumber $conflict.DiskNumber -PartitionNumber $conflict.PartitionNumber -AccessPath "${OSDriveLetter}:\"
+            }
             Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
         }
     }
