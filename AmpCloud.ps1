@@ -248,7 +248,8 @@ function Find-WindowsESD {
     )
 
     $arch = 'x64'
-    $matchedEsd = $Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
+    $allFiles = $Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File
+    $matchedEsd = $allFiles |
         Where-Object {
             $_.LanguageCode -eq $Language -and
             $_.Architecture -eq $arch -and
@@ -352,7 +353,7 @@ function Apply-WindowsImage {
     # uses friendly names (e.g. 'Windows 11 Pro').  Try the mapped name.
     if (-not $targetImage -and $script:EditionNameMap.ContainsKey($Edition)) {
         $mappedName = $script:EditionNameMap[$Edition]
-        $targetImage = $images | Where-Object { $_.ImageName -like "*$mappedName" } | Select-Object -First 1
+        $targetImage = $images | Where-Object { $_.ImageName -like "*$mappedName*" } | Select-Object -First 1
     }
 
     if (-not $targetImage) {
