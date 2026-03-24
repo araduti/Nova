@@ -117,36 +117,48 @@ function Select-Language {
 Select-Language
 
 $Strings = @{
-    EN = @{ Header="A M P C L O U D"; Step1="Network"; Step2="Connect"; Step3="Load Engine";
-            StatusInit="🌐 Initialising network stack..."; StatusNoNet="No wired internet detected`nTap below to connect via WiFi";
-            Connected="✅ Connected! Loading imaging engine..."; Download="📥 Downloading AmpCloud.ps1 ({0}%)";
-            Complete="🎉 Setup complete!"; Reboot="Reboot Now"; PowerOff="Power Off"; Shell="Drop to Shell";
-            Imaging="💻 Imaging in progress...";
-            CatalogFetch="📋 Fetching available Windows editions...";
-            CatalogFail="⚠️ Could not fetch edition catalog. Using default edition.";
-            EditionTitle="Select Windows Edition";
-            EditionLabel="Choose the Windows edition to install:";
-            EditionBtn="Install →" }
-    FR = @{ Header="A M P C L O U D"; Step1="Réseau"; Step2="Connexion"; Step3="Chargement";
-            StatusInit="🌐 Initialisation du réseau..."; StatusNoNet="Pas de connexion filaire`nAppuyez ci-dessous pour le WiFi";
-            Connected="✅ Connecté ! Lancement du moteur..."; Download="📥 Téléchargement AmpCloud.ps1 ({0}%)";
-            Complete="🎉 Configuration terminée !"; Reboot="Redémarrer maintenant"; PowerOff="Éteindre"; Shell="Ouvrir le shell";
-            Imaging="💻 Imagerie en cours...";
-            CatalogFetch="📋 Récupération des éditions Windows disponibles...";
-            CatalogFail="⚠️ Impossible de récupérer le catalogue. Édition par défaut utilisée.";
-            EditionTitle="Sélectionner l'édition Windows";
-            EditionLabel="Choisissez l'édition Windows à installer :";
-            EditionBtn="Installer →" }
-    ES = @{ Header="A M P C L O U D"; Step1="Red"; Step2="Conectar"; Step3="Cargar";
-            StatusInit="🌐 Inicializando red..."; StatusNoNet="Sin internet cableado`nToque abajo para WiFi";
-            Connected="✅ ¡Conectado! Cargando motor..."; Download="📥 Descargando AmpCloud.ps1 ({0}%)";
-            Complete="🎉 ¡Configuración completa!"; Reboot="Reiniciar ahora"; PowerOff="Apagar"; Shell="Abrir shell";
-            Imaging="💻 Creación de imagen en curso...";
-            CatalogFetch="📋 Obteniendo ediciones de Windows disponibles...";
-            CatalogFail="⚠️ No se pudo obtener el catálogo. Usando edición predeterminada.";
-            EditionTitle="Seleccionar edición de Windows";
-            EditionLabel="Elija la edición de Windows a instalar:";
-            EditionBtn="Instalar →" }
+    EN = @{ Header="A M P C L O U D"; Subtitle="Cloud Imaging Engine";
+            Step1="Network"; Step2="Connect"; Step3="Deploy";
+            StatusInit="Initialising network stack...";
+            StatusNoNet="No wired connection detected`nTap below to join Wi-Fi";
+            Connected="Connected — launching imaging engine";
+            Download="Downloading AmpCloud.ps1  ({0}%)";
+            Complete="Ready to deploy";
+            Reboot="Restart now"; PowerOff="Shut down"; Shell="Command prompt";
+            Imaging="Imaging in progress...";
+            CatalogFetch="Loading Windows editions...";
+            CatalogFail="Could not load catalog — using default edition.";
+            EditionTitle="Choose edition";
+            EditionLabel="Select the Windows edition to install:";
+            EditionBtn="Continue" }
+    FR = @{ Header="A M P C L O U D"; Subtitle="Moteur d'imagerie cloud";
+            Step1="Réseau"; Step2="Connexion"; Step3="Déploiement";
+            StatusInit="Initialisation de la pile réseau...";
+            StatusNoNet="Pas de connexion filaire détectée`nAppuyez ci-dessous pour le Wi-Fi";
+            Connected="Connecté — lancement du moteur d'imagerie";
+            Download="Téléchargement AmpCloud.ps1  ({0}%)";
+            Complete="Prêt à déployer";
+            Reboot="Redémarrer maintenant"; PowerOff="Éteindre"; Shell="Invite de commandes";
+            Imaging="Imagerie en cours...";
+            CatalogFetch="Chargement des éditions Windows...";
+            CatalogFail="Impossible de charger le catalogue — édition par défaut utilisée.";
+            EditionTitle="Choisir l'édition";
+            EditionLabel="Sélectionnez l'édition Windows à installer :";
+            EditionBtn="Continuer" }
+    ES = @{ Header="A M P C L O U D"; Subtitle="Motor de imágenes en la nube";
+            Step1="Red"; Step2="Conectar"; Step3="Desplegar";
+            StatusInit="Inicializando pila de red...";
+            StatusNoNet="Sin conexión cableada detectada`nToque abajo para Wi-Fi";
+            Connected="Conectado — iniciando motor de imagen";
+            Download="Descargando AmpCloud.ps1  ({0}%)";
+            Complete="Listo para desplegar";
+            Reboot="Reiniciar ahora"; PowerOff="Apagar"; Shell="Símbolo del sistema";
+            Imaging="Creación de imagen en curso...";
+            CatalogFetch="Cargando ediciones de Windows...";
+            CatalogFail="No se pudo cargar el catálogo — usando edición predeterminada.";
+            EditionTitle="Elegir edición";
+            EditionLabel="Seleccione la edición de Windows a instalar:";
+            EditionBtn="Continuar" }
 }
 $script:S = $Strings[$script:Lang]
 #endregion
@@ -174,10 +186,39 @@ $TitleFont   = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.Fo
 $BodyFont    = New-Object System.Drawing.Font("Segoe UI", 11)
 $SmallFont   = New-Object System.Drawing.Font("Segoe UI", 9.5)
 
-# Reusable pen for ring (performance win)
-$RingPen = New-Object System.Drawing.Pen($LightBlue, 12)
+# Reusable pen for ring (performance win — avoids per-frame GDI allocation).
+# Width is updated in-place by the breathing-pulse timer tick.
+$RingPen = New-Object System.Drawing.Pen($LightBlue, 6)
 $RingPen.StartCap = "Round"
 $RingPen.EndCap = "Round"
+
+# ── Layout spacing constants ────────────────────────────────────────────────
+# Named offsets keep Center-AllControls readable and easy to tweak.
+$Spacing = @{
+    LogoH        = 50;  LogoGap      = 4      # logo height + gap below
+    SubH         = 25;  SubGap       = 3      # subtitle height + gap
+    DeviceH      = 22;  DeviceGap    = 28     # device label height + gap
+    RingH        = 80;  RingGap      = 16     # ring panel height + gap
+    StatusH      = 55;  StatusGap    = 3      # status label height + gap
+    ProgressH    = 24;  ProgressGap  = 12     # progress text height + gap
+    StepH        = 28;  StepGap      = 18     # step panel height + gap
+    WiFiBtnH     = 48;  WiFiBtnGap   = 10     # WiFi button height + gap
+    RetryBtnH    = 42                          # Retry button height
+}
+# Total content block height (used to vertically centre the UI).
+$script:BlockH = $Spacing.LogoH   + $Spacing.LogoGap    +
+                 $Spacing.SubH    + $Spacing.SubGap      +
+                 $Spacing.DeviceH + $Spacing.DeviceGap   +
+                 $Spacing.RingH   + $Spacing.RingGap     +
+                 $Spacing.StatusH + $Spacing.StatusGap   +
+                 $Spacing.ProgressH + $Spacing.ProgressGap +
+                 $Spacing.StepH   + $Spacing.StepGap     +
+                 $Spacing.WiFiBtnH + $Spacing.WiFiBtnGap +
+                 $Spacing.RetryBtnH
+
+# ── Animation state ─────────────────────────────────────────────────────────
+$script:fadeOpacity = 0.0          # fade-in: 0 → 1
+$script:ringPulse   = 0.0          # breathing ring: sine-wave pulse factor
 #endregion
 
 #region ── Network + WiFi Functions ─────────────────────────────────────────
@@ -402,6 +443,7 @@ $form.FormBorderStyle = "None"
 $form.WindowState = "Maximized"
 $form.BackColor = $LightCard
 $form.Font = $BodyFont
+$form.Opacity = 0.0   # start transparent for fade-in animation
 
 # ── F8 command prompt shortcut ──────────────────────────────────────────────
 # Enable KeyPreview so the form sees key events before child controls.
@@ -438,7 +480,7 @@ $form.Controls.Add($logo)
 
 # ── Subtitle ────────────────────────────────────────────────────────────────
 $subtitleLabel = New-Object System.Windows.Forms.Label
-$subtitleLabel.Text = "Cloud Imaging Engine"
+$subtitleLabel.Text = $S.Subtitle
 $subtitleLabel.Font = $BodyFont
 $subtitleLabel.ForeColor = [System.Drawing.Color]::Gray
 $subtitleLabel.TextAlign = "MiddleCenter"
@@ -490,16 +532,16 @@ $ringTimer = New-Object System.Windows.Forms.Timer
 $ringTimer.Interval = 48
 $ringTimer.Add_Tick({
     $script:ringAngle = ($script:ringAngle + 8) % 360
+    # Breathing pulse: pen width oscillates between ~4.5 and ~7.5 via a sine wave.
+    $script:ringPulse = [Math]::Sin($script:ringAngle * [Math]::PI / 180)
+    $RingPen.Width    = 6 + $script:ringPulse * 1.5
     $ringPanel.Invalidate()
 })
-$ringPenSmall = New-Object System.Drawing.Pen($LightBlue, 6)
-$ringPenSmall.StartCap = "Round"
-$ringPenSmall.EndCap = "Round"
 $ringPanel.Add_Paint({
     try {
         $g = $_.Graphics
         $g.SmoothingMode = "AntiAlias"
-        $g.DrawArc($ringPenSmall, 6, 6, 66, 66, $script:ringAngle, 280)
+        $g.DrawArc($RingPen, 6, 6, 66, 66, $script:ringAngle, 280)
     } catch { }
 })
 
@@ -580,28 +622,24 @@ function Center-AllControls {
     $ch = $form.ClientSize.Height
     $cx = [int]($cw / 2)
 
-    # Vertical block: logo(50) + subtitle(25) + device(22) + gap(30) + ring(80) +
-    #   gap(18) + status(55) + progress(24) + gap(12) + steps(28) + gap(18) +
-    #   wifibtn(48) + gap(10) + retrybtn(42) = ~462
-    $blockH = 462
-    $y = [int][Math]::Max(40, ($ch - $blockH) / 2)
+    $y = [int][Math]::Max(40, ($ch - $script:BlockH) / 2)
 
-    $logo.SetBounds(($cx - $contentW / 2), $y, $contentW, 50)
-    $y += 54
-    $subtitleLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, 25)
-    $y += 28
-    $deviceLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, 22)
-    $y += 50
+    $logo.SetBounds(($cx - $contentW / 2), $y, $contentW, $Spacing.LogoH)
+    $y += $Spacing.LogoH + $Spacing.LogoGap
+    $subtitleLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, $Spacing.SubH)
+    $y += $Spacing.SubH + $Spacing.SubGap
+    $deviceLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, $Spacing.DeviceH)
+    $y += $Spacing.DeviceH + $Spacing.DeviceGap
     $ringPanel.Location = New-Object System.Drawing.Point(($cx - 40), $y)
-    $y += 96
-    $statusLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, 55)
-    $y += 58
-    $progressText.SetBounds(($cx - $contentW / 2), $y, $contentW, 24)
-    $y += 36
+    $y += $Spacing.RingH + $Spacing.RingGap
+    $statusLabel.SetBounds(($cx - $contentW / 2), $y, $contentW, $Spacing.StatusH)
+    $y += $Spacing.StatusH + $Spacing.StatusGap
+    $progressText.SetBounds(($cx - $contentW / 2), $y, $contentW, $Spacing.ProgressH)
+    $y += $Spacing.ProgressH + $Spacing.ProgressGap
     $stepPanel.Location = New-Object System.Drawing.Point([int]($cx - $stepPanel.Width / 2), $y)
-    $y += 46
+    $y += $Spacing.StepH + $Spacing.StepGap
     $btnWiFi.Location = New-Object System.Drawing.Point(($cx - 130), $y)
-    $y += 58
+    $y += $Spacing.WiFiBtnH + $Spacing.WiFiBtnGap
     $btnRetry.Location = New-Object System.Drawing.Point(($cx - 80), $y)
 
     # Dark mode button stays top-right
@@ -648,6 +686,46 @@ function Toggle-DarkMode {
     $form.Refresh()
 }
 $btnDark.Add_Click({ Toggle-DarkMode })
+
+# ── Fade-in timer ───────────────────────────────────────────────────────────
+# Smoothly ramps form opacity from 0 → 1 over ~1 second.  Started in the
+# Form.Shown handler, runs only once at startup.
+$script:fadeInTimer = New-Object System.Windows.Forms.Timer
+$script:fadeInTimer.Interval = 16          # ~60 fps
+$script:fadeInTimer.Add_Tick({
+    $script:fadeOpacity = [Math]::Min(1.0, $script:fadeOpacity + 0.06)
+    $form.Opacity = $script:fadeOpacity
+    if ($script:fadeOpacity -ge 1.0) { $script:fadeInTimer.Stop() }
+})
+
+# ── Live status IPC from AmpCloud.ps1 ──────────────────────────────────────
+# AmpCloud.ps1 writes progress to a JSON file; we poll it to update the UI
+# so the user sees real-time imaging status instead of a static spinner.
+$script:StatusFile = "X:\AmpCloud-Status.json"
+
+$script:uiUpdateTimer = New-Object System.Windows.Forms.Timer
+$script:uiUpdateTimer.Interval = 650
+$script:uiUpdateTimer.Add_Tick({
+    if (-not (Test-Path $script:StatusFile)) { return }
+    try {
+        $status = Get-Content $script:StatusFile -Raw -ErrorAction SilentlyContinue |
+                  ConvertFrom-Json
+        if ($status) {
+            if ($status.Message) {
+                Write-Status $status.Message 'Cyan'
+            }
+            if ($status.Progress -gt 0) {
+                $progressText.Text = "$($status.Message)  $([char]0x2022)  $($status.Progress)%"
+            }
+            if ($status.Step -gt 0) {
+                Update-Step $status.Step
+            }
+            if ($status.Done) {
+                $ringTimer.Stop()
+            }
+        }
+    } catch { }
+})
 #endregion
 
 #region ── Final Completion Screen (fullscreen) ─────────────────────────────
@@ -898,6 +976,9 @@ function ProceedToEngine {
     # Download the ESD catalog and let the user pick a Windows edition.
     $script:SelectedEdition = Select-WindowsEdition
 
+    # Clean up any stale status file from a previous run.
+    if (Test-Path $script:StatusFile) { Remove-Item $script:StatusFile -Force }
+
     # Prefer the pre-staged copy embedded in the WinPE image by Trigger.ps1.
     # Fall back to downloading from GitHub when the local copy is absent.
     $engineFailed = $false
@@ -922,9 +1003,13 @@ function ProceedToEngine {
 
         # Run AmpCloud.ps1 in a dedicated process so the WinForms UI thread
         # stays responsive and the spinner keeps animating.
-        $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $localAmpCloud)
+        $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $localAmpCloud,
+                    '-StatusFile', $script:StatusFile)
         if ($script:SelectedEdition) { $psArgs += @('-WindowsEdition', $script:SelectedEdition) }
         $engineProc = Start-Process -FilePath $script:PsBin -ArgumentList $psArgs -PassThru
+
+        # Start polling the status file so the UI shows real-time progress.
+        $script:uiUpdateTimer.Start()
 
         Write-Status $S.Imaging 'Cyan'
         while (-not $engineProc.HasExited) {
@@ -939,6 +1024,7 @@ function ProceedToEngine {
         $engineFailed = $true
     }
 
+    $script:uiUpdateTimer.Stop()
     $ringTimer.Stop()
     Stop-Transcript -ErrorAction SilentlyContinue
     $form.Close()
@@ -1017,7 +1103,7 @@ $script:initTimer.Add_Tick({
                 } catch {} finally { $ErrorActionPreference = $prev }
 
                 Invoke-NetworkTuning
-                Write-Status '🔧 Acquiring network address...' 'Cyan'
+                Write-Status 'Acquiring network address...' 'Cyan'
                 $script:_wait = 0
                 $script:_initState = 'SETTLE'
             }
@@ -1117,6 +1203,7 @@ $form.Add_Shown({
     $ringPanel.Visible = $true
     $ringTimer.Start()
     $script:initTimer.Start()
+    $script:fadeInTimer.Start()
 })
 
 # Launch

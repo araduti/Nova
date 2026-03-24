@@ -67,7 +67,11 @@ param(
 
     # Target OS drive letter (assigned during partitioning)
     [ValidatePattern('^[A-Za-z]$')]
-    [string]$OSDrive = 'C'
+    [string]$OSDrive = 'C',
+
+    # IPC status file — Bootstrap.ps1 polls this JSON file to show live progress
+    # in the WinForms UI.  Leave empty to disable status reporting.
+    [string]$StatusFile = ''
 )
 
 Set-StrictMode -Version Latest
@@ -124,6 +128,27 @@ function Write-Warn {
 function Write-Fail {
     param([string]$Message)
     Write-Host "[FAIL] $Message" -ForegroundColor Red
+}
+
+function Update-BootstrapStatus {
+    <#
+    .SYNOPSIS  Writes live progress to a JSON file for Bootstrap.ps1 to display.
+    .DESCRIPTION
+        Bootstrap.ps1 polls $StatusFile every ~650 ms and updates its WinForms UI
+        with the message, progress percentage, and step number.  When imaging is
+        done, set -Done to signal the spinner to stop.
+    #>
+    param(
+        [string]$Message  = '',
+        [int]$Progress    = 0,
+        [int]$Step        = 0,
+        [switch]$Done
+    )
+    if (-not $StatusFile) { return }
+    try {
+        $obj = @{ Message = $Message; Progress = $Progress; Step = $Step; Done = [bool]$Done }
+        $obj | ConvertTo-Json -Compress | Set-Content -Path $StatusFile -Force -ErrorAction SilentlyContinue
+    } catch { }
 }
 
 function New-ScratchDirectory {
@@ -992,6 +1017,7 @@ try {
 
     # Step 1: Partition the disk
     $stepName = 'Partition disk'
+    Update-BootstrapStatus -Message 'Partitioning disk...' -Step 1 -Progress 10
     Initialize-TargetDisk `
         -DiskNumber    $TargetDiskNumber `
         -FirmwareType  $FirmwareType `
@@ -1005,6 +1031,7 @@ try {
 
     # Step 2: Download Windows image
     $stepName = 'Download Windows image'
+    Update-BootstrapStatus -Message 'Downloading Windows image...' -Step 1 -Progress 20
     $imagePath = Get-WindowsImageSource `
         -ImageUrl    $WindowsImageUrl `
         -Edition     $WindowsEdition `
@@ -1014,6 +1041,7 @@ try {
 
     # Step 3: Apply Windows image
     $stepName = 'Apply Windows image'
+    Update-BootstrapStatus -Message 'Applying Windows image...' -Step 2 -Progress 50
     Apply-WindowsImage `
         -ImagePath     $imagePath `
         -Edition       $WindowsEdition `
@@ -1022,6 +1050,7 @@ try {
 
     # Step 4: Configure bootloader
     $stepName = 'Configure bootloader'
+    Update-BootstrapStatus -Message 'Configuring bootloader...' -Step 2 -Progress 65
     Set-Bootloader `
         -OSDriveLetter $OSDrive `
         -FirmwareType  $FirmwareType `
@@ -1029,12 +1058,14 @@ try {
 
     # Step 5: Inject drivers
     $stepName = 'Inject drivers'
+    Update-BootstrapStatus -Message 'Injecting drivers...' -Step 2 -Progress 75
     Add-Drivers `
         -DriverPath    $DriverPath `
         -OSDriveLetter $OSDrive
 
     if ($UseOemDrivers) {
         $stepName = 'Inject OEM drivers'
+        Update-BootstrapStatus -Message 'Injecting OEM drivers...' -Step 2 -Progress 80
         Invoke-OemDriverInjection `
             -OSDriveLetter $OSDrive `
             -ScratchDir    $ScratchDir
@@ -1042,6 +1073,7 @@ try {
 
     # Step 6: Apply Autopilot/Intune configuration
     $stepName = 'Apply Autopilot configuration'
+    Update-BootstrapStatus -Message 'Applying Autopilot configuration...' -Step 3 -Progress 85
     Set-AutopilotConfig `
         -JsonUrl       $AutopilotJsonUrl `
         -JsonPath      $AutopilotJsonPath `
@@ -1056,6 +1088,7 @@ try {
 
     # Step 8: Customize OOBE
     $stepName = 'Customize OOBE'
+    Update-BootstrapStatus -Message 'Customizing OOBE...' -Step 3 -Progress 90
     Set-OOBECustomization `
         -UnattendUrl   $UnattendUrl `
         -UnattendPath  $UnattendPath `
@@ -1067,6 +1100,8 @@ try {
         -ScriptUrls    $PostScriptUrls `
         -OSDriveLetter $OSDrive `
         -ScratchDir    $ScratchDir
+
+    Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Step 3 -Progress 100 -Done
 
     Write-Host @"
 
