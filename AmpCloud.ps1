@@ -149,7 +149,7 @@ function Update-BootstrapStatus {
     try {
         $obj = @{ Message = $Message; Progress = $Progress; Step = $Step; Done = [bool]$Done }
         $obj | ConvertTo-Json -Compress | Set-Content -Path $StatusFile -Force -ErrorAction SilentlyContinue
-    } catch { Write-Verbose "Status update suppressed: $_" <# Non-critical; keep the engine running #> }
+    } catch { Write-Verbose "Status update suppressed: $_" }
 }
 
 function New-ScratchDirectory {

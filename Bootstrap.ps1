@@ -1082,7 +1082,7 @@ $script:initTimer.Add_Tick({
             try {
                 $script:_proc = Start-Process -FilePath 'wpeinit.exe' `
                     -NoNewWindow -PassThru -ErrorAction Stop
-            } catch { $script:_proc = $null <# wpeinit may fail to start; fallback handled by timeout #>}
+            } catch { $script:_proc = $null }
             $script:_initState = 'WPEINIT_POLL'
         }
 
@@ -1131,7 +1131,7 @@ $script:initTimer.Add_Tick({
                 $script:_proc = Start-Process -FilePath 'ipconfig.exe' `
                     -ArgumentList '/renew' -WindowStyle Hidden -PassThru `
                     -ErrorAction SilentlyContinue
-            } catch { $script:_proc = $null <# DHCP renewal may fail; will retry on next poll cycle #>}
+            } catch { $script:_proc = $null }
             $script:_initState = 'DHCP_POLL'
         }
 
