@@ -814,7 +814,7 @@ $script:initTimer.Add_Tick({
 
         'SETTLE' {
             # Let NIC drivers finish binding after wpeinit before DHCP.
-            if (++$script:_wait -ge 4) {        # 2-second delay (4 × 500 ms)
+            if (++$script:_wait -ge 4) {        # 2-second pause (4 × 500 ms)
                 $script:_dhcp = 0
                 $script:_initState = 'DHCP'
             }
@@ -864,10 +864,10 @@ $script:initTimer.Add_Tick({
                     $btnWiFi.Visible = $false
                     $ringPanel.Visible = $true
                     $ringTimer.Start()
-                    $connected = Show-WiFiSelector
+                    $wifiConnected = Show-WiFiSelector
                     $ringTimer.Stop()
                     $ringPanel.Visible = $false
-                    if ($connected) { ProceedToEngine } else { Show-Failure }
+                    if ($wifiConnected) { ProceedToEngine } else { Show-Failure }
                 })
 
                 # Periodically re-check wired connectivity so a late DHCP
