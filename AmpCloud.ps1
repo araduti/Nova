@@ -36,6 +36,10 @@ param(
     # Driver injection
     # Folder path (inside WinPE or on a share) containing driver .inf files
     [string]$DriverPath = '',
+    # Automatically detect the system manufacturer (Dell, HP, Lenovo) and use
+    # their official PowerShell modules to fetch and inject the latest drivers.
+    # Requires internet access from WinPE. Mutually compatible with -DriverPath.
+    [switch]$UseOemDrivers,
 
     # Autopilot / Intune
     [string]$AutopilotJsonUrl = '',   # URL to AutopilotConfigurationFile.json
@@ -403,6 +407,173 @@ function Add-Drivers {
     Write-Success "Drivers injected from: $DriverPath"
 }
 
+# ── OEM driver injection ──────────────────────────────────────────────────────
+
+function Initialize-NuGetProvider {
+    <#
+    .SYNOPSIS
+        Ensures NuGet is available and PSGallery is trusted so Install-Module
+        works correctly, including inside WinPE.
+    #>
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+        Write-Host '  Bootstrapping NuGet package provider...'
+        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -ErrorAction Stop | Out-Null
+    }
+    $gallery = Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue
+    if (-not $gallery -or $gallery.InstallationPolicy -ne 'Trusted') {
+        Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+    }
+}
+
+function Install-OemModule {
+    <#
+    .SYNOPSIS
+        Installs a PowerShell module from the PSGallery if it is not already
+        present on the current machine.
+    #>
+    param([string]$Name)
+    if (-not (Get-Module -ListAvailable -Name $Name -ErrorAction SilentlyContinue)) {
+        Write-Host "  Installing PowerShell module: $Name"
+        Initialize-NuGetProvider
+        Install-Module -Name $Name -Force -Scope AllUsers -AcceptLicense `
+            -ErrorAction Stop
+    }
+}
+
+function Get-SystemManufacturer {
+    <#
+    .SYNOPSIS
+        Returns the trimmed manufacturer string from Win32_ComputerSystem.
+    #>
+    $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+    if ($cs) { return $cs.Manufacturer.Trim() }
+    return ''
+}
+
+function Add-DellDrivers {
+    <#
+    .SYNOPSIS
+        Downloads and injects the latest Dell drivers using Dell Command | Update.
+    #>
+    param(
+        [string]$OSDriveLetter,
+        [string]$ScratchDir
+    )
+    Write-Step 'Fetching Dell drivers via Dell Command | Update (DCU)...'
+    Install-OemModule -Name 'DellCommandUpdate'
+    Import-Module DellCommandUpdate -ErrorAction Stop
+
+    $driverTemp = Join-Path $ScratchDir 'Dell-Drivers'
+    New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+
+    # Download applicable driver updates without applying them to the live OS.
+    Invoke-DCUUpdate -UpdateType driver -DownloadPath $driverTemp -ApplyUpdates:$false
+
+    $infFiles = Get-ChildItem $driverTemp -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue
+    if (-not $infFiles) {
+        Write-Warn 'Dell Command | Update found no driver packages to inject.'
+        return
+    }
+
+    Write-Host "  Injecting $($infFiles.Count) Dell driver(s) into ${OSDriveLetter}:\..."
+    Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
+        -ErrorAction Continue | Out-Null
+    Write-Success 'Dell drivers injected successfully.'
+}
+
+function Add-HpDrivers {
+    <#
+    .SYNOPSIS
+        Downloads and injects the latest HP drivers using HP Client Management
+        Script Library (HPCMSL).
+    #>
+    param(
+        [string]$OSDriveLetter,
+        [string]$ScratchDir
+    )
+    Write-Step 'Fetching HP drivers via HP Client Management Script Library (HPCMSL)...'
+    Install-OemModule -Name 'HPCMSL'
+    Import-Module HPCMSL -ErrorAction Stop
+
+    $driverTemp = Join-Path $ScratchDir 'HP-Drivers'
+    New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+
+    # Add-HPDrivers handles platform detection, SoftPaq download, extraction,
+    # and offline DISM injection in a single call.
+    Add-HPDrivers -Path "${OSDriveLetter}:\" -TempPath $driverTemp -ErrorAction Stop
+    Write-Success 'HP drivers injected successfully.'
+}
+
+function Add-LenovoDrivers {
+    <#
+    .SYNOPSIS
+        Downloads and injects the latest Lenovo drivers using LSUClient.
+    #>
+    param(
+        [string]$OSDriveLetter,
+        [string]$ScratchDir
+    )
+    Write-Step 'Fetching Lenovo drivers via LSUClient...'
+    Install-OemModule -Name 'LSUClient'
+    Import-Module LSUClient -ErrorAction Stop
+
+    $driverTemp = Join-Path $ScratchDir 'Lenovo-Drivers'
+    New-Item -ItemType Directory -Path $driverTemp -Force | Out-Null
+
+    $updates = $null
+    try {
+        $updates = Get-LSUpdate -ErrorAction Stop | Where-Object { $_.Type -eq 'Driver' }
+    } catch {
+        Write-Warn "LSUClient failed to retrieve update list: $_"
+        return
+    }
+    if (-not $updates) {
+        Write-Warn 'LSUClient found no driver updates for this Lenovo model.'
+        return
+    }
+
+    Write-Host "  Found $($updates.Count) Lenovo driver package(s). Downloading..."
+    $updates | Save-LSUpdate -Path $driverTemp
+
+    $infFiles = Get-ChildItem $driverTemp -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue
+    if (-not $infFiles) {
+        Write-Warn 'No .inf files found in downloaded Lenovo packages. Skipping injection.'
+        return
+    }
+
+    Write-Host "  Injecting $($infFiles.Count) driver(s) into ${OSDriveLetter}:\..."
+    Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $driverTemp -Recurse `
+        -ErrorAction Continue | Out-Null
+    Write-Success 'Lenovo drivers injected successfully.'
+}
+
+function Invoke-OemDriverInjection {
+    <#
+    .SYNOPSIS
+        Detects the system manufacturer and calls the appropriate OEM driver
+        injection function (Dell, HP, or Lenovo).
+    #>
+    param(
+        [string]$OSDriveLetter,
+        [string]$ScratchDir
+    )
+    Write-Step 'OEM driver injection: detecting manufacturer...'
+    $manufacturer = Get-SystemManufacturer
+    Write-Host "  Manufacturer: '$manufacturer'"
+
+    switch -Wildcard ($manufacturer) {
+        '*Dell*'    { Add-DellDrivers   -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+        '*HP*'      { Add-HpDrivers     -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+        '*Hewlett*' { Add-HpDrivers     -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+        '*Lenovo*'  { Add-LenovoDrivers -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+        default {
+            Write-Warn ("Manufacturer '$manufacturer' is not supported for OEM driver automation. " +
+                        'Use -DriverPath for manual driver injection.')
+        }
+    }
+}
+
 #endregion
 
 #region ── Autopilot / Intune ───────────────────────────────────────────────────
@@ -618,6 +789,12 @@ try {
     Add-Drivers `
         -DriverPath    $DriverPath `
         -OSDriveLetter $OSDrive
+
+    if ($UseOemDrivers) {
+        Invoke-OemDriverInjection `
+            -OSDriveLetter $OSDrive `
+            -ScratchDir    $ScratchDir
+    }
 
     # Step 6: Apply Autopilot/Intune configuration
     Set-AutopilotConfig `
