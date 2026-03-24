@@ -14,9 +14,13 @@
 
 [CmdletBinding()]
 param(
+    [ValidateNotNullOrEmpty()]
     [string]$GitHubUser   = 'araduti',
+    [ValidateNotNullOrEmpty()]
     [string]$GitHubRepo   = 'AmpCloud',
+    [ValidateNotNullOrEmpty()]
     [string]$GitHubBranch = 'main',
+    [ValidateRange(1, [int]::MaxValue)]
     [int]$MaxWaitSeconds  = 300
 )
 
@@ -29,7 +33,7 @@ $script:PsBin = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\power
 
 # ── Logging ─────────────────────────────────────────────────────────────────
 $LogPath = "X:\AmpCloud-Bootstrap.log"
-Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyContinue | Out-Null
+$null = Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyContinue
 
 # ── Assemblies ──────────────────────────────────────────────────────────────
 Add-Type -AssemblyName System.Windows.Forms
@@ -48,8 +52,18 @@ if (-not $env:LOCALAPPDATA) { $env:LOCALAPPDATA  = "$env:USERPROFILE\AppData\Loc
 if (-not $env:HOMEDRIVE)    { $env:HOMEDRIVE     = 'X:'  }
 if (-not $env:HOMEPATH)     { $env:HOMEPATH      = '\' }
 
+# ── Constants ───────────────────────────────────────────────────────────────
+# State machine timer interval (ms) and timeout thresholds (tick counts).
+$script:TimerIntervalMs        = 500
+$script:WpeInitTimeoutTicks    = 120   # 60 seconds  (120 × 500 ms)
+$script:DhcpTimeoutTicks       = 60    # 30 seconds  (60  × 500 ms)
+$script:SettlePauseTicks       = 10    # 5  seconds  (10  × 500 ms)
+$script:DhcpWaitPauseTicks     = 10    # 5  seconds  (10  × 500 ms)
+$script:MaxDhcpAttempts        = 5
+$script:ConnectCheckIntervalMs = 5000  # 5  seconds
+
 #region ── Language System ───────────────────────────────────────────────────
-$Lang = 'EN'
+$script:Lang = 'EN'
 function Select-Language {
     [System.Windows.Forms.Application]::EnableVisualStyles()
     $dlg = New-Object System.Windows.Forms.Form
@@ -134,7 +148,7 @@ $Strings = @{
             EditionLabel="Elija la edición de Windows a instalar:";
             EditionBtn="Instalar →" }
 }
-$S = $Strings[$Lang]
+$script:S = $Strings[$script:Lang]
 #endregion
 
 #region ── Sound Effects ─────────────────────────────────────────────────────
@@ -154,7 +168,7 @@ $DarkCard    = [System.Drawing.Color]::FromArgb(45, 45, 45)
 $TextLight   = [System.Drawing.Color]::FromArgb(32, 32, 32)
 $TextDark    = [System.Drawing.Color]::White
 
-$IsDarkMode  = $false
+$script:IsDarkMode  = $false
 $HeaderFont  = New-Object System.Drawing.Font("Segoe UI", 24, [System.Drawing.FontStyle]::Bold)
 $TitleFont   = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
 $BodyFont    = New-Object System.Drawing.Font("Segoe UI", 11)
@@ -178,17 +192,17 @@ function Invoke-NetworkTuning {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null | Out-Null
-        netsh int tcp set global autotuninglevel=normal 2>$null | Out-Null
-        netsh int tcp set global congestionprovider=ctcp 2>$null | Out-Null
-        netsh int tcp set global chimney=enabled 2>$null | Out-Null
-        netsh int tcp set global rss=enabled 2>$null | Out-Null
-        netsh int tcp set global rsc=enabled 2>$null | Out-Null
-        netsh advfirewall set allprofiles state off 2>$null | Out-Null
+        $null = powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
+        $null = netsh int tcp set global autotuninglevel=normal 2>$null
+        $null = netsh int tcp set global congestionprovider=ctcp 2>$null
+        $null = netsh int tcp set global chimney=enabled 2>$null
+        $null = netsh int tcp set global rss=enabled 2>$null
+        $null = netsh int tcp set global rsc=enabled 2>$null
+        $null = netsh advfirewall set allprofiles state off 2>$null
         $ifLines = netsh interface show interface 2>$null
         foreach ($line in $ifLines) {
             if ($line -match '^\s*(Enabled|Disabled)\s+\S+\s+\S+\s+(.+)$') {
-                netsh interface ipv6 set interface "$($matches[2].Trim())" admin=disabled 2>$null | Out-Null
+                $null = netsh interface ipv6 set interface "$($matches[2].Trim())" admin=disabled 2>$null
             }
         }
     } catch {} finally { $ErrorActionPreference = $prev }
@@ -309,8 +323,8 @@ function Connect-WiFiNetwork {
         $xml | Set-Content -Path $tmp -Encoding UTF8 -Force
         $prev = $ErrorActionPreference
         $ErrorActionPreference = 'Continue'
-        & netsh wlan add profile filename="`"$tmp`"" 2>&1 | Out-Null
-        & netsh wlan connect  name="`"$SSID`"" ssid="`"$SSID`"" 2>&1 | Out-Null
+        $null = & netsh wlan add profile filename="`"$tmp`"" 2>&1
+        $null = & netsh wlan connect  name="`"$SSID`"" ssid="`"$SSID`"" 2>&1
         $ErrorActionPreference = $prev
     } finally {
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
@@ -353,7 +367,7 @@ function Show-WiFiSelector {
 
     RefreshNetworks
 
-    $dlg.ShowDialog() | Out-Null
+    $null = $dlg.ShowDialog()
     if ($list.SelectedItems.Count -gt 0) {
         $selected = $list.SelectedItems[0]
         $netSSID = $selected.Text
@@ -655,7 +669,7 @@ function Show-CompletionScreen {
     })
 
     $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = $S.Complete + "`n`nAmpCloud imaging engine is ready."
+    $lbl.Text = "$($S.Complete)`n`nAmpCloud imaging engine is ready."
     $lbl.Font = $TitleFont
     $lbl.ForeColor = if ($script:IsDarkMode) { $TextDark } else { $TextLight }
     $lbl.TextAlign = "MiddleCenter"
@@ -722,7 +736,7 @@ function Show-CompletionScreen {
         $f8HintFinal.Location = New-Object System.Drawing.Point(16, ($ch - 30))
     })
 
-    $finalForm.ShowDialog() | Out-Null
+    $null = $finalForm.ShowDialog()
 }
 #endregion
 
@@ -747,7 +761,7 @@ function Select-WindowsEdition {
     # Ensure scratch directory exists (same path AmpCloud.ps1 will use).
     $scratchPath = 'X:\AmpCloud'
     if (-not (Test-Path $scratchPath)) {
-        New-Item -ItemType Directory -Path $scratchPath -Force | Out-Null
+        $null = New-Item -ItemType Directory -Path $scratchPath -Force
     }
     $productsXml = Join-Path $scratchPath 'products.xml'
 
@@ -973,7 +987,7 @@ $script:_dhcp      = 0
 $script:_wait      = 0
 
 $script:initTimer = New-Object System.Windows.Forms.Timer
-$script:initTimer.Interval = 500
+$script:initTimer.Interval = $script:TimerIntervalMs
 
 $script:initTimer.Add_Tick({
     switch ($script:_initState) {
@@ -989,7 +1003,7 @@ $script:initTimer.Add_Tick({
 
         'WPEINIT_POLL' {
             if ($null -eq $script:_proc -or $script:_proc.HasExited -or
-                ++$script:_wait -ge 120) {       # 60-second timeout (120 × 500 ms)
+                ++$script:_wait -ge $script:WpeInitTimeoutTicks) {
                 if ($script:_proc -and -not $script:_proc.HasExited) {
                     try { $script:_proc.Kill() } catch {}
                 }
@@ -1014,7 +1028,7 @@ $script:initTimer.Add_Tick({
             # after wpeinit before attempting ipconfig /renew.  The service
             # needs several seconds to initialise its RPC endpoint; calling
             # ipconfig too early produces "RPC server is unavailable" errors.
-            if (++$script:_wait -ge 10) {       # 5-second pause (10 × 500 ms)
+            if (++$script:_wait -ge $script:SettlePauseTicks) {
                 # Ensure the DHCP Client service is running (idempotent).
                 try {
                     Start-Process -FilePath 'net.exe' -ArgumentList 'start', 'dhcp' `
@@ -1038,13 +1052,13 @@ $script:initTimer.Add_Tick({
 
         'DHCP_POLL' {
             if ($null -eq $script:_proc -or $script:_proc.HasExited -or
-                ++$script:_wait -ge 60) {        # 30-second timeout (60 × 500 ms)
+                ++$script:_wait -ge $script:DhcpTimeoutTicks) {
                 if ($script:_proc -and -not $script:_proc.HasExited) {
                     try { $script:_proc.Kill() } catch {}
                 }
                 if (Test-HasValidIP) {
                     $script:_initState = 'CHECK'
-                } elseif ($script:_dhcp -ge 5) {
+                } elseif ($script:_dhcp -ge $script:MaxDhcpAttempts) {
                     $script:_initState = 'CHECK'
                 } else {
                     $script:_wait = 0
@@ -1054,7 +1068,7 @@ $script:initTimer.Add_Tick({
         }
 
         'DHCP_WAIT' {
-            if (++$script:_wait -ge 10) {       # 5-second pause (10 × 500 ms)
+            if (++$script:_wait -ge $script:DhcpWaitPauseTicks) {
                 $script:_initState = 'DHCP'
             }
         }
@@ -1082,7 +1096,7 @@ $script:initTimer.Add_Tick({
 
                 # Periodically re-check wired connectivity so a late DHCP
                 # lease or cable plug-in proceeds without manual action.
-                $script:connectCheckTimer.Interval = 5000
+                $script:connectCheckTimer.Interval = $script:ConnectCheckIntervalMs
                 $script:connectCheckTimer.Add_Tick({
                     if (Test-InternetConnectivity) {
                         $script:connectCheckTimer.Stop()
@@ -1107,6 +1121,6 @@ $form.Add_Shown({
 
 # Launch
 [System.Windows.Forms.Application]::EnableVisualStyles()
-$form.ShowDialog() | Out-Null
+$null = $form.ShowDialog()
 Stop-Transcript -ErrorAction SilentlyContinue
 #endregion
