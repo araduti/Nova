@@ -61,6 +61,7 @@ $script:SettlePauseTicks       = 10    # 5  seconds  (10  × 500 ms)
 $script:DhcpWaitPauseTicks     = 10    # 5  seconds  (10  × 500 ms)
 $script:MaxDhcpAttempts        = 5
 $script:ConnectCheckIntervalMs = 5000  # 5  seconds
+$script:BulletChar             = [char]0x2022  # '•' used in progress text
 
 #region ── Language System ───────────────────────────────────────────────────
 $script:Lang = 'EN'
@@ -715,7 +716,7 @@ $script:uiUpdateTimer.Add_Tick({
                 Write-Status $status.Message 'Cyan'
             }
             if ($status.Progress -gt 0) {
-                $progressText.Text = "$($status.Message)  $([char]0x2022)  $($status.Progress)%"
+                $progressText.Text = "$($status.Message)  $($script:BulletChar)  $($status.Progress)%"
             }
             if ($status.Step -gt 0) {
                 Update-Step $status.Step

@@ -144,6 +144,7 @@ function Update-BootstrapStatus {
         [int]$Step        = 0,
         [switch]$Done
     )
+    # No-op when StatusFile is empty (disables IPC reporting by design).
     if (-not $StatusFile) { return }
     try {
         $obj = @{ Message = $Message; Progress = $Progress; Step = $Step; Done = [bool]$Done }
