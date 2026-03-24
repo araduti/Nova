@@ -35,6 +35,11 @@ Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyContinue | O
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# ── TLS ─────────────────────────────────────────────────────────────────────
+# PowerShell 5.1 in WinPE defaults to SSL3/TLS 1.0.  Modern HTTPS endpoints
+# (msftconnecttest, GitHub, etc.) require TLS 1.2, so enforce it up front.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 # ── WinPE Environment ──────────────────────────────────────────────────────
 # Set standard user-profile paths that PowerShell modules expect.  Must run
 # before any module or profile code that references these variables.
@@ -200,10 +205,14 @@ function Test-HasValidIP {
 }
 
 function Test-InternetConnectivity {
-    $urls = @('https://www.msftconnecttest.com/connecttest.txt', 'https://clients3.google.com/generate_204')
+    $urls = @(
+        'https://www.msftconnecttest.com/connecttest.txt',
+        'https://clients3.google.com/generate_204',
+        'http://www.msftconnecttest.com/connecttest.txt'   # HTTP fallback (Windows NCSI endpoint)
+    )
     foreach ($url in $urls) {
         try {
-            $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 3
+            $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
             if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 300) { return $true }
         } catch {}
     }
