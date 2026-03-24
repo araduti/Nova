@@ -1006,8 +1006,9 @@ function Build-WinPE {
             $fontInjected = $true
         } else {
             Write-Step 'Segoe MDL2 Assets not found locally; downloading from https://aka.ms/SegoeFonts...'
-            $fontZip = Join-Path $env:TEMP "SegoeFont_$([System.Guid]::NewGuid().ToString('N')).zip"
-            $fontTmp = Join-Path $env:TEMP "SegoeFont_$([System.Guid]::NewGuid().ToString('N'))"
+            $fontGuid = [System.Guid]::NewGuid().ToString('N')
+            $fontZip = Join-Path $env:TEMP "SegoeFont_${fontGuid}.zip"
+            $fontTmp = Join-Path $env:TEMP "SegoeFont_${fontGuid}"
             try {
                 Invoke-WebRequest -Uri 'https://aka.ms/SegoeFonts' -OutFile $fontZip -UseBasicParsing -ErrorAction Stop
                 Expand-Archive -Path $fontZip -DestinationPath $fontTmp -Force
