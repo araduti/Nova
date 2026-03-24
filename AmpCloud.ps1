@@ -188,7 +188,15 @@ function Initialize-TargetDisk {
 
     # Clear the disk
     Write-Step "Clearing disk $DiskNumber..."
-    Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false -ErrorAction SilentlyContinue
+    $clearError = $null
+    try {
+        Clear-Disk -Number $DiskNumber -RemoveData -RemoveOEM -Confirm:$false -ErrorAction Stop
+    } catch {
+        $clearError = $_
+        Write-Warn "Clear-Disk failed on disk ${DiskNumber}: $clearError"
+    }
+
+    try {
 
     if ($FirmwareType -eq 'UEFI') {
         # Initialize as GPT
@@ -228,6 +236,13 @@ function Initialize-TargetDisk {
         if ([string]$currentLetter -ne [string]$OSDriveLetter) {
             Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
         }
+    }
+
+    } catch {
+        if ($clearError) {
+            throw "Partitioning disk $DiskNumber failed after Clear-Disk error. Clear-Disk error: $clearError -- Partition error: $_"
+        }
+        throw
     }
 
     Write-Success "Disk $DiskNumber partitioned. OS drive: ${OSDriveLetter}:"
