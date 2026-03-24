@@ -35,6 +35,14 @@ Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyContinue | O
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# ── WinPE Environment ──────────────────────────────────────────────────────
+# Set standard user-profile paths that PowerShell modules expect.  Must run
+# before any module or profile code that references these variables.
+if (-not $env:APPDATA)      { $env:APPDATA      = "$env:USERPROFILE\AppData\Roaming" }
+if (-not $env:LOCALAPPDATA) { $env:LOCALAPPDATA  = "$env:USERPROFILE\AppData\Local"   }
+if (-not $env:HOMEDRIVE)    { $env:HOMEDRIVE     = 'X:'  }
+if (-not $env:HOMEPATH)     { $env:HOMEPATH      = '\' }
+
 #region ── Language System ───────────────────────────────────────────────────
 $Lang = 'EN'
 function Select-Language {
@@ -136,131 +144,50 @@ $RingPen.EndCap = "Round"
 #endregion
 
 #region ── Network + WiFi Functions ─────────────────────────────────────────
-function Optimize-WinPENetwork {
-    Write-Status "🚀 Applying high-performance network tuning..." 'Cyan'
+
+function Invoke-NetworkTuning {
+    <#
+    .SYNOPSIS  Fast synchronous TCP / firewall / IPv6 tuning.
+    .DESCRIPTION
+        All netsh commands complete in milliseconds and never sleep.  Safe to
+        call from a WinForms timer tick without freezing the UI.
+    #>
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        # Set high-performance power plan
         powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null | Out-Null
-
-        # TCP auto-tuning and offload settings via netsh (always available in WinPE)
         netsh int tcp set global autotuninglevel=normal 2>$null | Out-Null
         netsh int tcp set global congestionprovider=ctcp 2>$null | Out-Null
         netsh int tcp set global chimney=enabled 2>$null | Out-Null
         netsh int tcp set global rss=enabled 2>$null | Out-Null
         netsh int tcp set global rsc=enabled 2>$null | Out-Null
-
-        # Disable IPv6 on all adapters to reduce routing overhead
-        # Use netsh to enumerate interfaces (Get-NetAdapter is unavailable in WinPE)
+        netsh advfirewall set allprofiles state off 2>$null | Out-Null
         $ifLines = netsh interface show interface 2>$null
         foreach ($line in $ifLines) {
             if ($line -match '^\s*(Enabled|Disabled)\s+\S+\s+\S+\s+(.+)$') {
-                $ifName = $matches[2].Trim()
-                netsh interface ipv6 set interface "$ifName" admin=disabled 2>$null | Out-Null
+                netsh interface ipv6 set interface "$($matches[2].Trim())" admin=disabled 2>$null | Out-Null
             }
         }
-
-        # Retry DHCP acquisition up to 3 times.  A single ipconfig /renew can
-        # fail when adapters finish initialising after wpeinit returns.
-        # OSDCloud uses a similar 20-second retry loop for robust DHCP.
-        $dhcpOk = $false
-        for ($attempt = 1; $attempt -le 3; $attempt++) {
-            ipconfig /renew 2>$null | Out-Null
-            # Check for a valid (non-APIPA) IPv4 address.  Match the dotted-
-            # decimal pattern directly instead of the "IPv4 Address" label so
-            # the check works regardless of WinPE display language.
-            $ipOut = ipconfig 2>$null | Out-String
-            $ipMatches = [regex]::Matches($ipOut, '(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')
-            $validIp = $false
-            foreach ($m in $ipMatches) {
-                $ip = $m.Groups[1].Value
-                if ($ip -notmatch '^(169\.254\.|127\.|0\.0\.0\.0|255\.)') {
-                    $validIp = $true
-                    break
-                }
-            }
-            if ($validIp) {
-                $dhcpOk = $true
-                break
-            }
-            Start-Sleep -Seconds 5
-        }
-        if (-not $dhcpOk) {
-            Write-Status 'DHCP did not return a valid IP after retries.' 'Yellow'
-        }
-    } catch {} finally {
-        $ErrorActionPreference = $prev
-    }
+    } catch {} finally { $ErrorActionPreference = $prev }
 }
 
-function Invoke-WpeInit {
-    # ── Set WinPE environment variables ─────────────────────────────────────
-    # OSDCloud sets these so PowerShell modules and profile scripts that
-    # reference standard user-profile paths do not fail in WinPE.
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        if (-not $env:APPDATA)       { $env:APPDATA       = "$env:USERPROFILE\AppData\Roaming" }
-        if (-not $env:LOCALAPPDATA)  { $env:LOCALAPPDATA  = "$env:USERPROFILE\AppData\Local"   }
-        if (-not $env:HOMEDRIVE)     { $env:HOMEDRIVE     = 'X:'  }
-        if (-not $env:HOMEPATH)      { $env:HOMEPATH      = '\' }
-    } catch {} finally {
-        $ErrorActionPreference = $prev
+function Test-HasValidIP {
+    <# Returns $true when ipconfig reports at least one non-APIPA IPv4 address. #>
+    $ipOut = ipconfig 2>$null | Out-String
+    foreach ($m in [regex]::Matches($ipOut, '(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')) {
+        $ip = $m.Groups[1].Value
+        if ($ip -notmatch '^(169\.254\.|127\.|0\.0\.0\.0|255\.)') { return $true }
     }
-
-    Write-Status "🌐 Initialising WinPE network stack..." 'Cyan'
-    try {
-        $proc = Start-Process -FilePath 'wpeinit.exe' -Wait -NoNewWindow -PassThru -ErrorAction Stop
-        if ($proc.ExitCode -eq 0) {
-            Write-Status 'Network stack initialised.' 'Green'
-        } else {
-            Write-Status "wpeinit.exe exited with code $($proc.ExitCode)." 'Yellow'
-        }
-    } catch {
-        Write-Status "wpeinit.exe unavailable: $_" 'Yellow'
-    }
-
-    # Capture boot-method information (BIOS vs UEFI, PXE vs local, etc.).
-    # OSDCloud calls this via wpeutil UpdateBootInfo; it populates the
-    # HKLM:\SYSTEM\CurrentControlSet\Control\PEFirmwareType registry value
-    # that downstream tools rely on for firmware-aware partitioning.
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        Start-Process -FilePath 'wpeutil' -ArgumentList 'UpdateBootInfo' -Wait -NoNewWindow -ErrorAction SilentlyContinue
-    } catch {} finally {
-        $ErrorActionPreference = $prev
-    }
-
-    # Disable the WinPE firewall so outgoing HTTPS requests are not blocked.
-    # WinPE is a transient deployment environment; disabling the firewall is
-    # standard practice for imaging/provisioning scenarios (MDT, SCCM, etc.).
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        netsh advfirewall set allprofiles state off 2>$null | Out-Null
-    } catch {} finally {
-        $ErrorActionPreference = $prev
-    }
-
-    Start-Sleep -Seconds 4
+    return $false
 }
 
 function Test-InternetConnectivity {
     $urls = @('https://www.msftconnecttest.com/connecttest.txt', 'https://clients3.google.com/generate_204')
     foreach ($url in $urls) {
-        try { if ((Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 6).StatusCode -eq 200) { return $true } } catch {}
-    }
-    return $false
-}
-
-function Wait-ForConnection {
-    param([int]$Timeout = 45)
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    while ($sw.Elapsed.TotalSeconds -lt $Timeout) {
-        if (Test-InternetConnectivity) { return $true }
-        Start-Sleep -Seconds 3
+        try {
+            $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 3
+            if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 300) { return $true }
+        } catch {}
     }
     return $false
 }
@@ -834,50 +761,138 @@ function Show-Failure {
 
 $script:connectCheckTimer = New-Object System.Windows.Forms.Timer
 
+# ── Non-blocking initialisation state machine ──────────────────────────────
+# Replaces the previous blocking Invoke-WpeInit / Optimize-WinPENetwork calls
+# that froze the UI thread for 20-30 seconds, preventing F8, ring animation,
+# and all user interaction.
+#
+# States:
+#   INIT          – launch wpeinit.exe (non-blocking)
+#   WPEINIT_POLL  – wait for wpeinit to exit, then run quick sync tuning
+#   SETTLE        – brief delay for NIC drivers to finish binding after wpeinit
+#   DHCP          – launch ipconfig /renew (non-blocking)
+#   DHCP_POLL     – wait for ipconfig to exit, check for valid IP
+#   DHCP_WAIT     – 5-second pause between DHCP retries (up to 3 attempts)
+#   CHECK         – test internet connectivity, decide next step
+
+$script:_initState = 'INIT'
+$script:_proc      = $null
+$script:_dhcp      = 0
+$script:_wait      = 0
+
+$script:initTimer = New-Object System.Windows.Forms.Timer
+$script:initTimer.Interval = 500
+
+$script:initTimer.Add_Tick({
+    switch ($script:_initState) {
+
+        'INIT' {
+            try {
+                $script:_proc = Start-Process -FilePath 'wpeinit.exe' `
+                    -NoNewWindow -PassThru -ErrorAction Stop
+            } catch { $script:_proc = $null }
+            $script:_initState = 'WPEINIT_POLL'
+        }
+
+        'WPEINIT_POLL' {
+            if ($null -eq $script:_proc -or $script:_proc.HasExited) {
+                # wpeutil UpdateBootInfo populates PEFirmwareType in the
+                # registry — needed by downstream partitioning logic.
+                $prev = $ErrorActionPreference
+                $ErrorActionPreference = 'Continue'
+                try {
+                    Start-Process -FilePath 'wpeutil' -ArgumentList 'UpdateBootInfo' `
+                        -Wait -NoNewWindow -ErrorAction SilentlyContinue
+                } catch {} finally { $ErrorActionPreference = $prev }
+
+                Invoke-NetworkTuning
+                Write-Status '🔧 Acquiring network address...' 'Cyan'
+                $script:_wait = 0
+                $script:_initState = 'SETTLE'
+            }
+        }
+
+        'SETTLE' {
+            # Let NIC drivers finish binding after wpeinit before DHCP.
+            if (++$script:_wait -ge 4) {        # 2-second pause (4 × 500 ms)
+                $script:_dhcp = 0
+                $script:_initState = 'DHCP'
+            }
+        }
+
+        'DHCP' {
+            $script:_dhcp++
+            try {
+                $script:_proc = Start-Process -FilePath 'ipconfig.exe' `
+                    -ArgumentList '/renew' -NoNewWindow -PassThru `
+                    -ErrorAction SilentlyContinue
+            } catch { $script:_proc = $null }
+            $script:_initState = 'DHCP_POLL'
+        }
+
+        'DHCP_POLL' {
+            if ($null -eq $script:_proc -or $script:_proc.HasExited) {
+                if (Test-HasValidIP) {
+                    $script:_initState = 'CHECK'
+                } elseif ($script:_dhcp -ge 3) {
+                    $script:_initState = 'CHECK'
+                } else {
+                    $script:_wait = 0
+                    $script:_initState = 'DHCP_WAIT'
+                }
+            }
+        }
+
+        'DHCP_WAIT' {
+            if (++$script:_wait -ge 10) {       # 5-second pause (10 × 500 ms)
+                $script:_initState = 'DHCP'
+            }
+        }
+
+        'CHECK' {
+            $script:initTimer.Stop()
+            if (Test-InternetConnectivity) {
+                ProceedToEngine
+            } else {
+                Update-Step 2
+                $ringTimer.Stop()
+                $ringPanel.Visible = $false
+                Write-Status $S.StatusNoNet 'Yellow'
+                $btnWiFi.Visible = $true
+                $btnWiFi.Add_Click({
+                    $script:connectCheckTimer.Stop()
+                    $btnWiFi.Visible = $false
+                    $ringPanel.Visible = $true
+                    $ringTimer.Start()
+                    $wifiConnected = Show-WiFiSelector
+                    $ringTimer.Stop()
+                    $ringPanel.Visible = $false
+                    if ($wifiConnected) { ProceedToEngine } else { Show-Failure }
+                })
+
+                # Periodically re-check wired connectivity so a late DHCP
+                # lease or cable plug-in proceeds without manual action.
+                $script:connectCheckTimer.Interval = 5000
+                $script:connectCheckTimer.Add_Tick({
+                    if (Test-InternetConnectivity) {
+                        $script:connectCheckTimer.Stop()
+                        $btnWiFi.Visible = $false
+                        ProceedToEngine
+                    }
+                })
+                $script:connectCheckTimer.Start()
+            }
+        }
+    }
+})
+
 $form.Add_Shown({
     Center-AllControls
     Update-Step 1
     Write-Status $S.StatusInit 'Cyan'
     $ringPanel.Visible = $true
     $ringTimer.Start()
-    Invoke-WpeInit
-    Optimize-WinPENetwork
-
-    $hasInternet = Test-InternetConnectivity
-
-    if ($hasInternet) {
-        ProceedToEngine
-    } else {
-        Update-Step 2
-        $ringTimer.Stop()
-        $ringPanel.Visible = $false
-        Write-Status $S.StatusNoNet 'Yellow'
-        $btnWiFi.Visible = $true
-        $btnWiFi.Add_Click({
-            $script:connectCheckTimer.Stop()
-            $btnWiFi.Visible = $false
-            $ringPanel.Visible = $true
-            $ringTimer.Start()
-            $hasInternet = Show-WiFiSelector
-            $ringTimer.Stop()
-            $ringPanel.Visible = $false
-            if ($hasInternet) { ProceedToEngine } else { Show-Failure }
-        })
-
-        # Use a non-blocking timer to periodically re-check wired connectivity
-        # so the UI stays responsive and the WiFi button remains clickable.
-        # 5 s strikes a balance between responsiveness and avoiding excessive
-        # network probes (each check hits two URLs with a 6 s timeout).
-        $script:connectCheckTimer.Interval = 5000
-        $script:connectCheckTimer.Add_Tick({
-            if (Test-InternetConnectivity) {
-                $script:connectCheckTimer.Stop()
-                $btnWiFi.Visible = $false
-                ProceedToEngine
-            }
-        })
-        $script:connectCheckTimer.Start()
-    }
+    $script:initTimer.Start()
 })
 
 # Launch
