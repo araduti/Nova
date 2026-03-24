@@ -1002,8 +1002,12 @@ function Build-WinPE {
         $fontInjected = $false
         if (Test-Path $mdl2Local) {
             Write-Step "Copying Segoe MDL2 Assets from local system..."
-            Copy-Item -Path $mdl2Local -Destination $mdl2FontDest -Force
-            $fontInjected = $true
+            try {
+                Copy-Item -Path $mdl2Local -Destination $mdl2FontDest -Force -ErrorAction Stop
+                $fontInjected = $true
+            } catch {
+                Write-Warn "Local font copy failed (non-fatal — icons will use GDI+ shapes): $_"
+            }
         } else {
             Write-Step 'Segoe MDL2 Assets not found locally; downloading from https://aka.ms/SegoeFonts...'
             $fontGuid = [System.Guid]::NewGuid().ToString('N')
