@@ -36,8 +36,8 @@
     Optional path to a local Windows ISO file, or an HTTPS URL to download one.
     Used when a WinRE architecture or version mismatch is detected and a fresh WinRE
     must be extracted. For amd64 a Windows Server 2025 Evaluation ISO is tried by
-    default (free download, no authentication required). For arm64 and other
-    architectures the URL must be supplied explicitly.
+    default (free download, no authentication required). For x86 the URL must be
+    supplied explicitly. ARM is not supported.
 
 .PARAMETER NoReboot
     Build everything but do NOT reboot. Useful for testing.
@@ -49,7 +49,7 @@
     .\Trigger.ps1 -NoReboot -WorkDir D:\AmpCloud
 
 .EXAMPLE
-    .\Trigger.ps1 -WindowsISOUrl 'D:\ISOs\Win11_ARM64.iso'
+    .\Trigger.ps1 -WindowsISOUrl 'D:\ISOs\Win11_x86.iso'
 #>
 
 [CmdletBinding()]
@@ -90,19 +90,19 @@ function Get-WinPEArchitecture {
     <#
     .SYNOPSIS
         Maps the current OS CPU architecture to the WinPE folder/package name
-        used by the ADK (amd64, arm64, x86, arm).
+        used by the ADK. AmpCloud supports amd64 and x86 only — ARM is not
+        supported because AmpCloud is a cloud-only deployment engine targeting
+        x86-64 enterprise hardware.
     #>
     $map = @{
         'AMD64' = 'amd64'
-        'ARM64' = 'arm64'
         'x86'   = 'x86'
-        'ARM'   = 'arm'
     }
-    $proc = $env:PROCESSOR_ARCHITECTURE   # AMD64 | ARM64 | x86 | ARM
+    $proc = $env:PROCESSOR_ARCHITECTURE   # AMD64 | x86
     $arch = $map[$proc]
     if (-not $arch) {
-        throw "Unrecognised PROCESSOR_ARCHITECTURE '$proc'. " +
-              "Set -Architecture manually (amd64 | arm64 | x86 | arm)."
+        throw "Unsupported processor architecture '$proc'. " +
+              "AmpCloud supports amd64 and x86 only. ARM is not supported."
     }
     return $arch
 }
@@ -231,7 +231,7 @@ function Get-WinREPathFromWindowsISO {
         out, then everything is dismounted and cleaned up in a finally block.
 
     .PARAMETER Architecture
-        Target WinPE architecture string: amd64, arm64, x86, or arm.
+        Target WinPE architecture string: amd64 or x86. ARM is not supported.
     .PARAMETER ISOUrl
         Path to a local Windows ISO file, or an HTTPS URL to download one.
         Optional — a built-in default is tried for amd64 when omitted.
@@ -247,8 +247,8 @@ function Get-WinREPathFromWindowsISO {
     # Windows Server 2025 Evaluation (build 26100) is freely downloadable without
     # authentication and shares the same Windows build number as Windows 11 24H2,
     # making its WinRE compatible with the Windows 11 24H2 ADK package set.
-    # No publicly available evaluation ISO exists for arm64 or x86 — users must
-    # supply -WindowsISOUrl for those architectures.
+    # No publicly available evaluation ISO exists for x86 — users must
+    # supply -WindowsISOUrl for that architecture.
     $defaultISOUrls = @{
         amd64 = 'https://go.microsoft.com/fwlink/?linkid=2271125'
     }
@@ -382,7 +382,7 @@ function Get-ADKRoot {
 function Assert-ADKInstalled {
     <#
     .SYNOPSIS Ensures ADK + WinPE add-on are present. Installs them silently if not.
-    .PARAMETER Architecture  WinPE arch string (amd64, arm64, x86, arm).
+    .PARAMETER Architecture  WinPE arch string (amd64 or x86). ARM is not supported.
     .OUTPUTS  [string] Validated ADK root path.
     #>
     param([string] $Architecture)
@@ -450,13 +450,13 @@ function Copy-WinPEFiles {
         Creates the standard WinPE working directory structure.
     .PARAMETER ADKRoot     ADK installation root returned by Get-ADKRoot / Assert-ADKInstalled.
     .PARAMETER Destination Target working directory (will be wiped if it exists).
-    .PARAMETER Architecture  amd64 (default), x86, arm, arm64.
+    .PARAMETER Architecture  amd64 (default) or x86. ARM is not supported.
     .OUTPUTS   [hashtable] Keys: MediaDir, MountDir, BootWim
     #>
     param(
         [string] $ADKRoot,
         [string] $Destination,
-        [ValidateSet('amd64','x86','arm','arm64')]
+        [ValidateSet('amd64','x86')]
         [string] $Architecture = 'amd64',
         [string] $WimSource    = ''   # Optional: path to an existing WIM (e.g. winre.wim)
     )
@@ -738,8 +738,8 @@ function Build-WinPE {
         # and networking never starts.  The pre-extracted netkvm driver files live
         # in Drivers/NetKVM/w10/<arch>/ in the repo — fetched directly from GitHub,
         # no ISO download required.
-        # The repo subfolder names match virtio-win convention: amd64, x86, ARM64.
-        $virtioArchMap = @{ amd64 = 'amd64'; x86 = 'x86'; arm64 = 'ARM64' }
+        # ARM is not supported — only amd64 and x86 driver folders are used.
+        $virtioArchMap = @{ amd64 = 'amd64'; x86 = 'x86' }
         $virtioArch    = $virtioArchMap[$Architecture]
         if ($virtioArch) {
             $driverRepoPath = "Drivers/NetKVM/w10/$virtioArch"
@@ -1036,7 +1036,7 @@ Write-Host @"
  ██║  ██║██║ ╚═╝ ██║██║     ╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝
  ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝      ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝
 
- GitHub-native OSDCloud replacement  ·  https://github.com/$GitHubUser/$GitHubRepo
+ Cloud-only OSDCloud replacement · amd64/x86 · https://github.com/$GitHubUser/$GitHubRepo
 "@ -ForegroundColor Cyan
 
 try {
