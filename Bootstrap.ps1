@@ -883,8 +883,6 @@ function ProceedToEngine {
 
     # Download the ESD catalog and let the user pick a Windows edition.
     $script:SelectedEdition = Select-WindowsEdition
-    $editionArgs = @{}
-    if ($script:SelectedEdition) { $editionArgs['WindowsEdition'] = $script:SelectedEdition }
 
     # Prefer the pre-staged copy embedded in the WinPE image by Trigger.ps1.
     # Fall back to downloading from GitHub when the local copy is absent.
@@ -910,7 +908,8 @@ function ProceedToEngine {
 
         # Run AmpCloud.ps1 in a dedicated process so the WinForms UI thread
         # stays responsive and the spinner keeps animating.
-        $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $localAmpCloud) + $editionArgs
+        $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $localAmpCloud)
+        if ($script:SelectedEdition) { $psArgs += @('-WindowsEdition', $script:SelectedEdition) }
         $engineProc = Start-Process -FilePath $script:PsBin -ArgumentList $psArgs -PassThru
 
         Write-Status $S.Imaging 'Cyan'

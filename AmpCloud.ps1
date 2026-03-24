@@ -65,6 +65,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# ── TLS ─────────────────────────────────────────────────────────────────────
+# PowerShell 5.1 in WinPE defaults to SSL3/TLS 1.0.  This engine runs in a
+# dedicated process (Start-Process from Bootstrap.ps1), so the parent's TLS
+# setting does not carry over.  Enforce TLS 1.2 before any HTTPS traffic.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 # Resolved once so WinPE's X:\ path is used correctly in the error handler.
 $script:PsBin = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
