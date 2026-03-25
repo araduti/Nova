@@ -25,5 +25,11 @@ param(
     [int]$MaxWaitSeconds  = 300
 )
 
-Import-Module "$PSScriptRoot\src\AmpCloud\AmpCloud.psd1" -Force
+# Import the AmpCloud module — try local development path first, then PSModulePath.
+$_modPath = Join-Path $PSScriptRoot 'src\AmpCloud\AmpCloud.psd1'
+if (Test-Path $_modPath) {
+    Import-Module $_modPath -Force
+} else {
+    Import-Module AmpCloud -Force
+}
 Invoke-AmpCloudBootstrap @PSBoundParameters

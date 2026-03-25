@@ -341,19 +341,91 @@ function Build-WinPE {
             }
         }
 
-        # ── 5. Embed Bootstrap.ps1 ────────────────────────────────────────────
-        $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
-        $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
-        Write-Step "Fetching Bootstrap.ps1 from $bootstrapUrl"
-        Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing
+        # ── 5. Embed AmpCloud module + entry scripts ────────────────────────
+        # Download the AmpCloud module directory (src/AmpCloud/) and the thin
+        # wrapper scripts (Bootstrap.ps1, AmpCloud.ps1) into the WinPE image.
+        # The module is placed under WindowsPowerShell\Modules so that
+        # Import-Module can find it automatically in WinPE.
+        $moduleBaseUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch"
+        $moduleDest    = Join-Path $paths.MountDir 'Windows\System32\WindowsPowerShell\v1.0\Modules\AmpCloud'
 
-        # ── 5b. Pre-stage AmpCloud.ps1 ──────────────────────────────────────
-        # Embedding AmpCloud.ps1 eliminates the internet dependency at boot time.
-        # Bootstrap.ps1 will use this local copy instead of downloading it.
-        $ampCloudUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
-        $ampCloudDest = Join-Path $paths.MountDir 'Windows\System32\AmpCloud.ps1'
-        Write-Step "Fetching AmpCloud.ps1 from $ampCloudUrl"
-        Invoke-WebRequest -Uri $ampCloudUrl -OutFile $ampCloudDest -UseBasicParsing
+        # Download module manifest, root module, and all function files.
+        Write-Step 'Embedding AmpCloud PowerShell module into boot image'
+        $moduleFiles = @(
+            'src/AmpCloud/AmpCloud.psd1'
+            'src/AmpCloud/AmpCloud.psm1'
+        )
+
+        # Discover Public/ and Private/ files from the repository.
+        # When running locally (Trigger.ps1 on the build machine), prefer
+        # copying from the local clone so the image always matches the
+        # source tree — no network round-trip needed.
+        $localRepoRoot = $PSScriptRoot
+        # Walk up from the Private/ dir to find the repo root.
+        while ($localRepoRoot -and -not (Test-Path (Join-Path $localRepoRoot '.git'))) {
+            $localRepoRoot = Split-Path $localRepoRoot -Parent
+        }
+
+        if ($localRepoRoot -and (Test-Path (Join-Path $localRepoRoot 'src\AmpCloud\AmpCloud.psd1'))) {
+            # ── Local copy path ─────────────────────────────────────────────
+            Write-Step 'Copying AmpCloud module from local source tree'
+            $localModuleSrc = Join-Path $localRepoRoot 'src\AmpCloud'
+            if (-not (Test-Path $moduleDest)) { New-Item -ItemType Directory -Path $moduleDest -Force | Out-Null }
+            Copy-Item -Path "$localModuleSrc\*" -Destination $moduleDest -Recurse -Force
+            Write-Success 'AmpCloud module embedded from local source.'
+        } else {
+            # ── Remote download path ────────────────────────────────────────
+            # Fetch individual files from GitHub when local source is unavailable
+            # (e.g. piped one-liner install). Build the directory structure and
+            # download the manifest, root module, and all function files.
+            foreach ($subDir in @('', 'Public', 'Private')) {
+                $destDir = if ($subDir) { Join-Path $moduleDest $subDir } else { $moduleDest }
+                if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
+            }
+
+            foreach ($relPath in $moduleFiles) {
+                $url  = "$moduleBaseUrl/$relPath"
+                $name = Split-Path $relPath -Leaf
+                $dest = Join-Path $moduleDest $name
+                Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+            }
+
+            # Download all Public/ and Private/ function files.
+            # GitHub raw URLs are predictable: <base>/<branch>/src/AmpCloud/<dir>/<file>
+            foreach ($subDir in @('Public', 'Private')) {
+                $indexUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/src/AmpCloud/$subDir`?ref=$GitHubBranch"
+                try {
+                    $listing = Invoke-RestMethod -Uri $indexUrl -UseBasicParsing -ErrorAction Stop
+                    foreach ($item in $listing) {
+                        if ($item.name -match '\.ps1$') {
+                            $fileUrl  = $item.download_url
+                            $fileDest = Join-Path $moduleDest "$subDir\$($item.name)"
+                            Invoke-WebRequest -Uri $fileUrl -OutFile $fileDest -UseBasicParsing
+                        }
+                    }
+                } catch {
+                    Write-Warn "Could not list $subDir files from GitHub API: $_"
+                }
+            }
+            Write-Success 'AmpCloud module downloaded and embedded.'
+        }
+
+        # Embed the thin wrapper scripts that import the module.
+        $bootstrapUrl  = "$moduleBaseUrl/Bootstrap.ps1"
+        $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
+        $ampCloudUrl   = "$moduleBaseUrl/AmpCloud.ps1"
+        $ampCloudDest  = Join-Path $paths.MountDir 'Windows\System32\AmpCloud.ps1'
+
+        if ($localRepoRoot -and (Test-Path (Join-Path $localRepoRoot 'Bootstrap.ps1'))) {
+            Copy-Item (Join-Path $localRepoRoot 'Bootstrap.ps1') $bootstrapDest -Force
+            Copy-Item (Join-Path $localRepoRoot 'AmpCloud.ps1')  $ampCloudDest  -Force
+            Write-Success 'Entry scripts (Bootstrap.ps1, AmpCloud.ps1) embedded from local source.'
+        } else {
+            Write-Step 'Fetching entry scripts from GitHub'
+            Invoke-WebRequest -Uri $bootstrapUrl  -OutFile $bootstrapDest -UseBasicParsing
+            Invoke-WebRequest -Uri $ampCloudUrl   -OutFile $ampCloudDest  -UseBasicParsing
+            Write-Success 'Entry scripts (Bootstrap.ps1, AmpCloud.ps1) embedded.'
+        }
 
         # ── 5c. Generate default background image ──────────────────────────────
         # Create a 1920x1080 gradient PNG matching the Bootstrap.ps1 OOBE theme

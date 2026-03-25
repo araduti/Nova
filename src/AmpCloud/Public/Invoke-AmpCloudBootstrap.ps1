@@ -251,66 +251,8 @@ function Invoke-AmpCloudBootstrap {
     try { $script:IconFont = New-Object System.Drawing.Font("Segoe MDL2 Assets", 18) }
     catch { Write-Verbose "Segoe MDL2 Assets font not available — using GDI+ shapes: $_" }
 
-    function Invoke-GlobeIcon {
-        <# Draws a simple globe (circle + crosshairs + equator arc) inside a rect. #>
-        param($Graphics, $Rect, $Pen)
-        $g = $Graphics; $r = $Rect
-        $cx = $r.X + $r.Width / 2;  $cy = $r.Y + $r.Height / 2
-        $inset = [int]($r.Width * 0.22)
-        $ir = New-Object System.Drawing.Rectangle(
-            ($r.X + $inset), ($r.Y + $inset),
-            ($r.Width - $inset * 2), ($r.Height - $inset * 2))
-        $g.DrawEllipse($Pen, $ir)                                   # outer circle
-        $g.DrawLine($Pen, $cx, $ir.Top, $cx, $ir.Bottom)            # vertical line
-        $g.DrawLine($Pen, $ir.Left, $cy, $ir.Right, $cy)            # horizontal line
-        $g.DrawArc($Pen, ($cx - $ir.Width / 4), $ir.Top,
-            ($ir.Width / 2), $ir.Height, 0, 180)                    # longitude arc
-    }
-
-    function Invoke-CloudIcon {
-        <# Draws a simple cloud silhouette inside a rect. #>
-        param($Graphics, $Rect, $Pen)
-        $g = $Graphics; $r = $Rect
-        $inset = [int]($r.Width * 0.18)
-        $bx = $r.X + $inset;  $by = $r.Y + $r.Height * 0.40
-        $bw = $r.Width - $inset * 2;  $bh = $r.Height * 0.35
-        # Base rounded rect
-        $g.DrawArc($Pen, $bx, $by, $bh, $bh, 90, 180)
-        $g.DrawLine($Pen, ($bx + $bh / 2), ($by + $bh), ($bx + $bw - $bh / 2), ($by + $bh))
-        $g.DrawArc($Pen, ($bx + $bw - $bh), $by, $bh, $bh, 270, 180)
-        # Top bump
-        $topW = $bw * 0.50;  $topH = $bh * 1.1
-        $g.DrawArc($Pen, ($bx + $bw * 0.25), ($by - $topH * 0.50), $topW, $topH, 180, 180)
-    }
-
-    function Invoke-DownloadIcon {
-        <# Draws a downward arrow with a base-line inside a rect. #>
-        param($Graphics, $Rect, $Pen)
-        $g = $Graphics; $r = $Rect
-        $cx = $r.X + $r.Width / 2
-        $inset = [int]($r.Width * 0.28)
-        $top = $r.Y + $inset;  $bot = $r.Y + $r.Height - $inset
-        $aw = [int]($r.Width * 0.18)  # arrow-head half-width
-        $g.DrawLine($Pen, $cx, $top, $cx, $bot)                     # shaft
-        $g.DrawLine($Pen, ($cx - $aw), ($bot - $aw), $cx, $bot)     # left barb
-        $g.DrawLine($Pen, ($cx + $aw), ($bot - $aw), $cx, $bot)     # right barb
-        $basY = $r.Y + $r.Height - $inset + 3
-        $g.DrawLine($Pen, ($r.X + $inset), $basY,
-            ($r.X + $r.Width - $inset), $basY)                      # base line
-    }
-
-    function Invoke-CheckmarkIcon {
-        <# Draws a checkmark (tick) inside a rect. #>
-        param($Graphics, $Rect, $Pen)
-        $g = $Graphics; $r = $Rect
-        $ix = [int]($r.Width * 0.25);  $iy = [int]($r.Height * 0.25)
-        # Three points: left-mid, bottom-centre, top-right
-        $p1 = New-Object System.Drawing.PointF(($r.X + $ix),               ($r.Y + $r.Height * 0.52))
-        $p2 = New-Object System.Drawing.PointF(($r.X + $r.Width * 0.42),   ($r.Y + $r.Height - $iy))
-        $p3 = New-Object System.Drawing.PointF(($r.X + $r.Width - $ix),    ($r.Y + $iy))
-        $g.DrawLine($Pen, $p1, $p2)
-        $g.DrawLine($Pen, $p2, $p3)
-    }
+    # Icon drawing functions (Invoke-GlobeIcon, Invoke-CloudIcon, Invoke-DownloadIcon,
+    # Invoke-CheckmarkIcon) are loaded from Private/ files by the module.
 
     # Reusable pen for ring (performance win — avoids per-frame GDI allocation).
     # Width is updated in-place by the breathing-pulse timer tick.

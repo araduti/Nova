@@ -65,6 +65,64 @@ User runs one-liner
 
 ---
 
+## Module Structure
+
+AmpCloud is organized as a **PowerShell module** following best practices (one function per file, Public/Private separation, module manifest).
+
+```
+AmpCloud/
+├── AmpCloud.ps1              # Thin wrapper → Invoke-AmpCloudEngine
+├── Bootstrap.ps1             # Thin wrapper → Invoke-AmpCloudBootstrap
+├── Trigger.ps1               # Thin wrapper → Invoke-AmpCloudTrigger
+├── src/AmpCloud/             # PowerShell module root
+│   ├── AmpCloud.psd1         # Module manifest (version, exports, metadata)
+│   ├── AmpCloud.psm1         # Root module (dot-sources Public/ and Private/)
+│   ├── Public/               # Exported functions (4 entry points)
+│   │   ├── Invoke-AmpCloudTrigger.ps1
+│   │   ├── Invoke-AmpCloudBootstrap.ps1
+│   │   ├── Invoke-AmpCloudEngine.ps1
+│   │   └── Import-AutopilotDevice.ps1
+│   └── Private/              # Internal functions (75 files, one per function)
+│       ├── Write-Step.ps1, Write-Success.ps1, ...   # Logging
+│       ├── Get-FirmwareType.ps1                      # Firmware detection
+│       ├── Initialize-TargetDisk.ps1, ...            # Disk operations
+│       ├── Build-WinPE.ps1, Copy-WinPEFile.ps1, ... # WinPE building
+│       ├── Invoke-M365Auth.ps1, ...                  # Authentication
+│       └── ...                                       # ~75 private functions
+├── tests/                    # Pester test suite
+│   └── AmpCloud.Module.Tests.ps1
+├── Config/                   # Configuration files
+├── Autopilot/                # Autopilot tools and wrappers
+├── Drivers/                  # QEMU/VirtIO network drivers
+├── Editor/                   # Browser-based Task Sequence Editor
+├── TaskSequence/             # Default task sequence JSON
+└── Unattend/                 # OOBE customization template
+```
+
+### Using the module directly
+
+```powershell
+# Import the module
+Import-Module ./src/AmpCloud/AmpCloud.psd1
+
+# Use exported functions
+Invoke-AmpCloudTrigger -NoReboot
+Invoke-AmpCloudEngine -FirmwareType UEFI -WindowsEdition Professional
+Import-AutopilotDevice -SerialNumber 'ABC123' -GraphToken $token
+```
+
+### Running tests
+
+```powershell
+# Install Pester (if not already available)
+Install-Module Pester -Force -SkipPublisherCheck
+
+# Run all tests
+Invoke-Pester ./tests/
+```
+
+---
+
 ## Core Architecture
 
 ### `Trigger.ps1` — Entry Point
