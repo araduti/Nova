@@ -1730,6 +1730,10 @@ function Invoke-M365WebView2Auth {
     $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
     $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
 
+    # Redirect to a fixed localhost URI.  For Azure AD public client apps
+    # registered with the "Mobile and desktop applications" platform,
+    # http://localhost redirects are allowed by default (RFC 8252 §7.3)
+    # without explicit registration.
     $redirectUri = 'http://localhost/auth'
 
     # ── Build the authorize URL ─────────────────────────────────────────────
@@ -1743,6 +1747,10 @@ function Invoke-M365WebView2Auth {
         '&prompt=select_account'
 
     # ── Create WebView2 environment with WinPE-safe flags ──────────────────
+    # WinPE has no GPU hardware or driver stack.  These flags force Chromium
+    # to use SwiftShader (software OpenGL ES implementation) for rendering.
+    # --enable-unsafe-swiftshader is required because SwiftShader is normally
+    # blocked in elevated/SYSTEM contexts; in WinPE there is no alternative.
     $options = New-Object Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions
     $options.AdditionalBrowserArguments =
         '--disable-gpu --disable-gpu-compositing --disable-direct-composition ' +
@@ -1856,8 +1864,13 @@ function Invoke-M365WebView2Auth {
     $dialogResult = $dlg.ShowDialog()
 
     # Dispose WebView2 and dialog to release Chromium process.
-    try { $webView.Dispose() } catch {}
-    try { $dlg.Dispose()     } catch {}
+    try { $webView.Dispose() } catch { Write-Verbose "WebView2 disposal: $_" }
+    try { $dlg.Dispose()     } catch { Write-Verbose "Dialog disposal: $_" }
+
+    # Clean up WebView2 user data (cookies, cache) to prevent credential leakage.
+    if (Test-Path $userDataFolder) {
+        try { Remove-Item $userDataFolder -Recurse -Force } catch {}
+    }
 
     if ($dialogResult -ne 'OK' -or -not $script:_wv2AuthCode) {
         if ($script:_wv2AuthError) {

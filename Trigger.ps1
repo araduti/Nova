@@ -1068,11 +1068,14 @@ function Build-WinPE {
             if (Test-Path $wv2NugetDir) { Remove-Item $wv2NugetDir -Recurse -Force }
             Expand-Archive -Path $wv2NugetZip -DestinationPath $wv2NugetDir -Force
 
-            # Find the highest .NET Framework target folder (net45, net462, etc.)
-            $managedSrc = Get-ChildItem (Join-Path $wv2NugetDir 'lib') -Directory |
-                Where-Object { $_.Name -match '^net4' } |
-                Sort-Object Name -Descending |
-                Select-Object -First 1 -ExpandProperty FullName
+            # Find a compatible .NET Framework target folder.
+            # Prefer net462 or net45 which are compatible with PowerShell 5.1.
+            $libDir = Join-Path $wv2NugetDir 'lib'
+            $managedSrc = $null
+            foreach ($target in @('net462', 'net48', 'net472', 'net45')) {
+                $candidate = Join-Path $libDir $target
+                if (Test-Path $candidate) { $managedSrc = $candidate; break }
+            }
 
             if ($managedSrc) {
                 Copy-Item (Join-Path $managedSrc 'Microsoft.Web.WebView2.Core.dll')     -Destination $wv2Dest -Force
