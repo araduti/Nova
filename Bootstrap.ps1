@@ -48,7 +48,8 @@ function Write-AuthLog {
     param([string] $Message)
     $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $entry = "[$ts] $Message"
-    try { $entry | Out-File -FilePath $script:AuthLogPath -Append -Encoding utf8 -Force } catch {}
+    try { $entry | Out-File -FilePath $script:AuthLogPath -Append -Encoding utf8 -Force }
+    catch { Write-Warning "Auth log write failed: $_" }
     Write-Verbose $Message
 }
 
@@ -1903,7 +1904,8 @@ function Invoke-M365WebView2Auth {
     }
 
     if ($dialogResult -ne 'OK' -or -not $script:_wv2AuthCode) {
-        Write-AuthLog "WebView2 dialog closed without auth code. DialogResult=$dialogResult, AuthCode=$(if ($script:_wv2AuthCode) { 'present' } else { 'missing' })"
+        $codeStatus = if ($script:_wv2AuthCode) { 'present' } else { 'missing' }
+        Write-AuthLog "WebView2 dialog closed without auth code. DialogResult=$dialogResult, AuthCode=$codeStatus"
         if ($script:_wv2AuthError) {
             Write-AuthLog "WebView2 auth error: $($script:_wv2AuthError)"
         }
