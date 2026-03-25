@@ -2187,7 +2187,8 @@ function Invoke-M365Auth {
     # Delegated permissions — no client secret required.
     $scope = 'openid profile'
     if ($authConfig.graphScopes) {
-        $scope = "openid profile $($authConfig.graphScopes)"
+        $trimmed = ($authConfig.graphScopes).Trim()
+        if ($trimmed) { $scope = "openid profile $trimmed" }
     }
 
     # Expose the auth config for post-auth integration (Autopilot import).
@@ -2275,7 +2276,8 @@ function ProceedToEngine {
             $serial = $null
             try { $serial = (Get-WmiObject -Class Win32_BIOS).SerialNumber } catch {}
             if ($serial -and $serial.Trim() -ne '') {
-                $filter = [uri]::EscapeDataString("contains(serialNumber,'$serial')")
+                $sanitized = $serial -replace "['\\\x00-\x1f]", ''
+                $filter = [uri]::EscapeDataString("contains(serialNumber,'$sanitized')")
                 $uri    = "https://graph.microsoft.com/v1.0/deviceManagement/windowsAutopilotDeviceIdentities?`$filter=$filter"
                 $check  = Invoke-RestMethod -Uri $uri -Headers @{
                     'Authorization' = "Bearer $($script:GraphAccessToken)"

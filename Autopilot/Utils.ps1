@@ -40,7 +40,8 @@ function Test-AutopilotStatus {
     )
 
     try {
-        $filter = [uri]::EscapeDataString("contains(serialNumber,'$SerialNumber')")
+        $sanitized = $SerialNumber -replace "['\\\x00-\x1f]", ''
+        $filter = [uri]::EscapeDataString("contains(serialNumber,'$sanitized')")
         $uri    = "https://graph.microsoft.com/v1.0/deviceManagement/windowsAutopilotDeviceIdentities?`$filter=$filter"
 
         $response = Invoke-RestMethod -Uri $uri `

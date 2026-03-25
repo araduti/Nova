@@ -1822,7 +1822,8 @@ function Invoke-M365DeviceCodeAuth {
     # Delegated permissions — no client secret required.
     $scope = 'openid profile'
     if ($authConfig.graphScopes) {
-        $scope = "openid profile $($authConfig.graphScopes)"
+        $trimmed = ($authConfig.graphScopes).Trim()
+        if ($trimmed) { $scope = "openid profile $trimmed" }
     }
 
     # ── Step 1: Generate PKCE code verifier and challenge (RFC 7636) ────────
