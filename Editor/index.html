@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AmpCloud Task Sequence Editor</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- ── Toolbar ──────────────────────────────────────────────────── -->
+    <header class="toolbar">
+        <div class="toolbar-left">
+            <span class="logo">&#9729; AmpCloud</span>
+            <span class="toolbar-sep"></span>
+            <button id="btnNew" class="tb-btn" title="New task sequence">&#128196; New</button>
+            <button id="btnOpen" class="tb-btn" title="Open JSON file">&#128194; Open</button>
+            <button id="btnSave" class="tb-btn" title="Save as JSON">&#128190; Save</button>
+        </div>
+        <div class="toolbar-right">
+            <span id="tsName" class="ts-name" contenteditable="true">Default AmpCloud Task Sequence</span>
+        </div>
+    </header>
+
+    <!-- ── Main layout ──────────────────────────────────────────────── -->
+    <div class="main">
+        <!-- Left: Step list -->
+        <aside class="step-list-panel">
+            <div class="panel-header">
+                <span>Steps</span>
+                <div class="panel-actions">
+                    <button id="btnAddStep" class="icon-btn" title="Add step">&#43;</button>
+                    <button id="btnRemoveStep" class="icon-btn danger" title="Remove selected step">&#8722;</button>
+                    <span class="panel-sep"></span>
+                    <button id="btnMoveUp" class="icon-btn" title="Move up">&#9650;</button>
+                    <button id="btnMoveDown" class="icon-btn" title="Move down">&#9660;</button>
+                </div>
+            </div>
+            <ul id="stepList" class="step-list"></ul>
+        </aside>
+
+        <!-- Right: Step properties -->
+        <section class="properties-panel">
+            <div id="propsEmpty" class="props-empty">
+                <p>Select a step to view its properties, or click <strong>+</strong> to add a new step.</p>
+            </div>
+            <div id="propsEditor" class="props-editor" style="display:none;">
+                <div class="prop-group">
+                    <label for="propName">Name</label>
+                    <input id="propName" type="text" placeholder="Step name">
+                </div>
+                <div class="prop-group">
+                    <label for="propType">Type</label>
+                    <select id="propType"></select>
+                </div>
+                <div class="prop-group">
+                    <label for="propDescription">Description</label>
+                    <textarea id="propDescription" rows="2" placeholder="Optional description"></textarea>
+                </div>
+                <div class="prop-group prop-row">
+                    <label class="cb-label">
+                        <input id="propEnabled" type="checkbox"> Enabled
+                    </label>
+                    <label class="cb-label">
+                        <input id="propContinueOnError" type="checkbox"> Continue on error
+                    </label>
+                </div>
+                <hr>
+                <h3>Parameters</h3>
+                <div id="paramFields"></div>
+            </div>
+        </section>
+    </div>
+
+    <!-- ── Add-step dialog ──────────────────────────────────────────── -->
+    <div id="addStepDialog" class="dialog-overlay" style="display:none;">
+        <div class="dialog">
+            <h2>Add Step</h2>
+            <p>Choose a step type to add to the task sequence:</p>
+            <ul id="stepTypeList" class="step-type-list"></ul>
+            <div class="dialog-actions">
+                <button id="btnAddStepCancel" class="btn">Cancel</button>
+                <button id="btnAddStepOk" class="btn btn-primary" disabled>Add</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden file input -->
+    <input type="file" id="fileInput" accept=".json" style="display:none">
+
+    <script src="js/app.js"></script>
+</body>
+</html>
