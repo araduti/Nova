@@ -35,9 +35,11 @@ param(
     # Set to a direct URL to a .wim/.esd, or leave empty to use products.xml from the repository
     [string]$WindowsImageUrl = '',
     [ValidateNotNullOrEmpty()]
-    [string]$WindowsEdition  = 'Professional',
+    [string]$WindowsEdition      = 'Professional',
     [ValidateNotNullOrEmpty()]
-    [string]$WindowsLanguage = 'en-us',
+    [string]$WindowsLanguage     = 'en-us',
+    [ValidateSet('x64','ARM64')]
+    [string]$WindowsArchitecture = 'x64',
 
     # Driver injection
     # Folder path (inside WinPE or on a share) containing driver .inf files
@@ -349,11 +351,12 @@ function Find-WindowsESD {
         [xml]$Catalog,
         [string]$Edition,
         [string]$Language,
+        [string]$Architecture = 'x64',
         [ValidateSet('UEFI','BIOS')]
         [string]$FirmwareType
     )
 
-    $arch = 'x64'
+    $arch = $Architecture
     $allFiles = $Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File
     $matchedEsd = $allFiles |
         Where-Object {
@@ -389,6 +392,7 @@ function Get-WindowsImageSource {
         [string]$ImageUrl,
         [string]$Edition,
         [string]$Language,
+        [string]$Architecture = 'x64',
         [string]$FirmwareType,
         [string]$ScratchDir
     )
@@ -416,7 +420,7 @@ function Get-WindowsImageSource {
         [xml]$catalog = Get-Content $productsPath -Encoding UTF8
 
         $stepName = 'Find matching ESD'
-        $esd     = Find-WindowsESD -Catalog $catalog -Edition $Edition -Language $Language -FirmwareType $FirmwareType
+        $esd     = Find-WindowsESD -Catalog $catalog -Edition $Edition -Language $Language -Architecture $Architecture -FirmwareType $FirmwareType
 
         Write-Host "  Found ESD: $($esd.FileName) ($([long]$esd.Size | ForEach-Object { Get-FileSizeReadable $_ }))"
 
@@ -1034,11 +1038,12 @@ try {
     $stepName = 'Download Windows image'
     Update-BootstrapStatus -Message 'Downloading Windows image...' -Step 1 -Progress 20
     $imagePath = Get-WindowsImageSource `
-        -ImageUrl    $WindowsImageUrl `
-        -Edition     $WindowsEdition `
-        -Language    $WindowsLanguage `
-        -FirmwareType $FirmwareType `
-        -ScratchDir  $ScratchDir
+        -ImageUrl      $WindowsImageUrl `
+        -Edition       $WindowsEdition `
+        -Language      $WindowsLanguage `
+        -Architecture  $WindowsArchitecture `
+        -FirmwareType  $FirmwareType `
+        -ScratchDir    $ScratchDir
 
     # Step 3: Apply Windows image
     $stepName = 'Apply Windows image'

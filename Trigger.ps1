@@ -1060,6 +1060,33 @@ function Build-WinPE {
         Write-Step "Fetching AmpCloud.ps1 from $ampCloudUrl"
         Invoke-WebRequest -Uri $ampCloudUrl -OutFile $ampCloudDest -UseBasicParsing
 
+        # ── 5c. Generate default background image ──────────────────────────────
+        # Create a 1920x1080 gradient PNG matching the Bootstrap.ps1 OOBE theme
+        # and embed it as X:\Windows\System32\AmpCloud-bg.png.  Administrators
+        # can replace this file in the mounted WIM with custom branding before
+        # the image is finalised.  Bootstrap.ps1 loads it at startup and paints
+        # it as the form background when present.
+        $bgDest = Join-Path $paths.MountDir 'Windows\System32\AmpCloud-bg.png'
+        try {
+            Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+            $bgW = 1920; $bgH = 1080
+            $bgBmp  = New-Object System.Drawing.Bitmap($bgW, $bgH)
+            $bgG    = [System.Drawing.Graphics]::FromImage($bgBmp)
+            $bgTop  = [System.Drawing.Color]::FromArgb(218, 232, 252)
+            $bgBot  = [System.Drawing.Color]::FromArgb(234, 240, 250)
+            $bgRect = New-Object System.Drawing.Rectangle(0, 0, $bgW, $bgH)
+            $bgBr   = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                          $bgRect, $bgTop, $bgBot,
+                          [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+            $bgG.FillRectangle($bgBr, $bgRect)
+            $bgBr.Dispose(); $bgG.Dispose()
+            $bgBmp.Save($bgDest, [System.Drawing.Imaging.ImageFormat]::Png)
+            $bgBmp.Dispose()
+            Write-Success 'Default background image (AmpCloud-bg.png) embedded.'
+        } catch {
+            Write-Warn "Background image generation failed (non-fatal): $_"
+        }
+
         # ── 6. winpeshl.ini + batch launcher → auto-launch Bootstrap.ps1 ───────
         # WinRE ships its own winpeshl.exe which does not reliably handle the
         # comma-separated "<exe>, <args>" format used for direct PowerShell
