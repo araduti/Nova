@@ -243,6 +243,50 @@ The editor is a static web app (HTML/CSS/JS) hosted on GitHub Pages and requires
 - Scripts are fetched over HTTPS from GitHub; verify your repository is not compromised
 - Consider code-signing scripts and validating signatures in `Bootstrap.ps1` for high-security environments
 
+### Microsoft 365 Authentication (Tenant Allow-List)
+
+AmpCloud supports an optional **M365 authentication gate** that blocks unauthorised users from deploying images. When enabled, operators must sign in with a Microsoft 365 account whose Azure AD **tenant ID** appears on an explicit allow-list.
+
+**How it works:**
+
+1. After network connectivity is established, Bootstrap.ps1 downloads [`Config/auth.json`](Config/auth.json) from the repository.
+2. If `requireAuth` is `true`, a **Device Code Flow** dialog is shown. The operator sees a one-time code and a URL (`https://microsoft.com/devicelogin`).
+3. The operator opens the URL on another device (phone/laptop), enters the code, and signs in with their Microsoft 365 account.
+4. Bootstrap.ps1 validates the **tenant ID** from the returned token against the `allowedTenants` list.
+5. If the tenant is authorised, deployment proceeds. Otherwise, access is denied.
+
+**Setup:**
+
+1. **Register an Azure AD application:**
+   - Go to [Azure Portal → App registrations → New registration](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade)
+   - Name: e.g. `AmpCloud Deployment`
+   - Supported account types: **Accounts in any organizational directory** (multi-tenant)
+   - Under **Authentication → Advanced settings**, enable **Allow public client flows** (required for Device Code Flow)
+   - Note the **Application (client) ID**
+
+2. **Configure `Config/auth.json`:**
+
+   ```json
+   {
+       "requireAuth": true,
+       "clientId": "YOUR-APPLICATION-CLIENT-ID",
+       "allowedTenants": [
+           "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+           "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+       ]
+   }
+   ```
+
+   | Field | Description |
+   |-------|-------------|
+   | `requireAuth` | Set to `true` to enforce authentication. When `false` (default), auth is skipped. |
+   | `clientId` | The Application (client) ID from your Azure AD app registration. |
+   | `allowedTenants` | Array of Azure AD tenant IDs that are permitted to use the tool. |
+
+3. **Finding your tenant ID:**
+   - Azure Portal → Azure Active Directory → Overview → **Tenant ID**
+   - Or run: `(Invoke-RestMethod https://login.microsoftonline.com/YOUR-DOMAIN/.well-known/openid-configuration).token_endpoint` — the GUID in the URL is the tenant ID.
+
 ---
 
 ## License
