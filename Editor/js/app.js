@@ -556,7 +556,7 @@ function loadDefault() {
             if (typeof msal === 'undefined') {
                 loginLoading.style.display = 'none';
                 btnLogin.style.display = 'none';
-                loginError.textContent = 'Authentication library failed to load. Check your network or ad-blocker.';
+                loginError.textContent = 'Authentication library failed to load. Check your network, ad-blocker, or corporate network restrictions.';
                 loginError.style.display = '';
                 return;
             }
@@ -592,7 +592,8 @@ function loadDefault() {
                 showLoginUI();
             });
 
-            /* Sign-in button handler */
+            /* Sign-in button — only openid + profile are needed; this is a
+               pure identity gate, not an API permission request. */
             btnLogin.addEventListener('click', () => {
                 loginError.style.display = 'none';
                 msalApp.loginPopup({ scopes: ['openid', 'profile'] })
@@ -606,11 +607,12 @@ function loadDefault() {
                     });
             });
 
-            /* Sign-out button handler */
+            /* Sign-out — reload regardless of outcome to reset UI state. */
             btnLogout.addEventListener('click', () => {
                 msalApp.logoutPopup().then(() => {
                     location.reload();
                 }).catch(() => {
+                    /* Popup may be blocked or closed; reload to clear session. */
                     location.reload();
                 });
             });
