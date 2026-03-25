@@ -115,7 +115,7 @@ Describe 'AmpCloud Module' {
             foreach ($file in $privateFiles) {
                 $expectedName = $file.BaseName
                 $content = Get-Content $file.FullName -Raw
-                $match = [regex]::Match($content, '^\s*function\s+(\S+)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+                $match = [regex]::Match($content, '^\s*function\s+([\w-]+)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
                 $match.Success | Should -BeTrue -Because "$($file.Name) should contain a function definition"
                 $match.Groups[1].Value | Should -Be $expectedName -Because "function name in $($file.Name) should match file name"
             }
