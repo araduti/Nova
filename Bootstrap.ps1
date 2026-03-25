@@ -1781,10 +1781,12 @@ function Invoke-M365WebView2Auth {
     # to use SwiftShader (software OpenGL ES implementation) for rendering.
     # --enable-unsafe-swiftshader is required because SwiftShader is normally
     # blocked in elevated/SYSTEM contexts; in WinPE there is no alternative.
+    # --allow-run-as-system permits Chromium to run under the SYSTEM account.
     $options = [Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions]::new()
     $options.AdditionalBrowserArguments =
         '--disable-gpu --disable-gpu-compositing --disable-direct-composition ' +
-        '--use-angle=swiftshader --enable-unsafe-swiftshader --in-process-gpu'
+        '--use-angle=swiftshader --enable-unsafe-swiftshader --in-process-gpu ' +
+        '--allow-run-as-system'
 
     $userDataFolder = 'X:\Temp\WebView2Data'
     if (-not (Test-Path $userDataFolder)) {
@@ -1800,7 +1802,19 @@ function Invoke-M365WebView2Auth {
     try {
         $envTask     = [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::CreateAsync(
                            $runtimeFolder, $userDataFolder, $options)
-        $environment = $envTask.GetAwaiter().GetResult()
+        # Pump messages while waiting so COM/async callbacks can complete;
+        # a plain GetAwaiter().GetResult() blocks the UI thread and deadlocks.
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        while (-not $envTask.IsCompleted -and [DateTime]::UtcNow -lt $deadline) {
+            [System.Windows.Forms.Application]::DoEvents()
+            if (-not $envTask.IsCompleted) { Start-Sleep -Milliseconds 50 }
+        }
+        if (-not $envTask.IsCompleted) {
+            Write-AuthLog "WebView2 environment creation timed out after 30 s."
+            return $false
+        }
+        if ($envTask.IsFaulted) { throw $envTask.Exception.InnerException }
+        $environment = $envTask.Result
         Write-AuthLog "WebView2 environment created successfully."
     } catch {
         Write-AuthLog "WebView2 environment creation failed: $_"
@@ -1857,7 +1871,18 @@ function Invoke-M365WebView2Auth {
 
     try {
         $initTask = $webView.EnsureCoreWebView2Async($environment)
-        $initTask.GetAwaiter().GetResult()
+        # Pump messages while waiting — same deadlock-avoidance pattern.
+        $deadline = [DateTime]::UtcNow.AddSeconds(30)
+        while (-not $initTask.IsCompleted -and [DateTime]::UtcNow -lt $deadline) {
+            [System.Windows.Forms.Application]::DoEvents()
+            if (-not $initTask.IsCompleted) { Start-Sleep -Milliseconds 50 }
+        }
+        if (-not $initTask.IsCompleted) {
+            Write-AuthLog "WebView2 control initialization timed out after 30 s."
+            $dlg.Dispose()
+            return $false
+        }
+        if ($initTask.IsFaulted) { throw $initTask.Exception.InnerException }
     } catch {
         Write-AuthLog "WebView2 control initialization failed: $_"
         $dlg.Dispose()
