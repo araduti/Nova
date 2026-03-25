@@ -82,10 +82,10 @@ $script:Lang = 'EN'
 
 $Strings = @{
     EN = @{ Header="A M P C L O U D"; Subtitle="Cloud Imaging Engine";
-            Step1="Network"; Step2="Connect"; Step3="Deploy";
+            Step1="Network"; Step2="Connect"; Step3="Sign in"; Step4="Deploy";
             StatusInit="Initialising network stack...";
             StatusNoNet="No wired connection detected`nTap below to join Wi-Fi";
-            Connected="Connected — launching imaging engine";
+            Connected="Connected — verifying identity";
             Download="Downloading AmpCloud.ps1  ({0}%)";
             Complete="Ready to deploy";
             Reboot="Restart now"; PowerOff="Shut down"; Shell="Command prompt";
@@ -99,12 +99,19 @@ $Strings = @{
             ConfigLang="Language"; ConfigOsLang="OS Language";
             ConfigArch="Architecture"; ConfigActivation="Activation";
             ConfigEdition="Windows Edition";
-            ConfigBtn="Start deployment" }
+            ConfigBtn="Start deployment";
+            AuthSigning="Signing in with Microsoft 365...";
+            AuthPrompt="To sign in, use a web browser on another device`nand enter this code:";
+            AuthUrl="https://microsoft.com/devicelogin";
+            AuthWaiting="Waiting for sign-in...";
+            AuthSuccess="Identity verified";
+            AuthFailed="Authentication failed. Please try again.";
+            AuthSkipped="Authentication not required" }
     FR = @{ Header="A M P C L O U D"; Subtitle="Moteur d'imagerie cloud";
-            Step1="Réseau"; Step2="Connexion"; Step3="Déploiement";
+            Step1="Réseau"; Step2="Connexion"; Step3="Identification"; Step4="Déploiement";
             StatusInit="Initialisation de la pile réseau...";
             StatusNoNet="Pas de connexion filaire détectée`nAppuyez ci-dessous pour le Wi-Fi";
-            Connected="Connecté — lancement du moteur d'imagerie";
+            Connected="Connecté — vérification de l'identité";
             Download="Téléchargement AmpCloud.ps1  ({0}%)";
             Complete="Prêt à déployer";
             Reboot="Redémarrer maintenant"; PowerOff="Éteindre"; Shell="Invite de commandes";
@@ -118,12 +125,19 @@ $Strings = @{
             ConfigLang="Langue"; ConfigOsLang="Langue du SE";
             ConfigArch="Architecture"; ConfigActivation="Activation";
             ConfigEdition="Édition Windows";
-            ConfigBtn="Démarrer le déploiement" }
+            ConfigBtn="Démarrer le déploiement";
+            AuthSigning="Connexion avec Microsoft 365...";
+            AuthPrompt="Pour vous connecter, utilisez un navigateur web sur un autre appareil`net entrez ce code :";
+            AuthUrl="https://microsoft.com/devicelogin";
+            AuthWaiting="En attente de connexion...";
+            AuthSuccess="Identité vérifiée";
+            AuthFailed="Échec de l'authentification. Veuillez réessayer.";
+            AuthSkipped="Authentification non requise" }
     ES = @{ Header="A M P C L O U D"; Subtitle="Motor de imágenes en la nube";
-            Step1="Red"; Step2="Conectar"; Step3="Desplegar";
+            Step1="Red"; Step2="Conectar"; Step3="Iniciar sesión"; Step4="Desplegar";
             StatusInit="Inicializando pila de red...";
             StatusNoNet="Sin conexión cableada detectada`nToque abajo para Wi-Fi";
-            Connected="Conectado — iniciando motor de imagen";
+            Connected="Conectado — verificando identidad";
             Download="Descargando AmpCloud.ps1  ({0}%)";
             Complete="Listo para desplegar";
             Reboot="Reiniciar ahora"; PowerOff="Apagar"; Shell="Símbolo del sistema";
@@ -137,7 +151,14 @@ $Strings = @{
             ConfigLang="Idioma"; ConfigOsLang="Idioma del SO";
             ConfigArch="Arquitectura"; ConfigActivation="Activación";
             ConfigEdition="Edición de Windows";
-            ConfigBtn="Iniciar implementación" }
+            ConfigBtn="Iniciar implementación";
+            AuthSigning="Iniciando sesión con Microsoft 365...";
+            AuthPrompt="Para iniciar sesión, use un navegador web en otro dispositivo`ne ingrese este código:";
+            AuthUrl="https://microsoft.com/devicelogin";
+            AuthWaiting="Esperando inicio de sesión...";
+            AuthSuccess="Identidad verificada";
+            AuthFailed="Error de autenticación. Por favor, inténtelo de nuevo.";
+            AuthSkipped="Autenticación no requerida" }
 }
 $script:S = $Strings[$script:Lang]
 #endregion
@@ -832,7 +853,7 @@ $cardPanel.Controls.Add($stepPanel)
 
 $stepLabels = [System.Collections.Generic.List[System.Windows.Forms.Label]]::new()
 $stepNum = 0
-foreach ($stepText in @($S.Step1, $S.Step2, $S.Step3)) {
+foreach ($stepText in @($S.Step1, $S.Step2, $S.Step3, $S.Step4)) {
     $stepNum++
     $lbl = New-Object System.Windows.Forms.Label
     $lbl.Text = "$([char]0x25CF) $stepNum $stepText"
@@ -1655,6 +1676,209 @@ function Show-ConfigurationMenu {
     return $defaultResult
 }
 
+#region ── M365 Device Code Authentication ───────────────────────────────────
+function Invoke-M365DeviceCodeAuth {
+    <#
+    .SYNOPSIS  Authenticate the operator via the OAuth 2.0 Device Code Flow.
+    .DESCRIPTION
+        Downloads Config/auth.json from the GitHub repository.  When
+        requireAuth is true and a clientId is configured, the function
+        initiates the Device Code Flow against Azure AD
+        (login.microsoftonline.com/organizations) and shows a WinForms
+        dialog with the one-time code and verification URL.
+        Tenant restrictions are enforced at the Entra ID app registration
+        level — only tenants explicitly allowed in the app's
+        "Supported account types" configuration can complete sign-in.
+    .OUTPUTS
+        $true  if authentication succeeded or was not required.
+        $false if authentication failed.
+    #>
+
+    # ── Fetch auth configuration from the repository ────────────────────────
+    $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/auth.json"
+    $authConfig    = $null
+    try {
+        $wc      = New-Object System.Net.WebClient
+        $rawJson = $wc.DownloadString($authConfigUrl)
+        $authConfig = $rawJson | ConvertFrom-Json
+    } catch {
+        Write-Verbose "Could not fetch auth config: $_"
+    }
+
+    # If auth is not configured or not required, skip silently.
+    if (-not $authConfig -or -not $authConfig.requireAuth) {
+        Write-Status $S.AuthSkipped 'Green'
+        return $true
+    }
+
+    # Validate that the config has the minimum required fields.
+    if (-not $authConfig.clientId) {
+        Write-Verbose "Auth config incomplete — skipping authentication."
+        Write-Status $S.AuthSkipped 'Green'
+        return $true
+    }
+
+    $clientId = $authConfig.clientId
+
+    # ── Step 1: Request a device code ───────────────────────────────────────
+    Write-Status $S.AuthSigning 'Cyan'
+    [System.Windows.Forms.Application]::DoEvents()
+
+    $deviceCodeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/devicecode'
+    $tokenUrl      = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
+    $scope         = 'openid profile'
+    $grantType     = 'urn:ietf:params:oauth:grant-type:device_code'
+
+    $deviceResponse = $null
+    try {
+        $body = "client_id=$([uri]::EscapeDataString($clientId))&scope=$([uri]::EscapeDataString($scope))"
+        $wc   = New-Object System.Net.WebClient
+        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+        $raw  = $wc.UploadString($deviceCodeUrl, 'POST', $body)
+        $deviceResponse = $raw | ConvertFrom-Json
+    } catch {
+        Write-Verbose "Device code request failed: $_"
+        Write-Status $S.AuthFailed 'Red'
+        Start-Sleep -Seconds 3
+        return $false
+    }
+
+    $userCode   = $deviceResponse.user_code
+    $deviceCode = $deviceResponse.device_code
+    $expiresIn  = if ($deviceResponse.expires_in) { [int]$deviceResponse.expires_in } else { 900 }
+    $interval   = if ($deviceResponse.interval)   { [int]$deviceResponse.interval   } else { 5   }
+
+    # ── Step 2: Show Device Code dialog ─────────────────────────────────────
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text            = 'AmpCloud — Sign In'
+    $dlg.Size            = New-Object System.Drawing.Size(520, 380)
+    $dlg.StartPosition   = 'CenterScreen'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MaximizeBox     = $false
+    $dlg.MinimizeBox     = $false
+    $dlg.BackColor       = [System.Drawing.Color]::White
+    $dlg.Font            = New-Object System.Drawing.Font('Segoe UI', 10)
+
+    # Microsoft logo/label
+    $msLabel = New-Object System.Windows.Forms.Label
+    $msLabel.Text      = 'Microsoft 365'
+    $msLabel.Font      = New-Object System.Drawing.Font('Segoe UI Semibold', 14)
+    $msLabel.ForeColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
+    $msLabel.Location  = New-Object System.Drawing.Point(30, 25)
+    $msLabel.AutoSize  = $true
+    $dlg.Controls.Add($msLabel)
+
+    # Prompt
+    $promptLabel = New-Object System.Windows.Forms.Label
+    $promptLabel.Text     = $S.AuthPrompt
+    $promptLabel.Location = New-Object System.Drawing.Point(30, 75)
+    $promptLabel.Size     = New-Object System.Drawing.Size(450, 50)
+    $promptLabel.Font     = New-Object System.Drawing.Font('Segoe UI', 10)
+    $dlg.Controls.Add($promptLabel)
+
+    # Device code (large, bold, copyable)
+    $codeBox = New-Object System.Windows.Forms.TextBox
+    $codeBox.Text      = $userCode
+    $codeBox.Font      = New-Object System.Drawing.Font('Segoe UI Semibold', 26)
+    $codeBox.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
+    $codeBox.TextAlign = 'Center'
+    $codeBox.ReadOnly  = $true
+    $codeBox.BorderStyle = 'None'
+    $codeBox.BackColor = [System.Drawing.Color]::FromArgb(243, 243, 243)
+    $codeBox.Location  = New-Object System.Drawing.Point(60, 135)
+    $codeBox.Size      = New-Object System.Drawing.Size(380, 55)
+    $dlg.Controls.Add($codeBox)
+
+    # URL
+    $urlLabel = New-Object System.Windows.Forms.Label
+    $urlLabel.Text      = $S.AuthUrl
+    $urlLabel.Font      = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Underline)
+    $urlLabel.ForeColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
+    $urlLabel.Location  = New-Object System.Drawing.Point(30, 210)
+    $urlLabel.AutoSize  = $true
+    $dlg.Controls.Add($urlLabel)
+
+    # Status label
+    $authStatusLabel = New-Object System.Windows.Forms.Label
+    $authStatusLabel.Text      = $S.AuthWaiting
+    $authStatusLabel.Font      = New-Object System.Drawing.Font('Segoe UI', 9)
+    $authStatusLabel.ForeColor = [System.Drawing.Color]::Gray
+    $authStatusLabel.Location  = New-Object System.Drawing.Point(30, 250)
+    $authStatusLabel.Size      = New-Object System.Drawing.Size(450, 25)
+    $dlg.Controls.Add($authStatusLabel)
+
+    # Cancel button
+    $cancelBtn = New-Object System.Windows.Forms.Button
+    $cancelBtn.Text         = 'Cancel'
+    $cancelBtn.Size         = New-Object System.Drawing.Size(120, 40)
+    $cancelBtn.Location     = New-Object System.Drawing.Point(370, 290)
+    $cancelBtn.DialogResult = 'Cancel'
+    $cancelBtn.FlatStyle    = 'Flat'
+    $dlg.Controls.Add($cancelBtn)
+    $dlg.CancelButton = $cancelBtn
+
+    # ── Step 3: Poll for token in a timer ───────────────────────────────────
+    $pollTimer = New-Object System.Windows.Forms.Timer
+    $pollTimer.Interval = $interval * 1000
+    $script:_authExpiry   = [datetime]::UtcNow.AddSeconds($expiresIn)
+    $script:_authResult   = $null
+    $script:_deviceCode   = $deviceCode
+    $script:_clientId     = $clientId
+    $script:_tokenUrl     = $tokenUrl
+    $script:_grantType    = $grantType
+
+    $pollTimer.Add_Tick({
+        if ([datetime]::UtcNow -ge $script:_authExpiry) {
+            $pollTimer.Stop()
+            $authStatusLabel.Text = $S.AuthFailed
+            $authStatusLabel.ForeColor = [System.Drawing.Color]::Red
+            return
+        }
+        try {
+            $body = "grant_type=$([uri]::EscapeDataString($script:_grantType))" +
+                    "&client_id=$([uri]::EscapeDataString($script:_clientId))" +
+                    "&device_code=$([uri]::EscapeDataString($script:_deviceCode))"
+            $wc = New-Object System.Net.WebClient
+            $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+            $raw = $wc.UploadString($script:_tokenUrl, 'POST', $body)
+            $tokenResponse = $raw | ConvertFrom-Json
+            if ($tokenResponse.id_token) {
+                $script:_authResult = $tokenResponse
+                $pollTimer.Stop()
+                $dlg.DialogResult = 'OK'
+                $dlg.Close()
+            }
+        } catch {
+            # Azure AD returns HTTP 400 with authorization_pending while the
+            # user has not yet completed sign-in.  Any other error is a real
+            # failure, but we keep polling until expiry rather than aborting
+            # on transient network errors in WinPE.
+            $msg = $_.ToString()
+            if ($msg -notmatch 'authorization_pending' -and $msg -notmatch 'slow_down') {
+                Write-Verbose "Token poll error: $msg"
+            }
+        }
+    })
+    $pollTimer.Start()
+    $dialogResult = $dlg.ShowDialog()
+    $pollTimer.Stop()
+    $pollTimer.Dispose()
+
+    if ($dialogResult -ne 'OK' -or -not $script:_authResult) {
+        Write-Status $S.AuthFailed 'Red'
+        Start-Sleep -Seconds 3
+        return $false
+    }
+
+    # Tenant restriction is enforced by Entra ID at the app registration level.
+    # If the token was issued successfully, the tenant is allowed.
+    Write-Status $S.AuthSuccess 'Green'
+    Invoke-Sound 1000 200
+    Start-Sleep -Seconds 1
+    return $true
+}
+#endregion
+
 function ProceedToEngine {
     # Guard: prevent double invocation from both timer and WiFi click handler.
     if ($script:EngineStarted) { return }
@@ -1666,6 +1890,20 @@ function ProceedToEngine {
     Invoke-Sound 900 300
     $ringPanel.Visible = $true
     $ringTimer.Start()
+
+    # ── M365 authentication gate ────────────────────────────────────────────
+    # When Config/auth.json has requireAuth = true, the operator must sign in
+    # with a Microsoft 365 account from an allowed Entra ID tenant.
+    # Tenant restrictions are enforced at the app registration level.
+    $authPassed = Invoke-M365DeviceCodeAuth
+    if (-not $authPassed) {
+        $script:EngineStarted = $false   # allow retry after WiFi reconnect
+        $ringTimer.Stop()
+        $ringPanel.Visible = $false
+        return
+    }
+
+    Update-Step 4
 
     # Unified configuration dialog: language + all Windows options in one step.
     $config = Show-ConfigurationMenu

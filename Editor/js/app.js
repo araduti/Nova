@@ -482,7 +482,7 @@ function populateDefaultUnattendContent(steps) {
 }
 
 /* ── Load default task sequence on start ──────────────────────────── */
-(function loadDefault() {
+function loadDefault() {
     Promise.all([
         fetch('../TaskSequence/default.json')
             .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); }),
@@ -510,4 +510,115 @@ function populateDefaultUnattendContent(steps) {
         /* No default file available — start empty */
         renderStepList();
     });
+}
+
+/* ── MSAL Authentication Gate ─────────────────────────────────────── */
+(function initAuth() {
+    const loginOverlay  = document.getElementById('loginOverlay');
+    const btnLogin      = document.getElementById('btnLogin');
+    const btnLogout     = document.getElementById('btnLogout');
+    const loginError    = document.getElementById('loginError');
+    const loginLoading  = document.getElementById('loginLoading');
+    const userName      = document.getElementById('userName');
+    const toolbar       = document.querySelector('.toolbar');
+    const mainLayout    = document.querySelector('.main');
+
+    /** Reveal the editor and hide the login overlay. */
+    function showEditor(account) {
+        loginOverlay.style.display = 'none';
+        toolbar.style.display = '';
+        mainLayout.style.display = '';
+        if (account && account.name) {
+            userName.textContent = account.name;
+            userName.style.display = '';
+            btnLogout.style.display = '';
+        }
+        loadDefault();
+    }
+
+    /** Show the login UI (hide loading text, show button). */
+    function showLoginUI() {
+        loginLoading.style.display = 'none';
+        btnLogin.style.display = '';
+    }
+
+    /* Fetch auth config from the repository. */
+    fetch('../Config/auth.json')
+        .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
+        .then(config => {
+            if (!config.requireAuth || !config.clientId) {
+                /* Auth disabled — show editor immediately. */
+                showEditor(null);
+                return;
+            }
+
+            /* Ensure MSAL loaded from CDN. */
+            if (typeof msal === 'undefined') {
+                loginLoading.style.display = 'none';
+                btnLogin.style.display = 'none';
+                loginError.textContent = 'Authentication library failed to load. Check your network, ad-blocker, or corporate network restrictions.';
+                loginError.style.display = '';
+                return;
+            }
+
+            /* Initialise MSAL */
+            const msalConfig = {
+                auth: {
+                    clientId: config.clientId,
+                    authority: 'https://login.microsoftonline.com/organizations',
+                    redirectUri: window.location.origin + window.location.pathname
+                },
+                cache: { cacheLocation: 'sessionStorage' }
+            };
+            const msalApp = new msal.PublicClientApplication(msalConfig);
+
+            /* Handle redirect response (for redirect flow). */
+            msalApp.handleRedirectPromise().then(response => {
+                if (response && response.account) {
+                    msalApp.setActiveAccount(response.account);
+                    showEditor(response.account);
+                    return;
+                }
+                /* Check if already signed in. */
+                const accounts = msalApp.getAllAccounts();
+                if (accounts.length > 0) {
+                    msalApp.setActiveAccount(accounts[0]);
+                    showEditor(accounts[0]);
+                    return;
+                }
+                /* No session — show login UI. */
+                showLoginUI();
+            }).catch(() => {
+                showLoginUI();
+            });
+
+            /* Sign-in button — only openid + profile are needed; this is a
+               pure identity gate, not an API permission request. */
+            btnLogin.addEventListener('click', () => {
+                loginError.style.display = 'none';
+                msalApp.loginPopup({ scopes: ['openid', 'profile'] })
+                    .then(response => {
+                        msalApp.setActiveAccount(response.account);
+                        showEditor(response.account);
+                    })
+                    .catch(err => {
+                        loginError.textContent = err.message || 'Sign-in failed. Please try again.';
+                        loginError.style.display = '';
+                    });
+            });
+
+            /* Sign-out — reload regardless of outcome to reset UI state. */
+            btnLogout.addEventListener('click', () => {
+                msalApp.logoutPopup().then(() => {
+                    location.reload();
+                }).catch(() => {
+                    /* Popup may be blocked or closed; reload to clear session. */
+                    location.reload();
+                });
+            });
+        })
+        .catch(() => {
+            /* Config not available — show editor without auth. */
+            showEditor(null);
+        });
 })();

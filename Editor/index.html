@@ -5,10 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AmpCloud Task Sequence Editor</title>
     <link rel="stylesheet" href="css/style.css">
+    <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 </head>
 <body>
+
+    <!-- ── Login overlay (visible by default — hidden only after auth) ── -->
+    <div id="loginOverlay" class="login-overlay">
+        <div class="login-card">
+            <div class="login-logo"><span class="logo-icon">&#9729;</span> AmpCloud</div>
+            <h2>Sign in required</h2>
+            <p>You must sign in with your Microsoft 365 account to use the Task Sequence Editor.</p>
+            <button id="btnLogin" class="btn btn-primary login-btn">Sign in with Microsoft</button>
+            <p id="loginError" class="login-error" style="display:none;"></p>
+            <p id="loginLoading" class="login-loading">Checking authentication...</p>
+        </div>
+    </div>
+
     <!-- ── Toolbar ──────────────────────────────────────────────────── -->
-    <header class="toolbar">
+    <header class="toolbar" style="display:none;">
         <div class="toolbar-left">
             <span class="logo"><span class="logo-icon">&#9729;</span> AmpCloud</span>
             <span class="toolbar-sep"></span>
@@ -17,12 +31,14 @@
             <button id="btnSave" class="tb-btn" title="Save as JSON">&#128190; Save</button>
         </div>
         <div class="toolbar-right">
+            <span id="userName" class="user-name" style="display:none;"></span>
+            <button id="btnLogout" class="tb-btn" title="Sign out" style="display:none;">Sign out</button>
             <span id="tsName" class="ts-name" contenteditable="true">Default AmpCloud Task Sequence</span>
         </div>
     </header>
 
     <!-- ── Main layout ──────────────────────────────────────────────── -->
-    <div class="main">
+    <div class="main" style="display:none;">
         <!-- Left: Step list -->
         <aside class="step-list-panel">
             <div class="panel-header">

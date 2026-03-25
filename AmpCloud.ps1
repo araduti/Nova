@@ -1102,10 +1102,10 @@ function Invoke-TaskSequenceStep {
     )
 
     $pct = [math]::Min(100, [math]::Round(($Index / $TotalSteps) * 100))
-    # Bootstrap.ps1 UI shows three progress phases (Step 1/2/3).  Map the
-    # linear step index into those phases: first 40% → phase 1 (disk/image),
-    # next 40% → phase 2 (drivers/config), final 20% → phase 3 (post-scripts).
-    $uiStep = if ($Index -lt ($TotalSteps * 0.4)) { 1 } elseif ($Index -lt ($TotalSteps * 0.8)) { 2 } else { 3 }
+    # Bootstrap.ps1 UI shows four progress steps (Network / Connect / Sign in /
+    # Deploy).  During the deploy phase all four indicators should stay lit, so
+    # always report Step 4 to keep the first three steps highlighted.
+    $uiStep = 4
     $p = $Step.parameters
 
     switch ($Step.type) {

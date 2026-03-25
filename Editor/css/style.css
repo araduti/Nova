@@ -499,3 +499,37 @@ h3::before {
     background: var(--accent);
     color: #fff;
 }
+
+/* ── Login Overlay ─────────────────────────────────────────────────── */
+.login-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+.login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 40px;
+    width: 420px;
+    text-align: center;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.6);
+}
+.login-card .login-logo {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 24px;
+    letter-spacing: 1px;
+}
+.login-card .login-logo .logo-icon { margin-right: 6px; }
+.login-card h2 { font-size: 17px; margin-bottom: 10px; color: #fff; }
+.login-card p { color: var(--text-muted); margin-bottom: 20px; font-size: 13px; line-height: 1.5; }
+.login-btn { width: 100%; padding: 12px 18px; font-size: 14px; }
+.login-error { color: var(--danger); font-size: 12px; margin-top: 14px; }
+.login-loading { color: var(--text-muted); font-size: 12px; margin-top: 14px; }
+.user-name { color: var(--text-muted); font-size: 12px; margin-right: 6px; }
