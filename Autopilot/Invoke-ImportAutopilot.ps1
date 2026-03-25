@@ -1,9 +1,23 @@
-# Import utility functions
+# Import utility functions (provides Get-GraphToken, Test-AutopilotStatus)
 . "$PSScriptRoot\Utils.ps1"
 
 Start-Transcript -Path "X:\OSDCloud\Logs\Invoke-ImportAutopilot.log" -Force
 
 function Import-AutopilotDevice {
+    <#
+    .SYNOPSIS  Imports the current device into Windows Autopilot via the Microsoft Graph API.
+    .DESCRIPTION
+        Generates a hardware hash using oa3tool.exe, checks whether the device
+        is already registered in Autopilot, and if not, uploads the device
+        identity via the Graph API.  Uses delegated permissions — no app
+        registration secret is required.  The access token comes from the
+        M365 sign-in flow (Get-GraphToken).
+    .PARAMETER GroupTag
+        Autopilot group tag to assign to the device (alphanumeric, hyphens,
+        underscores; max 100 characters).
+    .PARAMETER UserEmail
+        Optional user principal name to assign to the device.
+    #>
     param(
         [Parameter(Mandatory = $true)]
         [string]$GroupTag,
@@ -91,21 +105,28 @@ function Import-AutopilotDevice {
             Write-Host "Status: Failed to get Graph token"
             return @{ Success = $false; Message = "Failed to get Graph token" }
         }
-        Write-Host "Status: Uploading device information to Intune..."
-        $GraphAddresses = [System.Net.Dns]::GetHostAddresses("graph.microsoft.com") |
-        Where-Object { $_.AddressFamily -eq 'InterNetwork' } |
-        Select-Object -First 1
-        if (-not $GraphAddresses) {
-            Write-Host "Status: Could not resolve Graph API endpoint"
-            return @{ Success = $false; Message = "Could not resolve graph.microsoft.com" }
+
+        # ── Check if the device is already registered in Autopilot ──────────
+        Write-Host "Status: Checking if device is already registered in Autopilot..."
+        $existingStatus = Test-AutopilotStatus -SerialNumber $SerialNumber -Token $GraphToken
+        if ($existingStatus.Success -and $existingStatus.IsRegistered) {
+            Write-Host "Status: Device is already registered in Autopilot — skipping import"
+            Write-Host "Status: Group Tag: $($existingStatus.GroupTag)"
+            Write-Host "Status: Profile: $($existingStatus.Profile)"
+            return @{
+                Success  = $true
+                Message  = "Device is already registered in Autopilot"
+                GroupTag = $existingStatus.GroupTag
+                Profile  = $existingStatus.Profile
+            }
         }
-        $GraphIP = $GraphAddresses.IPAddressToString
-        Write-Host "Status: Connected to Graph API endpoint"
-        $UploadResponse = Invoke-RestMethod -Uri "https://$GraphIP/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities" `
-            -Headers @{ 
+        Write-Host "Status: Device not found in Autopilot — proceeding with import"
+
+        Write-Host "Status: Uploading device information to Intune..."
+        $UploadResponse = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities" `
+            -Headers @{
             'Authorization' = "Bearer $GraphToken"
             'Content-Type'  = 'application/json'
-            'Host'          = 'graph.microsoft.com'
         } -Method POST -Body $RequestBody
 
         Write-Host "Status: Device information uploaded successfully"

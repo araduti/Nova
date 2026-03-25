@@ -1090,6 +1090,33 @@ function Build-WinPE {
             Write-Warn 'Edge browser not found on build machine — sign-in will use Device Code Flow.'
         }
 
+        # ── 4f. Stage Autopilot tools for API-based device import ─────────────
+        # When autopilotImport is enabled in Config/auth.json, the Autopilot
+        # tools (oa3tool.exe, PCPKsp.dll, OA3.cfg, Invoke-ImportAutopilot.ps1,
+        # Utils.ps1) are staged into the WinPE image so that Bootstrap.ps1 can
+        # register the device in Autopilot via the Microsoft Graph API using
+        # delegated permissions from the M365 sign-in token (no client secret).
+        $autopilotSrc = Join-Path $PSScriptRoot 'Autopilot'
+        if (Test-Path $autopilotSrc) {
+            $customDest = Join-Path $paths.MountDir 'OSDCloud\Config\Scripts\Custom'
+            $null = New-Item -Path $customDest -ItemType Directory -Force
+            $autopilotFiles = @('oa3tool.exe', 'PCPKsp.dll', 'OA3.cfg',
+                                'Invoke-ImportAutopilot.ps1', 'Utils.ps1')
+            $staged = 0
+            foreach ($f in $autopilotFiles) {
+                $src = Join-Path $autopilotSrc $f
+                if (Test-Path $src) {
+                    Copy-Item $src -Destination $customDest -Force
+                    $staged++
+                }
+            }
+            if ($staged -gt 0) {
+                Write-Success "Autopilot tools staged ($staged files) for API-based device import."
+            } else {
+                Write-Warn 'Autopilot directory found but no tool files present.'
+            }
+        }
+
         # ── 5. Embed Bootstrap.ps1 ────────────────────────────────────────────
         $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
@@ -1789,6 +1816,16 @@ function Invoke-M365DeviceCodeAuth {
 
     $clientId = $authConfig.clientId
 
+    # ── Build scope string ──────────────────────────────────────────────────
+    # Always include openid profile; append Graph API scopes when configured
+    # (e.g. DeviceManagementServiceConfig.ReadWrite.All for Autopilot import).
+    # Delegated permissions — no client secret required.
+    $scope = 'openid profile'
+    if ($authConfig.graphScopes) {
+        $trimmed = ($authConfig.graphScopes).Trim()
+        if ($trimmed) { $scope = "openid profile $trimmed" }
+    }
+
     # ── Step 1: Generate PKCE code verifier and challenge (RFC 7636) ────────
     Write-Step 'Signing in with Microsoft 365...'
 
@@ -1821,7 +1858,7 @@ function Invoke-M365DeviceCodeAuth {
                 "client_id=$([uri]::EscapeDataString($clientId))" +
                 '&response_type=code' +
                 "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-                "&scope=$([uri]::EscapeDataString('openid profile'))" +
+                "&scope=$([uri]::EscapeDataString($scope))" +
                 "&code_challenge=$codeChallenge" +
                 '&code_challenge_method=S256' +
                 '&prompt=select_account'
@@ -1866,7 +1903,7 @@ function Invoke-M365DeviceCodeAuth {
             "client_id=$([uri]::EscapeDataString($clientId))" +
             '&response_type=code' +
             "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-            "&scope=$([uri]::EscapeDataString('openid profile'))" +
+            "&scope=$([uri]::EscapeDataString($scope))" +
             "&code_challenge=$codeChallenge" +
             '&code_challenge_method=S256' +
             '&prompt=select_account'
@@ -1926,7 +1963,7 @@ function Invoke-M365DeviceCodeAuth {
     $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
     try {
         $body = "client_id=$([uri]::EscapeDataString($clientId))" +
-                "&scope=$([uri]::EscapeDataString('openid profile'))" +
+                "&scope=$([uri]::EscapeDataString($scope))" +
                 "&code=$([uri]::EscapeDataString($code))" +
                 "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
                 '&grant_type=authorization_code' +
@@ -1936,6 +1973,9 @@ function Invoke-M365DeviceCodeAuth {
         $raw = $wc.UploadString($tokenUrl, 'POST', $body)
         $tokenResponse = $raw | ConvertFrom-Json
         if ($tokenResponse.id_token) {
+            if ($tokenResponse.access_token) {
+                $script:GraphAccessToken = $tokenResponse.access_token
+            }
             Write-Success 'Identity verified.'
             return $true
         }
