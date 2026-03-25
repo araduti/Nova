@@ -580,7 +580,7 @@ $form.Add_Paint({
 
     # Use embedded background image when available; fall back to gradient.
     if ($null -ne $script:BackgroundImage -and -not $script:IsDarkMode) {
-        $g.InterpolationMode = 'HighQualityBicubic'
+        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
         $g.DrawImage($script:BackgroundImage, 0, 0, $cw, $ch)
     } else {
         $gTop = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
@@ -1078,7 +1078,7 @@ function Show-CompletionScreen {
         $fh = $finalForm.ClientSize.Height
         if ($fw -le 0 -or $fh -le 0) { return }
         if ($null -ne $script:BackgroundImage -and -not $script:IsDarkMode) {
-            $g.InterpolationMode = 'HighQualityBicubic'
+            $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
             $g.DrawImage($script:BackgroundImage, 0, 0, $fw, $fh)
         } else {
             $gt = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
@@ -1272,7 +1272,8 @@ function Show-ConfigurationMenu {
         return $defaultResult
     }
 
-    $langMap = @{ 'EN' = 'en-us'; 'FR' = 'fr-fr'; 'ES' = 'es-es' }
+    $langMap   = @{ 'EN' = 'en-us'; 'FR' = 'fr-fr'; 'ES' = 'es-es' }
+    $langCodes = @('EN', 'FR', 'ES')   # maps combo index → language code
 
     # Helper: get x64 editions for a given catalog language code.
     $getEditions = {
@@ -1414,7 +1415,7 @@ function Show-ConfigurationMenu {
     # Helper: populate edition combo with a pre-selected default.
     $populateEditions = {
         param([int]$LangIdx)
-        $langCode    = switch ($LangIdx) { 0 { 'EN' } 1 { 'FR' } 2 { 'ES' } default { 'EN' } }
+        $langCode    = if ($LangIdx -ge 0 -and $LangIdx -lt $langCodes.Count) { $langCodes[$LangIdx] } else { 'EN' }
         $catalogLang = if ($langMap.ContainsKey($langCode)) { $langMap[$langCode] } else { 'en-us' }
         $editions    = & $getEditions $catalogLang
         $edCombo.Items.Clear()
@@ -1441,17 +1442,6 @@ function Show-ConfigurationMenu {
     # Initial population (English by default).
     & $populateEditions 0
 
-    # When the user changes language, refresh editions and update labels.
-    $langCombo.Add_SelectedIndexChanged({
-        & $populateEditions $langCombo.SelectedIndex
-        $lCode  = switch ($langCombo.SelectedIndex) { 0 { 'EN' } 1 { 'FR' } 2 { 'ES' } default { 'EN' } }
-        $tmpS   = $Strings[$lCode]
-        $subLbl.Text   = $tmpS.ConfigSubtitle
-        $langLabel.Text = $tmpS.ConfigLang
-        $edLabel.Text  = $tmpS.ConfigEdition
-        $btn.Text      = "$($tmpS.ConfigBtn)  $([char]0x2192)"
-    })
-
     # ── Continue button ─────────────────────────────────────────────────────
     $btn = New-Object System.Windows.Forms.Button
     $btn.Text                      = "$($S.ConfigBtn)  $([char]0x2192)"
@@ -1467,6 +1457,17 @@ function Show-ConfigurationMenu {
     $card.Controls.Add($btn)
     $dlg.AcceptButton = $btn
 
+    # When the user changes language, refresh editions and update labels.
+    $langCombo.Add_SelectedIndexChanged({
+        & $populateEditions $langCombo.SelectedIndex
+        $lCode  = if ($langCombo.SelectedIndex -ge 0 -and $langCombo.SelectedIndex -lt $langCodes.Count) { $langCodes[$langCombo.SelectedIndex] } else { 'EN' }
+        $tmpS   = $Strings[$lCode]
+        $subLbl.Text    = $tmpS.ConfigSubtitle
+        $langLabel.Text = $tmpS.ConfigLang
+        $edLabel.Text   = $tmpS.ConfigEdition
+        $btn.Text       = "$($tmpS.ConfigBtn)  $([char]0x2192)"
+    })
+
     # ── Company logo (bottom-right of card) ─────────────────────────────────
     $cfgBrand = New-Object System.Windows.Forms.Label
     $cfgBrand.Text      = 'ampliosoft'
@@ -1479,13 +1480,8 @@ function Show-ConfigurationMenu {
     $card.Controls.Add($cfgBrand)
 
     if ($dlg.ShowDialog() -eq 'OK') {
-        $langCode = switch ($langCombo.SelectedIndex) {
-            0 { 'EN' }
-            1 { 'FR' }
-            2 { 'ES' }
-            default { 'EN' }
-        }
-        $edition = if ($null -ne $edCombo.SelectedItem) { $edCombo.SelectedItem.ToString() } else { '' }
+        $langCode = if ($langCombo.SelectedIndex -ge 0 -and $langCombo.SelectedIndex -lt $langCodes.Count) { $langCodes[$langCombo.SelectedIndex] } else { 'EN' }
+        $edition  = if ($null -ne $edCombo.SelectedItem) { $edCombo.SelectedItem.ToString() } else { '' }
         return @{ Language = $langCode; Edition = $edition }
     }
     return $defaultResult
