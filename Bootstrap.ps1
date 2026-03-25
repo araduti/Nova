@@ -1681,23 +1681,44 @@ function Show-ConfigurationMenu {
 
 #region ── M365 Authentication ────────────────────────────────────────────────
 
-function Invoke-M365BrowserAuth {
+function Invoke-M365WebView2Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via an embedded mini-browser (Auth Code + PKCE).
+    .SYNOPSIS  Authenticate the operator via an embedded WebView2 browser (Auth Code + PKCE).
     .DESCRIPTION
-        Opens a WinForms dialog containing a WebBrowser control that navigates
-        to the Azure AD authorization endpoint.  The user signs in directly
-        inside the embedded browser — no codes to copy or external devices
-        needed.  The control intercepts the localhost redirect carrying the
+        Opens a WinForms dialog containing a WebView2 (Chromium) control that
+        navigates to the Azure AD authorization endpoint.  The user signs in
+        directly inside the embedded browser — no codes to copy or external
+        devices needed.  The control intercepts the redirect carrying the
         authorization code, then exchanges it for tokens using PKCE.
-        Requires IE 11 emulation mode to be pre-configured in the WinPE
-        registry (injected by Trigger.ps1 Build-WinPE step 4e).
+        Requires the WebView2 runtime and managed DLLs to be pre-staged in
+        the WinPE image at X:\WebView2 (done by Trigger.ps1 Build-WinPE
+        step 4e).  Special Chromium flags (--disable-gpu, SwiftShader, etc.)
+        are used to ensure rendering works in the WinPE environment.
     .PARAMETER ClientId
         Azure AD application (client) ID.
     .OUTPUTS
         $true on success, $false on failure or cancellation.
     #>
     param([string] $ClientId)
+
+    $webViewPath = 'X:\WebView2'
+
+    # ── Verify WebView2 prerequisites ───────────────────────────────────────
+    $coreDll     = Join-Path $webViewPath 'Microsoft.Web.WebView2.Core.dll'
+    $winFormsDll = Join-Path $webViewPath 'Microsoft.Web.WebView2.WinForms.dll'
+    if (-not (Test-Path $coreDll) -or -not (Test-Path $winFormsDll)) {
+        Write-Verbose "WebView2 DLLs not found at $webViewPath — skipping browser auth."
+        return $false
+    }
+
+    try {
+        $env:PATH = "$webViewPath;$env:PATH"
+        Add-Type -Path $coreDll
+        Add-Type -Path $winFormsDll
+    } catch {
+        Write-Verbose "Failed to load WebView2 assemblies: $_"
+        return $false
+    }
 
     # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────
     $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -1709,9 +1730,11 @@ function Invoke-M365BrowserAuth {
     $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
     $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
 
-    # Redirect to localhost on a random ephemeral port.
-    $port        = Get-Random -Minimum 49152 -Maximum 65536
-    $redirectUri = "http://localhost:$port/"
+    # Redirect to a fixed localhost URI.  For Azure AD public client apps
+    # registered with the "Mobile and desktop applications" platform,
+    # http://localhost redirects are allowed by default (RFC 8252 §7.3)
+    # without explicit registration.
+    $redirectUri = 'http://localhost/auth'
 
     # ── Build the authorize URL ─────────────────────────────────────────────
     $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
@@ -1722,6 +1745,36 @@ function Invoke-M365BrowserAuth {
         "&code_challenge=$codeChallenge" +
         '&code_challenge_method=S256' +
         '&prompt=select_account'
+
+    # ── Create WebView2 environment with WinPE-safe flags ──────────────────
+    # WinPE has no GPU hardware or driver stack.  These flags force Chromium
+    # to use SwiftShader (software OpenGL ES implementation) for rendering.
+    # --enable-unsafe-swiftshader is required because SwiftShader is normally
+    # blocked in elevated/SYSTEM contexts; in WinPE there is no alternative.
+    $options = New-Object Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions
+    $options.AdditionalBrowserArguments =
+        '--disable-gpu --disable-gpu-compositing --disable-direct-composition ' +
+        '--use-angle=swiftshader --enable-unsafe-swiftshader --in-process-gpu'
+
+    $userDataFolder = 'X:\Temp\WebView2Data'
+    if (-not (Test-Path $userDataFolder)) {
+        $null = New-Item -Path $userDataFolder -ItemType Directory -Force
+    }
+
+    # Locate the browser runtime folder (contains msedgewebview2.exe).
+    $runtimeFolder = $null
+    $edgeDir = Join-Path $webViewPath 'Edge'
+    if (Test-Path $edgeDir) { $runtimeFolder = $edgeDir }
+
+    $environment = $null
+    try {
+        $envTask     = [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::CreateAsync(
+                           $runtimeFolder, $userDataFolder, $options)
+        $environment = $envTask.GetAwaiter().GetResult()
+    } catch {
+        Write-Verbose "WebView2 environment creation failed: $_"
+        return $false
+    }
 
     # ── Create the browser dialog ───────────────────────────────────────────
     $dlg = New-Object System.Windows.Forms.Form
@@ -1751,12 +1804,11 @@ function Invoke-M365BrowserAuth {
     $promptLabel.Font     = New-Object System.Drawing.Font('Segoe UI', 9)
     $dlg.Controls.Add($promptLabel)
 
-    # Embedded WebBrowser control
-    $browser = New-Object System.Windows.Forms.WebBrowser
-    $browser.Location     = New-Object System.Drawing.Point(10, 78)
-    $browser.Size         = New-Object System.Drawing.Size(492, 490)
-    $browser.ScriptErrorsSuppressed = $true
-    $dlg.Controls.Add($browser)
+    # WebView2 control
+    $webView = New-Object Microsoft.Web.WebView2.WinForms.WebView2
+    $webView.Location = New-Object System.Drawing.Point(10, 78)
+    $webView.Size     = New-Object System.Drawing.Size(492, 490)
+    $dlg.Controls.Add($webView)
 
     # Cancel button
     $cancelBtn = New-Object System.Windows.Forms.Button
@@ -1768,28 +1820,37 @@ function Invoke-M365BrowserAuth {
     $dlg.Controls.Add($cancelBtn)
     $dlg.CancelButton = $cancelBtn
 
-    # ── Intercept navigation to capture the authorization code ──────────────
-    $script:_browserAuthCode  = $null
-    $script:_browserAuthError = $null
+    # ── Initialize WebView2 and set up navigation interception ──────────────
+    $script:_wv2AuthCode  = $null
+    $script:_wv2AuthError = $null
 
-    $browser.Add_Navigating({
+    try {
+        $initTask = $webView.EnsureCoreWebView2Async($environment)
+        $initTask.GetAwaiter().GetResult()
+    } catch {
+        Write-Verbose "WebView2 control initialization failed: $_"
+        $dlg.Dispose()
+        return $false
+    }
+
+    # Intercept navigation to capture the authorization code.
+    $webView.CoreWebView2.Add_NavigationStarting({
         param($sender, $e)
-        $url = $e.Url.ToString()
-        # Check if this is the localhost redirect carrying the auth code.
+        $url = $e.Uri
         if ($url.StartsWith($redirectUri, [StringComparison]::OrdinalIgnoreCase)) {
             $e.Cancel = $true
-            # Parse the authorization code or error from the query string.
-            $query = $e.Url.Query
+            $parsed = New-Object System.Uri($url)
+            $query  = $parsed.Query
             if ($query) {
                 foreach ($pair in $query.TrimStart('?').Split('&')) {
                     $kv = $pair.Split('=', 2)
                     if ($kv.Count -eq 2) {
-                        if ($kv[0] -eq 'code')  { $script:_browserAuthCode  = [uri]::UnescapeDataString($kv[1]) }
-                        if ($kv[0] -eq 'error') { $script:_browserAuthError = [uri]::UnescapeDataString($kv[1]) }
+                        if ($kv[0] -eq 'code')  { $script:_wv2AuthCode  = [uri]::UnescapeDataString($kv[1]) }
+                        if ($kv[0] -eq 'error') { $script:_wv2AuthError = [uri]::UnescapeDataString($kv[1]) }
                     }
                 }
             }
-            if ($script:_browserAuthCode) {
+            if ($script:_wv2AuthCode) {
                 $dlg.DialogResult = 'OK'
             } else {
                 $dlg.DialogResult = 'Abort'
@@ -1799,12 +1860,21 @@ function Invoke-M365BrowserAuth {
     })
 
     # Navigate to Azure AD login page.
-    $browser.Navigate($authorizeUrl)
+    $webView.CoreWebView2.Navigate($authorizeUrl)
     $dialogResult = $dlg.ShowDialog()
 
-    if ($dialogResult -ne 'OK' -or -not $script:_browserAuthCode) {
-        if ($script:_browserAuthError) {
-            Write-Verbose "Browser auth error: $($script:_browserAuthError)"
+    # Dispose WebView2 and dialog to release Chromium process.
+    try { $webView.Dispose() } catch { Write-Verbose "WebView2 disposal: $_" }
+    try { $dlg.Dispose()     } catch { Write-Verbose "Dialog disposal: $_" }
+
+    # Clean up WebView2 user data (cookies, cache) to prevent credential leakage.
+    if (Test-Path $userDataFolder) {
+        try { Remove-Item $userDataFolder -Recurse -Force } catch {}
+    }
+
+    if ($dialogResult -ne 'OK' -or -not $script:_wv2AuthCode) {
+        if ($script:_wv2AuthError) {
+            Write-Verbose "WebView2 auth error: $($script:_wv2AuthError)"
         }
         return $false
     }
@@ -1814,7 +1884,7 @@ function Invoke-M365BrowserAuth {
     try {
         $body = "client_id=$([uri]::EscapeDataString($ClientId))" +
                 "&scope=$([uri]::EscapeDataString('openid profile'))" +
-                "&code=$([uri]::EscapeDataString($script:_browserAuthCode))" +
+                "&code=$([uri]::EscapeDataString($script:_wv2AuthCode))" +
                 "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
                 '&grant_type=authorization_code' +
                 "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
@@ -1836,9 +1906,9 @@ function Invoke-M365DeviceCodeAuth {
     <#
     .SYNOPSIS  Authenticate the operator via Device Code Flow (fallback).
     .DESCRIPTION
-        Fallback authentication path used when the embedded mini-browser is
-        not available.  Initiates the Device Code Flow and shows a WinForms
-        dialog with the one-time code and verification URL.
+        Fallback authentication path used when the WebView2 runtime is not
+        available in the WinPE image.  Initiates the Device Code Flow and
+        shows a WinForms dialog with the one-time code and verification URL.
     .PARAMETER ClientId
         Azure AD application (client) ID.
     .OUTPUTS
@@ -1983,13 +2053,14 @@ function Invoke-M365DeviceCodeAuth {
 
 function Invoke-M365Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via M365 (browser-first, device code fallback).
+    .SYNOPSIS  Authenticate the operator via M365 (WebView2 browser, Device Code fallback).
     .DESCRIPTION
         Downloads Config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
-        first attempts interactive sign-in via an embedded mini-browser
-        (Authorization Code Flow with PKCE).  If the browser control is
-        unavailable or fails, it falls back to Device Code Flow.
+        first attempts interactive sign-in via an embedded WebView2
+        (Chromium) browser (Authorization Code Flow with PKCE).  If
+        the WebView2 runtime is not present or fails, it falls back to
+        Device Code Flow.
         Tenant restrictions are enforced at the Entra ID app registration
         level — only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
@@ -2027,16 +2098,16 @@ function Invoke-M365Auth {
     Write-Status $S.AuthSigning 'Cyan'
     [System.Windows.Forms.Application]::DoEvents()
 
-    # ── Try embedded mini-browser first ─────────────────────────────────────
-    # The WebBrowser control works when IE 11 emulation is configured in the
-    # registry (done by Trigger.ps1 Build-WinPE step 4e).  If it fails for
-    # any reason (missing emulation key, COM error, script error on the login
-    # page), fall back to Device Code Flow transparently.
+    # ── Try WebView2 (Chromium) browser first ───────────────────────────────
+    # The WebView2 control uses the Chromium engine and renders modern Azure
+    # AD login pages correctly in WinPE.  Requires the runtime to be embedded
+    # during Build-WinPE (step 4e).  If the runtime is not present or fails,
+    # fall back to Device Code Flow transparently.
     $browserOk = $false
     try {
-        $browserOk = Invoke-M365BrowserAuth -ClientId $clientId
+        $browserOk = Invoke-M365WebView2Auth -ClientId $clientId
     } catch {
-        Write-Verbose "Embedded browser auth failed, will fall back to Device Code Flow: $_"
+        Write-Verbose "WebView2 auth failed, will fall back to Device Code Flow: $_"
     }
 
     if ($browserOk) {
@@ -2084,8 +2155,9 @@ function ProceedToEngine {
     # When Config/auth.json has requireAuth = true, the operator must sign in
     # with a Microsoft 365 account from an allowed Entra ID tenant.
     # Tenant restrictions are enforced at the app registration level.
-    # Uses the embedded mini-browser (Auth Code + PKCE) with automatic
-    # fallback to Device Code Flow if the browser control is unavailable.
+    # Uses an embedded WebView2 (Chromium) browser with Auth Code + PKCE as
+    # the primary method; falls back to Device Code Flow if the WebView2
+    # runtime is not present in the WinPE image.
     $authPassed = Invoke-M365Auth
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect
