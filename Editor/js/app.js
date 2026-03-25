@@ -566,7 +566,7 @@ function loadDefault() {
                 auth: {
                     clientId: config.clientId,
                     authority: 'https://login.microsoftonline.com/organizations',
-                    redirectUri: window.location.origin + window.location.pathname
+                    redirectUri: config.redirectUri || (window.location.origin + window.location.pathname)
                 },
                 cache: { cacheLocation: 'sessionStorage' }
             };

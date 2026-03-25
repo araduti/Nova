@@ -278,7 +278,8 @@ Tenant restrictions are managed directly in the **Entra ID app registration** un
    ```json
    {
        "requireAuth": true,
-       "clientId": "YOUR-APPLICATION-CLIENT-ID"
+       "clientId": "YOUR-APPLICATION-CLIENT-ID",
+       "redirectUri": "https://yourusername.github.io/AmpCloud/Editor/"
    }
    ```
 
@@ -286,6 +287,7 @@ Tenant restrictions are managed directly in the **Entra ID app registration** un
    |-------|-------------|
    | `requireAuth` | Set to `true` to enforce authentication. When `false` (default), auth is skipped. |
    | `clientId` | The Application (client) ID from your Azure AD app registration. |
+   | `redirectUri` | The redirect URI registered in your app registration under **Single-page application** platform. Must match exactly. |
 
 ---
 
