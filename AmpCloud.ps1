@@ -237,6 +237,42 @@ function Invoke-DownloadWithProgress {
 
 #endregion
 
+#region ── Firmware Detection ──────────────────────────────────────────────────
+
+function Get-FirmwareType {
+    <#
+    .SYNOPSIS  Returns 'UEFI' or 'BIOS' using multiple detection methods.
+
+    .NOTES
+        Primary:   PEFirmwareType registry value (1 = BIOS, 2 = UEFI).
+        Fallback:  Confirm-SecureBootUEFI — available on all Win8+ systems; throws
+                   System.PlatformNotSupportedException on non-UEFI firmware, returns
+                   $true/$false on UEFI (regardless of Secure Boot state).
+    #>
+    # Primary: PEFirmwareType registry value written by the kernel at boot
+    try {
+        $val = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control' `
+                                 -Name PEFirmwareType -ErrorAction Stop).PEFirmwareType
+        if ($val -eq 2) { return 'UEFI' }
+        if ($val -eq 1) { return 'BIOS' }
+        # Any other value (e.g. 0 = unknown) — fall through to secondary check
+    } catch { Write-Verbose "Registry firmware type unavailable: $_" }
+
+    # Fallback: Confirm-SecureBootUEFI throws PlatformNotSupportedException on BIOS
+    try {
+        $null = Confirm-SecureBootUEFI   # $true (SB on) or $false (SB off) on UEFI
+        return 'UEFI'
+    } catch [System.PlatformNotSupportedException] {
+        return 'BIOS'
+    } catch {
+        Write-Warn "Confirm-SecureBootUEFI failed ($($_.Exception.Message)) — assuming UEFI."
+    }
+
+    return 'UEFI'
+}
+
+#endregion
+
 #region ── Disk Partitioning ────────────────────────────────────────────────────
 
 function Initialize-TargetDisk {
@@ -1011,6 +1047,13 @@ Write-Host @"
 
  Cloud-only Imaging Engine · amd64/x86 · https://github.com/$GitHubUser/$GitHubRepo
 "@ -ForegroundColor Cyan
+
+# Auto-detect firmware type when the caller did not provide one explicitly.
+# Bootstrap.ps1 may not always pass -FirmwareType, so falling back to runtime
+# detection prevents creating a GPT/UEFI layout on a BIOS system (black screen).
+if (-not $PSBoundParameters.ContainsKey('FirmwareType')) {
+    $FirmwareType = Get-FirmwareType
+}
 
 $stepName = ''
 try {
