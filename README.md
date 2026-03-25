@@ -251,14 +251,14 @@ Tenant restrictions are managed directly in the **Entra ID app registration** un
 
 **What is protected:**
 
-- **Deployment engine** (Bootstrap.ps1) — after network connectivity, operators must complete M365 Device Code Flow sign-in before imaging proceeds
+- **Deployment engine** (Bootstrap.ps1) — after network connectivity, operators sign in via an **embedded mini-browser** (Authorization Code Flow with PKCE) directly inside WinPE. Falls back to Device Code Flow if the browser control is unavailable.
 - **Task Sequence Editor** (web UI) — a login overlay blocks the editor until the user signs in via MSAL popup
 
 **How it works:**
 
 1. Both the engine and editor fetch [`Config/auth.json`](Config/auth.json) to check if authentication is required.
 2. If `requireAuth` is `true`, sign-in is enforced.
-3. In WinPE (no browser), the engine shows a **Device Code Flow** dialog with a one-time code and `https://microsoft.com/devicelogin`.
+3. In WinPE, the engine opens an **embedded browser window** (WinForms WebBrowser control) showing the Azure AD login page. The operator signs in directly — no codes to copy or external devices needed. If the embedded browser is unavailable, it transparently falls back to **Device Code Flow** with a one-time code and `https://microsoft.com/devicelogin`.
 4. In the browser (editor), MSAL.js shows a popup sign-in window.
 5. Azure AD enforces tenant restrictions at the app registration level — only allowed tenants can complete sign-in.
 
@@ -269,8 +269,9 @@ Tenant restrictions are managed directly in the **Entra ID app registration** un
    - Name: e.g. `AmpCloud`
    - Supported account types: **Accounts in any organizational directory** (multi-tenant)
    - Under **Authentication → Supported accounts**, select **Allow only certain tenants** and add the tenant IDs you want to allow
-   - Under **Authentication → Advanced settings**, enable **Allow public client flows** (required for Device Code Flow in WinPE)
+   - Under **Authentication → Advanced settings**, enable **Allow public client flows** (required for Device Code Flow fallback in WinPE)
    - Under **Authentication → Platform configurations → Single-page application**, add your GitHub Pages URL as a redirect URI (e.g. `https://yourusername.github.io/AmpCloud/Editor/`)
+   - Under **Authentication → Platform configurations → Mobile and desktop applications**, add `http://localhost` as a redirect URI (required for the embedded mini-browser in WinPE)
    - Note the **Application (client) ID**
 
 2. **Configure `Config/auth.json`:**
