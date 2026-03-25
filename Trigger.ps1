@@ -1573,8 +1573,9 @@ function Install-WebView2SDK {
     # Download the NuGet package (latest stable).
     $zipPath = Join-Path $sdkDir 'Microsoft.Web.WebView2.nupkg'
     try {
-        $wc = New-Object System.Net.WebClient
-        $wc.DownloadFile('https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2', $zipPath)
+        $prevPref = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'
+        try     { Invoke-WebRequest -Uri 'https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2' -OutFile $zipPath -UseBasicParsing }
+        finally { $ProgressPreference = $prevPref }
     } catch {
         Write-Verbose "WebView2 NuGet download failed: $_"
         return $null
@@ -1659,7 +1660,7 @@ function Show-WebView2AuthPopup {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     while (-not $envTask.IsCompleted -and $sw.ElapsedMilliseconds -lt 30000) {
         [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 50
+        Start-Sleep -Milliseconds 100
     }
     if (-not $envTask.IsCompleted -or $envTask.IsFaulted) {
         $ex = if ($envTask.Exception) { $envTask.Exception.InnerException } else { $null }
@@ -1686,7 +1687,7 @@ function Show-WebView2AuthPopup {
     $sw.Restart()
     while (-not $initTask.IsCompleted -and $sw.ElapsedMilliseconds -lt 30000) {
         [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 50
+        Start-Sleep -Milliseconds 100
     }
     if (-not $initTask.IsCompleted -or $initTask.IsFaulted) {
         try { $wv2.Dispose() } catch {}
@@ -1730,7 +1731,8 @@ function Show-WebView2AuthPopup {
 
     # Remove cached cookies/data to prevent credential leakage.
     if (Test-Path $userDataDir) {
-        try { Remove-Item $userDataDir -Recurse -Force } catch {}
+        try { Remove-Item $userDataDir -Recurse -Force }
+        catch { Write-Verbose "WebView2 user-data cleanup failed (credentials may persist): $_" }
     }
 
     if ($dialogResult -eq 'OK' -and $script:_wv2PopupCode) {
