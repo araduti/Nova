@@ -355,7 +355,7 @@ $addOk.addEventListener('click', () => {
     $addDialog.style.display = 'none';
     const def = typeMap[addDialogChoice];
     const newStep = {
-        id: addDialogChoice.toLowerCase() + '-' + Date.now(),
+        id: addDialogChoice.toLowerCase() + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
         name: def.label,
         type: addDialogChoice,
         enabled: true,

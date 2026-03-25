@@ -1064,6 +1064,10 @@ function Read-TaskSequence {
     if (-not $ts.steps -or $ts.steps -isnot [System.Collections.IEnumerable]) {
         throw "Invalid task sequence file: missing 'steps' array"
     }
+    foreach ($s in $ts.steps) {
+        if (-not $s.type) { throw "Invalid task sequence: step '$($s.name)' is missing required 'type' property" }
+        if (-not $s.name) { throw "Invalid task sequence: a step with type '$($s.type)' is missing required 'name' property" }
+    }
     Write-Success "Loaded task sequence '$($ts.name)' with $($ts.steps.Count) steps"
     return $ts
 }
@@ -1089,6 +1093,9 @@ function Invoke-TaskSequenceStep {
     )
 
     $pct = [math]::Min(100, [math]::Round(($Index / $TotalSteps) * 100))
+    # Bootstrap.ps1 UI shows three progress phases (Step 1/2/3).  Map the
+    # linear step index into those phases: first 40% → phase 1 (disk/image),
+    # next 40% → phase 2 (drivers/config), final 20% → phase 3 (post-scripts).
     $uiStep = if ($Index -lt ($TotalSteps * 0.4)) { 1 } elseif ($Index -lt ($TotalSteps * 0.8)) { 2 } else { 3 }
     $p = $Step.parameters
 
