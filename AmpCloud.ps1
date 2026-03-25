@@ -57,8 +57,9 @@ param(
     [string]$CCMSetupUrl = '',        # URL to ccmsetup.exe
 
     # OOBE customization
-    [string]$UnattendUrl  = '',       # URL to unattend.xml
-    [string]$UnattendPath = '',       # OR local path
+    [string]$UnattendUrl     = '',       # URL to unattend.xml
+    [string]$UnattendPath    = '',       # OR local path
+    [string]$UnattendContent = '',       # OR inline XML content from the editor
 
     # Post-provisioning scripts
     [string[]]$PostScriptUrls = @(),  # URLs to PS1 scripts to run after imaging
@@ -931,6 +932,7 @@ function Set-OOBECustomization {
     param(
         [string]$UnattendUrl,
         [string]$UnattendPath,
+        [string]$UnattendContent,
         [string]$OSDriveLetter
     )
 
@@ -954,6 +956,13 @@ function Set-OOBECustomization {
             $stepName = 'Copy unattend.xml'
             Copy-Item $UnattendPath $unattendDest -Force
             Write-Success "Custom unattend.xml applied from path: $UnattendPath"
+            return
+        }
+
+        if ($UnattendContent) {
+            $stepName = 'Apply editor unattend.xml'
+            Set-Content -Path $unattendDest -Value $UnattendContent -Encoding UTF8
+            Write-Success 'Custom unattend.xml applied from task sequence content.'
             return
         }
 
@@ -1146,10 +1155,11 @@ function Invoke-TaskSequenceStep {
             Install-CCMSetup -CCMSetupUrl $url -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
         'CustomizeOOBE' {
-            $uUrl  = if ($p -and $p.unattendUrl)  { $p.unattendUrl }  else { $UnattendUrl }
-            $uPath = if ($p -and $p.unattendPath) { $p.unattendPath } else { $UnattendPath }
+            $uUrl     = if ($p -and $p.unattendUrl)  { $p.unattendUrl }  else { $UnattendUrl }
+            $uPath    = if ($p -and $p.unattendPath)  { $p.unattendPath }  else { $UnattendPath }
+            $uContent = if ($p -and $p.unattendSource -eq 'default' -and $p.unattendContent) { $p.unattendContent } elseif (-not $p -or $p.unattendSource -ne 'cloud') { $UnattendContent } else { '' }
             Update-BootstrapStatus -Message "Customizing OOBE..." -Detail "Applying unattend.xml" -Step $uiStep -Progress $pct
-            Set-OOBECustomization -UnattendUrl $uUrl -UnattendPath $uPath -OSDriveLetter $CurrentOSDrive
+            Set-OOBECustomization -UnattendUrl $uUrl -UnattendPath $uPath -UnattendContent $uContent -OSDriveLetter $CurrentOSDrive
         }
         'RunPostScripts' {
             $urls = if ($p -and $p.scriptUrls) { @($p.scriptUrls) } else { $PostScriptUrls }
@@ -1317,9 +1327,10 @@ try {
     $stepName = 'Customize OOBE'
     Update-BootstrapStatus -Message 'Customizing OOBE...' -Detail 'Setting out-of-box experience preferences' -Step 3 -Progress 90
     Set-OOBECustomization `
-        -UnattendUrl   $UnattendUrl `
-        -UnattendPath  $UnattendPath `
-        -OSDriveLetter $OSDrive
+        -UnattendUrl     $UnattendUrl `
+        -UnattendPath    $UnattendPath `
+        -UnattendContent $UnattendContent `
+        -OSDriveLetter   $OSDrive
 
     # Step 9: Stage post-provisioning scripts
     $stepName = 'Stage post-provisioning scripts'
