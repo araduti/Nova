@@ -141,6 +141,12 @@ STEP_TYPES.forEach(t => {
 });
 
 /* ── Render step list ─────────────────────────────────────────────── */
+const STEP_BADGE_LABELS = {
+    PartitionDisk: 'P', DownloadImage: 'D', ApplyImage: 'A', SetBootloader: 'B',
+    InjectDrivers: 'I', InjectOemDrivers: 'O', ApplyAutopilot: 'AP',
+    StageCCMSetup: 'S', CustomizeOOBE: 'C', RunPostScripts: 'R'
+};
+
 function renderStepList() {
     $stepList.innerHTML = '';
     taskSequence.steps.forEach((step, i) => {
@@ -149,9 +155,12 @@ function renderStepList() {
         li.draggable = true;
         li.dataset.index = i;
 
+        const badge = STEP_BADGE_LABELS[step.type] || '?';
+
         li.innerHTML =
             '<span class="step-drag-handle" title="Drag to reorder">&#8942;&#8942;</span>' +
             '<span class="step-number">' + (i + 1) + '</span>' +
+            '<span class="step-badge" data-type="' + escapeHtml(step.type) + '">' + badge + '</span>' +
             '<div class="step-info">' +
                 '<div class="step-title">' + escapeHtml(step.name) + '</div>' +
                 '<div class="step-type-label">' + escapeHtml(typeMap[step.type] ? typeMap[step.type].label : step.type) + '</div>' +
