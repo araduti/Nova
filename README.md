@@ -151,6 +151,7 @@ Streamed from GitHub at runtime. Never needs to be rebuilt or redeployed.
 | `CCMSetupUrl` | _(empty)_ | URL to `ccmsetup.exe` |
 | `UnattendUrl` | _(empty)_ | URL to `unattend.xml` |
 | `UnattendPath` | _(empty)_ | Local WinPE path to `unattend.xml` |
+| `UnattendContent` | _(empty)_ | Inline XML content for `unattend.xml` (from the editor) |
 | `PostScriptUrls` | `@()` | Array of URLs to PowerShell scripts for first-boot |
 | `OSDrive` | `C` | Drive letter to assign to the OS partition |
 

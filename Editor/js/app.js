@@ -85,10 +85,12 @@ const STEP_TYPES = [
         type: 'CustomizeOOBE',
         label: 'Customize OOBE',
         description: 'Apply unattend.xml for out-of-box experience customization',
-        defaults: { unattendUrl: '', unattendPath: '' },
+        defaults: { unattendSource: 'default', unattendContent: '', unattendUrl: '', unattendPath: '' },
         fields: [
-            { key: 'unattendUrl', label: 'Unattend URL', kind: 'text', hint: 'URL to unattend.xml' },
-            { key: 'unattendPath', label: 'Unattend path', kind: 'text', hint: 'Or local path inside WinPE (takes precedence)' }
+            { key: 'unattendSource', label: 'Unattend source', kind: 'select', options: ['default', 'cloud'], hint: 'Use the built-in default editor or provide a cloud URL / local path' },
+            { key: 'unattendContent', label: 'Unattend XML', kind: 'xml', hint: 'Edit the default unattend.xml content applied during OOBE', showWhen: { key: 'unattendSource', value: 'default' } },
+            { key: 'unattendUrl', label: 'Unattend URL', kind: 'text', hint: 'URL to unattend.xml', showWhen: { key: 'unattendSource', value: 'cloud' } },
+            { key: 'unattendPath', label: 'Unattend path', kind: 'text', hint: 'Or local path inside WinPE (takes precedence)', showWhen: { key: 'unattendSource', value: 'cloud' } }
         ]
     },
     {
@@ -197,10 +199,14 @@ function renderParamFields(step) {
         return;
     }
     if (!step.parameters) step.parameters = {};
+
+    /* Collect all field wrappers so we can toggle visibility */
+    const fieldWrappers = [];
+
     typeDef.fields.forEach(f => {
         const val = step.parameters[f.key] !== undefined ? step.parameters[f.key] : (typeDef.defaults[f.key] !== undefined ? typeDef.defaults[f.key] : '');
         const div = document.createElement('div');
-        div.className = 'param-field' + (f.kind === 'array' ? ' param-field-array' : '');
+        div.className = 'param-field' + (f.kind === 'array' ? ' param-field-array' : '') + (f.kind === 'xml' ? ' param-field-xml' : '');
 
         let inputHtml = '';
         if (f.kind === 'select') {
@@ -211,6 +217,8 @@ function renderParamFields(step) {
         } else if (f.kind === 'array') {
             const txt = Array.isArray(val) ? val.join('\n') : '';
             inputHtml = '<textarea data-param="' + f.key + '" data-kind="array" rows="3" placeholder="One entry per line">' + escapeHtml(txt) + '</textarea>';
+        } else if (f.kind === 'xml') {
+            inputHtml = '<textarea data-param="' + f.key + '" data-kind="xml" rows="14" spellcheck="false">' + escapeHtml(String(val)) + '</textarea>';
         } else {
             inputHtml = '<input type="text" data-param="' + f.key + '" value="' + escapeHtml(String(val)) + '">';
         }
@@ -220,17 +228,34 @@ function renderParamFields(step) {
 
         /* Live bind */
         const input = div.querySelector('[data-param]');
-        input.addEventListener('input', () => {
+        const changeEvent = (f.kind === 'select') ? 'change' : 'input';
+        input.addEventListener(changeEvent, () => {
             if (!taskSequence.steps[selectedIndex]) return;
             if (!taskSequence.steps[selectedIndex].parameters) taskSequence.steps[selectedIndex].parameters = {};
             let v = input.value;
             if (f.kind === 'number') v = parseInt(v, 10) || 0;
             if (f.kind === 'array') v = input.value.split('\n').map(s => s.trim()).filter(Boolean);
             taskSequence.steps[selectedIndex].parameters[f.key] = v;
+
+            /* Re-evaluate showWhen visibility when a select changes */
+            if (f.kind === 'select') applyShowWhen();
         });
 
+        fieldWrappers.push({ div: div, field: f });
         $paramFields.appendChild(div);
     });
+
+    /* Apply conditional visibility based on showWhen rules */
+    function applyShowWhen() {
+        fieldWrappers.forEach(({ div, field }) => {
+            if (!field.showWhen) return;
+            const depVal = step.parameters[field.showWhen.key] !== undefined
+                ? step.parameters[field.showWhen.key]
+                : (typeDef.defaults[field.showWhen.key] || '');
+            div.style.display = (depVal === field.showWhen.value) ? '' : 'none';
+        });
+    }
+    applyShowWhen();
 }
 
 /* ── Property change handlers ─────────────────────────────────────── */
@@ -391,6 +416,14 @@ $fileInput.addEventListener('change', (e) => {
             const data = JSON.parse(ev.target.result);
             if (!data.steps || !Array.isArray(data.steps)) throw new Error('Invalid task sequence: missing steps array');
             taskSequence = data;
+
+            /* Fill empty unattendContent from the repo file */
+            taskSequence.steps.forEach(step => {
+                if (step.type === 'CustomizeOOBE' && step.parameters && !step.parameters.unattendContent && defaultUnattendXml) {
+                    step.parameters.unattendContent = defaultUnattendXml;
+                }
+            });
+
             $tsName.textContent = taskSequence.name || 'Untitled';
             selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
             renderStepList();
@@ -430,19 +463,40 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+/* ── Default unattend.xml content (loaded from repo) ──────────────── */
+let defaultUnattendXml = '';
+
 /* ── Load default task sequence on start ──────────────────────────── */
 (function loadDefault() {
-    fetch('../TaskSequence/default.json')
-        .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
-        .then(data => {
-            taskSequence = data;
-            $tsName.textContent = taskSequence.name || 'Untitled';
-            selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
-            renderStepList();
-            selectStep(selectedIndex);
-        })
-        .catch(() => {
-            /* No default file available — start empty */
-            renderStepList();
+    Promise.all([
+        fetch('../TaskSequence/default.json')
+            .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); }),
+        fetch('../Unattend/unattend.xml')
+            .then(r => { if (!r.ok) throw new Error(r.statusText); return r.text(); })
+            .catch(() => '')
+    ]).then(([data, xml]) => {
+        defaultUnattendXml = xml;
+
+        /* Use the repo XML as the default for the CustomizeOOBE type */
+        if (defaultUnattendXml) {
+            typeMap.CustomizeOOBE.defaults.unattendContent = defaultUnattendXml;
+        }
+
+        taskSequence = data;
+
+        /* Fill empty unattendContent from the repo file */
+        taskSequence.steps.forEach(step => {
+            if (step.type === 'CustomizeOOBE' && step.parameters && !step.parameters.unattendContent && defaultUnattendXml) {
+                step.parameters.unattendContent = defaultUnattendXml;
+            }
         });
+
+        $tsName.textContent = taskSequence.name || 'Untitled';
+        selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
+        renderStepList();
+        selectStep(selectedIndex);
+    }).catch(() => {
+        /* No default file available — start empty */
+        renderStepList();
+    });
 })();

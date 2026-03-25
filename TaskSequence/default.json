@@ -100,6 +100,8 @@
       "description": "Apply unattend.xml for out-of-box experience customization",
       "continueOnError": true,
       "parameters": {
+        "unattendSource": "default",
+        "unattendContent": "",
         "unattendUrl": "",
         "unattendPath": ""
       }

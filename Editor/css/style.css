@@ -296,6 +296,26 @@ h3 {
 }
 .param-field-array textarea:focus { border-color: var(--accent); }
 
+/* ── XML editor field ──────────────────────────────────────────────── */
+.param-field-xml textarea {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 10px 12px;
+    outline: none;
+    resize: vertical;
+    min-height: 200px;
+    tab-size: 2;
+    white-space: pre;
+    overflow-x: auto;
+}
+.param-field-xml textarea:focus { border-color: var(--accent); }
+
 /* ── Dialog ────────────────────────────────────────────────────────── */
 .dialog-overlay {
     position: fixed;
