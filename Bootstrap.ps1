@@ -1285,6 +1285,9 @@ function Show-ConfigurationMenu {
 
     # Pre-process every catalog file once into a flat list with a derived
     # Activation field (Retail or Volume) parsed from the ESD FileName.
+    # Known Microsoft ESD naming patterns:
+    #   CLIENTCONSUMER_RET  → Retail  (Home, Pro, Education consumer editions)
+    #   CLIENTBUSINESS_VOL  → Volume  (Enterprise and volume-licensed editions)
     $allFiles = @(
         $catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File | ForEach-Object {
             $activation = if ($_.FileName -match 'CLIENTBUSINESS_VOL') { 'Volume' } else { 'Retail' }
@@ -1562,9 +1565,8 @@ function Show-ConfigurationMenu {
 
     $populateOsLanguages = {
         $osLangs = @(
-            $allFiles | Select-Object LanguageCode, Language -Unique |
-                Sort-Object LanguageCode |
-                ForEach-Object { "$($_.LanguageCode) — $($_.Language)" }
+            $allFiles | Group-Object LanguageCode | Sort-Object Name |
+                ForEach-Object { "$($_.Name) — $($_.Group[0].Language)" }
         )
         $prev = if ($null -ne $osLangCombo.SelectedItem) { $osLangCombo.SelectedItem.ToString() } else { '' }
         $osLangCombo.Items.Clear()
