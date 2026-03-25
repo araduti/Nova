@@ -1781,7 +1781,7 @@ function Invoke-M365WebView2Auth {
     # to use SwiftShader (software OpenGL ES implementation) for rendering.
     # --enable-unsafe-swiftshader is required because SwiftShader is normally
     # blocked in elevated/SYSTEM contexts; in WinPE there is no alternative.
-    $options = New-Object Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions
+    $options = [Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions]::new()
     $options.AdditionalBrowserArguments =
         '--disable-gpu --disable-gpu-compositing --disable-direct-composition ' +
         '--use-angle=swiftshader --enable-unsafe-swiftshader --in-process-gpu'
@@ -1836,7 +1836,7 @@ function Invoke-M365WebView2Auth {
     $dlg.Controls.Add($promptLabel)
 
     # WebView2 control
-    $webView = New-Object Microsoft.Web.WebView2.WinForms.WebView2
+    $webView = [Microsoft.Web.WebView2.WinForms.WebView2]::new()
     $webView.Location = New-Object System.Drawing.Point(10, 78)
     $webView.Size     = New-Object System.Drawing.Size(492, 490)
     $dlg.Controls.Add($webView)
