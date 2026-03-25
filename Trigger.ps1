@@ -1077,7 +1077,8 @@ function Build-WinPE {
 
                 # Also copy the top-level msedge.exe launcher if present.
                 $topLevelExe = Join-Path $edgeBrowserSrc 'msedge.exe'
-                if ((Test-Path $topLevelExe) -and -not (Test-Path (Join-Path $edgeDest 'msedge.exe'))) {
+                $edgeDestExe = Join-Path $edgeDest 'msedge.exe'
+                if ((Test-Path $topLevelExe) -and -not (Test-Path $edgeDestExe)) {
                     Copy-Item $topLevelExe -Destination $edgeDest -Force
                 }
                 $edgeOk = $true

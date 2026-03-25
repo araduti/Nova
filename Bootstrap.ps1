@@ -1758,7 +1758,7 @@ function Invoke-M365EdgeAuth {
             Write-AuthLog "HTTP listener started on port $port"
             break
         } catch {
-            Write-AuthLog "Listener port $port failed (attempt $attempt): $_"
+            Write-AuthLog "Listener port $port failed (attempt $attempt of 5): $_"
             if ($attempt -eq 5) {
                 Write-AuthLog "Could not start HTTP listener after $attempt attempts."
                 return $false
@@ -1853,15 +1853,15 @@ function Invoke-M365EdgeAuth {
     $script:_edgeAuthError = $null
     $script:_edgeListener  = $listener
     $script:_edgeDlg       = $dlg
-    $asyncResult = $listener.BeginGetContext($null, $null)
+    $script:_edgeAsyncResult = $listener.BeginGetContext($null, $null)
 
     $pollTimer = New-Object System.Windows.Forms.Timer
     $pollTimer.Interval = 500
     $pollTimer.Add_Tick({
-        if ($asyncResult.IsCompleted -or $asyncResult.AsyncWaitHandle.WaitOne(0)) {
+        if ($script:_edgeAsyncResult.IsCompleted -or $script:_edgeAsyncResult.AsyncWaitHandle.WaitOne(0)) {
             $pollTimer.Stop()
             try {
-                $context = $script:_edgeListener.EndGetContext($asyncResult)
+                $context = $script:_edgeListener.EndGetContext($script:_edgeAsyncResult)
 
                 # Parse authorization code (or error) from the query string.
                 foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
@@ -1909,8 +1909,11 @@ function Invoke-M365EdgeAuth {
     # ── Stop the Edge process ───────────────────────────────────────────────
     if ($edgeProcess -and -not $edgeProcess.HasExited) {
         try {
-            $edgeProcess.Kill()
-            $edgeProcess.WaitForExit(5000)
+            $edgeProcess.CloseMainWindow() | Out-Null
+            if (-not $edgeProcess.WaitForExit(3000)) {
+                $edgeProcess.Kill()
+                $edgeProcess.WaitForExit(2000)
+            }
             Write-AuthLog "Edge process stopped."
         } catch { Write-AuthLog "Edge process cleanup: $_" }
     }
