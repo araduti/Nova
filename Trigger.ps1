@@ -1046,71 +1046,47 @@ function Build-WinPE {
             }
         }
 
-        # ── 4e. Embed WebView2 runtime for M365 sign-in ────────────────────────
-        # Bootstrap.ps1 uses a WebView2 (Chromium) control for interactive
-        # Microsoft 365 sign-in (Authorization Code Flow with PKCE).  The
-        # control requires the WebView2 runtime and .NET managed DLLs to be
-        # present in the WinPE image at X:\WebView2.  This step downloads
-        # the NuGet package for the managed DLLs and copies the Evergreen
-        # Runtime from the build machine.  If the runtime is not available,
-        # Bootstrap.ps1 falls back to Device Code Flow at boot time.
+        # ── 4e. Embed Edge browser for M365 sign-in ───────────────────────────
+        # Bootstrap.ps1 launches msedge.exe directly in WinPE for interactive
+        # Microsoft 365 sign-in (Authorization Code Flow with PKCE).  This
+        # step copies the Edge browser from the build machine into the WinPE
+        # image at X:\WebView2\Edge.  If Edge is not available, Bootstrap.ps1
+        # falls back to Device Code Flow at boot time.
         $wv2Dest = Join-Path $paths.MountDir 'WebView2'
         $null = New-Item -Path $wv2Dest -ItemType Directory -Force
-        $wv2Ok = $false
+        $edgeOk = $false
 
-        # Download managed DLLs from the Microsoft.Web.WebView2 NuGet package.
-        $wv2NugetUrl = 'https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2'
-        $wv2NugetZip = Join-Path $env:TEMP 'Microsoft.Web.WebView2.nupkg.zip'
-        $wv2NugetDir = Join-Path $env:TEMP 'WebView2Nuget'
-        try {
-            Write-Step 'Downloading WebView2 NuGet package for managed DLLs...'
-            Invoke-WebRequest -Uri $wv2NugetUrl -OutFile $wv2NugetZip -UseBasicParsing
-            if (Test-Path $wv2NugetDir) { Remove-Item $wv2NugetDir -Recurse -Force }
-            Expand-Archive -Path $wv2NugetZip -DestinationPath $wv2NugetDir -Force
-
-            # Find a compatible .NET Framework target folder.
-            # Prefer net462 or net45 which are compatible with PowerShell 5.1.
-            $libDir = Join-Path $wv2NugetDir 'lib'
-            $managedSrc = $null
-            foreach ($target in @('net462', 'net48', 'net472', 'net45')) {
-                $candidate = Join-Path $libDir $target
-                if (Test-Path $candidate) { $managedSrc = $candidate; break }
-            }
-
-            if ($managedSrc) {
-                Copy-Item (Join-Path $managedSrc 'Microsoft.Web.WebView2.Core.dll')     -Destination $wv2Dest -Force
-                Copy-Item (Join-Path $managedSrc 'Microsoft.Web.WebView2.WinForms.dll') -Destination $wv2Dest -Force
-            }
-
-            # Copy native WebView2Loader.dll (x64).
-            $loaderSrc = Join-Path $wv2NugetDir 'runtimes\win-x64\native\WebView2Loader.dll'
-            if (Test-Path $loaderSrc) {
-                Copy-Item $loaderSrc -Destination $wv2Dest -Force
-            }
-
-            Write-Success 'WebView2 managed DLLs staged.'
-        } catch {
-            Write-Warn "Failed to download WebView2 NuGet package (non-fatal): $_"
+        # Copy the Edge browser from the build machine.
+        # Check both 64-bit and 32-bit Program Files locations.
+        $edgeBrowserSrc = $null
+        foreach ($pf in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+            if (-not $pf) { continue }
+            $candidate = Join-Path $pf 'Microsoft\Edge\Application'
+            if (Test-Path $candidate) { $edgeBrowserSrc = $candidate; break }
         }
 
-        # Copy the Evergreen Runtime from the build machine.
-        $wv2RuntimeSrc = Join-Path ${env:ProgramFiles(x86)} 'Microsoft\EdgeWebView\Application'
-        if (Test-Path $wv2RuntimeSrc) {
-            $wv2Version = Get-ChildItem $wv2RuntimeSrc -Directory |
+        if ($edgeBrowserSrc) {
+            $edgeVersion = Get-ChildItem $edgeBrowserSrc -Directory |
                 Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
                 Sort-Object { try { [version]$_.Name } catch { [version]'0.0' } } -Descending |
                 Select-Object -First 1
-            if ($wv2Version) {
-                $wv2EdgeDest = Join-Path $wv2Dest 'Edge'
-                Write-Step "Copying WebView2 Evergreen Runtime ($($wv2Version.Name))..."
-                Copy-Item $wv2Version.FullName -Destination $wv2EdgeDest -Recurse -Force
-                $wv2Ok = $true
-                Write-Success "WebView2 runtime ($($wv2Version.Name)) embedded for WinPE sign-in."
+            if ($edgeVersion) {
+                $edgeDest = Join-Path $wv2Dest 'Edge'
+                Write-Step "Copying Edge browser ($($edgeVersion.Name)) for WinPE sign-in..."
+                Copy-Item $edgeVersion.FullName -Destination $edgeDest -Recurse -Force
+
+                # Also copy the top-level msedge.exe launcher if present.
+                $topLevelExe = Join-Path $edgeBrowserSrc 'msedge.exe'
+                if ((Test-Path $topLevelExe) -and -not (Test-Path (Join-Path $edgeDest 'msedge.exe'))) {
+                    Copy-Item $topLevelExe -Destination $edgeDest -Force
+                }
+                $edgeOk = $true
+                Write-Success "Edge browser ($($edgeVersion.Name)) embedded for WinPE sign-in."
             }
         }
 
-        if (-not $wv2Ok) {
-            Write-Warn 'WebView2 Evergreen Runtime not found on build machine — sign-in will use Device Code Flow.'
+        if (-not $edgeOk) {
+            Write-Warn 'Edge browser not found on build machine — sign-in will use Device Code Flow.'
         }
 
         # ── 5. Embed Bootstrap.ps1 ────────────────────────────────────────────
