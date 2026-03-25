@@ -36,6 +36,22 @@ $script:PsBin = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\power
 $LogPath = "X:\AmpCloud-Bootstrap.log"
 $null = Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyContinue
 
+$script:AuthLogPath = "X:\AmpCloud-Auth.log"
+function Write-AuthLog {
+    <#
+    .SYNOPSIS  Write a timestamped entry to the dedicated auth log file.
+    .DESCRIPTION
+        Always writes to X:\AmpCloud-Auth.log regardless of the Verbose
+        preference.  This ensures authentication diagnostics are captured
+        even when the script is not run with -Verbose.
+    #>
+    param([string] $Message)
+    $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $entry = "[$ts] $Message"
+    try { $entry | Out-File -FilePath $script:AuthLogPath -Append -Encoding utf8 -Force } catch {}
+    Write-Verbose $Message
+}
+
 # ── Assemblies ──────────────────────────────────────────────────────────────
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -1703,11 +1719,23 @@ function Invoke-M365WebView2Auth {
 
     $webViewPath = 'X:\WebView2'
 
-    # ── Verify WebView2 prerequisites ───────────────────────────────────────
+    # ── Log environment diagnostics ─────────────────────────────────────────
+    Write-AuthLog "WebView2 auth starting — checking prerequisites at $webViewPath"
+    Write-AuthLog "  WebView2 folder exists : $(Test-Path $webViewPath)"
     $coreDll     = Join-Path $webViewPath 'Microsoft.Web.WebView2.Core.dll'
     $winFormsDll = Join-Path $webViewPath 'Microsoft.Web.WebView2.WinForms.dll'
+    Write-AuthLog "  Core DLL exists        : $(Test-Path $coreDll)  ($coreDll)"
+    Write-AuthLog "  WinForms DLL exists    : $(Test-Path $winFormsDll)  ($winFormsDll)"
+    $edgeDirCheck = Join-Path $webViewPath 'Edge'
+    Write-AuthLog "  Edge runtime folder    : $(Test-Path $edgeDirCheck)  ($edgeDirCheck)"
+    if (Test-Path $edgeDirCheck) {
+        $edgeExe = Get-ChildItem -Path $edgeDirCheck -Filter 'msedgewebview2.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        Write-AuthLog "  msedgewebview2.exe     : $(if ($edgeExe) { $edgeExe.FullName } else { 'NOT FOUND' })"
+    }
+
+    # ── Verify WebView2 prerequisites ───────────────────────────────────────
     if (-not (Test-Path $coreDll) -or -not (Test-Path $winFormsDll)) {
-        Write-Verbose "WebView2 DLLs not found at $webViewPath — skipping browser auth."
+        Write-AuthLog "WebView2 DLLs not found at $webViewPath — skipping browser auth."
         return $false
     }
 
@@ -1715,8 +1743,9 @@ function Invoke-M365WebView2Auth {
         $env:PATH = "$webViewPath;$env:PATH"
         Add-Type -Path $coreDll
         Add-Type -Path $winFormsDll
+        Write-AuthLog "WebView2 assemblies loaded successfully."
     } catch {
-        Write-Verbose "Failed to load WebView2 assemblies: $_"
+        Write-AuthLog "Failed to load WebView2 assemblies: $_"
         return $false
     }
 
@@ -1771,8 +1800,9 @@ function Invoke-M365WebView2Auth {
         $envTask     = [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::CreateAsync(
                            $runtimeFolder, $userDataFolder, $options)
         $environment = $envTask.GetAwaiter().GetResult()
+        Write-AuthLog "WebView2 environment created successfully."
     } catch {
-        Write-Verbose "WebView2 environment creation failed: $_"
+        Write-AuthLog "WebView2 environment creation failed: $_"
         return $false
     }
 
@@ -1828,7 +1858,7 @@ function Invoke-M365WebView2Auth {
         $initTask = $webView.EnsureCoreWebView2Async($environment)
         $initTask.GetAwaiter().GetResult()
     } catch {
-        Write-Verbose "WebView2 control initialization failed: $_"
+        Write-AuthLog "WebView2 control initialization failed: $_"
         $dlg.Dispose()
         return $false
     }
@@ -1864,8 +1894,8 @@ function Invoke-M365WebView2Auth {
     $dialogResult = $dlg.ShowDialog()
 
     # Dispose WebView2 and dialog to release Chromium process.
-    try { $webView.Dispose() } catch { Write-Verbose "WebView2 disposal: $_" }
-    try { $dlg.Dispose()     } catch { Write-Verbose "Dialog disposal: $_" }
+    try { $webView.Dispose() } catch { Write-AuthLog "WebView2 disposal: $_" }
+    try { $dlg.Dispose()     } catch { Write-AuthLog "Dialog disposal: $_" }
 
     # Clean up WebView2 user data (cookies, cache) to prevent credential leakage.
     if (Test-Path $userDataFolder) {
@@ -1873,8 +1903,9 @@ function Invoke-M365WebView2Auth {
     }
 
     if ($dialogResult -ne 'OK' -or -not $script:_wv2AuthCode) {
+        Write-AuthLog "WebView2 dialog closed without auth code. DialogResult=$dialogResult, AuthCode=$(if ($script:_wv2AuthCode) { 'present' } else { 'missing' })"
         if ($script:_wv2AuthError) {
-            Write-Verbose "WebView2 auth error: $($script:_wv2AuthError)"
+            Write-AuthLog "WebView2 auth error: $($script:_wv2AuthError)"
         }
         return $false
     }
@@ -1893,10 +1924,11 @@ function Invoke-M365WebView2Auth {
         $raw = $wc.UploadString($tokenUrl, 'POST', $body)
         $tokenResponse = $raw | ConvertFrom-Json
         if ($tokenResponse.id_token) {
+            Write-AuthLog "WebView2 auth succeeded — token obtained."
             return $true
         }
     } catch {
-        Write-Verbose "Token exchange failed: $_"
+        Write-AuthLog "Token exchange failed: $_"
     }
 
     return $false
@@ -1929,7 +1961,7 @@ function Invoke-M365DeviceCodeAuth {
         $raw  = $wc.UploadString($deviceCodeUrl, 'POST', $body)
         $deviceResponse = $raw | ConvertFrom-Json
     } catch {
-        Write-Verbose "Device code request failed: $_"
+        Write-AuthLog "Device code request failed: $_"
         return $false
     }
 
@@ -2035,7 +2067,7 @@ function Invoke-M365DeviceCodeAuth {
         } catch {
             $msg = $_.ToString()
             if ($msg -notmatch 'authorization_pending' -and $msg -notmatch 'slow_down') {
-                Write-Verbose "Token poll error: $msg"
+                Write-AuthLog "Token poll error: $msg"
             }
         }
     })
@@ -2077,7 +2109,7 @@ function Invoke-M365Auth {
         $rawJson = $wc.DownloadString($authConfigUrl)
         $authConfig = $rawJson | ConvertFrom-Json
     } catch {
-        Write-Verbose "Could not fetch auth config: $_"
+        Write-AuthLog "Could not fetch auth config: $_"
     }
 
     # If auth is not configured or not required, skip silently.
@@ -2088,7 +2120,7 @@ function Invoke-M365Auth {
 
     # Validate that the config has the minimum required fields.
     if (-not $authConfig.clientId) {
-        Write-Verbose "Auth config incomplete — skipping authentication."
+        Write-AuthLog "Auth config incomplete — skipping authentication."
         Write-Status $S.AuthSkipped 'Green'
         return $true
     }
@@ -2107,7 +2139,7 @@ function Invoke-M365Auth {
     try {
         $browserOk = Invoke-M365WebView2Auth -ClientId $clientId
     } catch {
-        Write-Verbose "WebView2 auth failed, will fall back to Device Code Flow: $_"
+        Write-AuthLog "WebView2 auth failed, will fall back to Device Code Flow: $_"
     }
 
     if ($browserOk) {
@@ -2118,12 +2150,12 @@ function Invoke-M365Auth {
     }
 
     # ── Fallback: Device Code Flow ──────────────────────────────────────────
-    Write-Verbose 'Falling back to Device Code Flow...'
+    Write-AuthLog "Falling back to Device Code Flow... (see $script:AuthLogPath for details)"
     $deviceOk = $false
     try {
         $deviceOk = Invoke-M365DeviceCodeAuth -ClientId $clientId
     } catch {
-        Write-Verbose "Device Code Flow failed: $_"
+        Write-AuthLog "Device Code Flow failed: $_"
     }
 
     if ($deviceOk) {
