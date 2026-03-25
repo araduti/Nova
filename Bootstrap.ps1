@@ -1017,7 +1017,8 @@ $script:uiUpdateTimer.Add_Tick({
                 Write-Status $status.Message 'Cyan'
             }
             if ($status.Progress -gt 0) {
-                $progressText.Text = "$($status.Message)  $($script:BulletChar)  $($status.Progress)%"
+                $detail = if ($status.Detail) { $status.Detail } else { $status.Message }
+                $progressText.Text = "$detail  $($script:BulletChar)  $($status.Progress)%"
             }
             if ($status.Step -gt 0) {
                 Update-Step $status.Step
