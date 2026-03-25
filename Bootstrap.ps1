@@ -101,6 +101,7 @@ $Strings = @{
             ConfigEdition="Windows Edition";
             ConfigBtn="Start deployment";
             AuthSigning="Signing in with Microsoft 365...";
+            AuthPrompt="Sign in with your Microsoft 365 account to continue.";
             AuthUrl="https://microsoft.com/devicelogin";
             AuthWaiting="Waiting for sign-in...";
             AuthSuccess="Identity verified";
@@ -127,6 +128,7 @@ $Strings = @{
             ConfigEdition="Édition Windows";
             ConfigBtn="Démarrer le déploiement";
             AuthSigning="Connexion avec Microsoft 365...";
+            AuthPrompt="Connectez-vous avec votre compte Microsoft 365 pour continuer.";
             AuthUrl="https://microsoft.com/devicelogin";
             AuthWaiting="En attente de connexion...";
             AuthSuccess="Identité vérifiée";
@@ -153,6 +155,7 @@ $Strings = @{
             ConfigEdition="Edición de Windows";
             ConfigBtn="Iniciar implementación";
             AuthSigning="Iniciando sesión con Microsoft 365...";
+            AuthPrompt="Inicie sesión con su cuenta de Microsoft 365 para continuar.";
             AuthUrl="https://microsoft.com/devicelogin";
             AuthWaiting="Esperando inicio de sesión...";
             AuthSuccess="Identidad verificada";
@@ -1678,12 +1681,221 @@ function Show-ConfigurationMenu {
 
 #region ── M365 Authentication ────────────────────────────────────────────────
 
+function Invoke-M365WebView2Auth {
+    <#
+    .SYNOPSIS  Authenticate the operator via an embedded WebView2 browser (Auth Code + PKCE).
+    .DESCRIPTION
+        Opens a WinForms dialog containing a WebView2 (Chromium) control that
+        navigates to the Azure AD authorization endpoint.  The user signs in
+        directly inside the embedded browser — no codes to copy or external
+        devices needed.  The control intercepts the redirect carrying the
+        authorization code, then exchanges it for tokens using PKCE.
+        Requires the WebView2 runtime and managed DLLs to be pre-staged in
+        the WinPE image at X:\WebView2 (done by Trigger.ps1 Build-WinPE
+        step 4e).  Special Chromium flags (--disable-gpu, SwiftShader, etc.)
+        are used to ensure rendering works in the WinPE environment.
+    .PARAMETER ClientId
+        Azure AD application (client) ID.
+    .OUTPUTS
+        $true on success, $false on failure or cancellation.
+    #>
+    param([string] $ClientId)
+
+    $webViewPath = 'X:\WebView2'
+
+    # ── Verify WebView2 prerequisites ───────────────────────────────────────
+    $coreDll     = Join-Path $webViewPath 'Microsoft.Web.WebView2.Core.dll'
+    $winFormsDll = Join-Path $webViewPath 'Microsoft.Web.WebView2.WinForms.dll'
+    if (-not (Test-Path $coreDll) -or -not (Test-Path $winFormsDll)) {
+        Write-Verbose "WebView2 DLLs not found at $webViewPath — skipping browser auth."
+        return $false
+    }
+
+    try {
+        $env:PATH = "$webViewPath;$env:PATH"
+        Add-Type -Path $coreDll
+        Add-Type -Path $winFormsDll
+    } catch {
+        Write-Verbose "Failed to load WebView2 assemblies: $_"
+        return $false
+    }
+
+    # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────
+    $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $bytes = New-Object byte[] 32
+    $rng.GetBytes($bytes)
+    $codeVerifier  = [Convert]::ToBase64String($bytes) -replace '\+','-' -replace '/','_' -replace '='
+
+    $sha256        = [System.Security.Cryptography.SHA256]::Create()
+    $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
+    $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
+
+    $redirectUri = 'http://localhost/auth'
+
+    # ── Build the authorize URL ─────────────────────────────────────────────
+    $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
+        "client_id=$([uri]::EscapeDataString($ClientId))" +
+        '&response_type=code' +
+        "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
+        "&scope=$([uri]::EscapeDataString('openid profile'))" +
+        "&code_challenge=$codeChallenge" +
+        '&code_challenge_method=S256' +
+        '&prompt=select_account'
+
+    # ── Create WebView2 environment with WinPE-safe flags ──────────────────
+    $options = New-Object Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions
+    $options.AdditionalBrowserArguments =
+        '--disable-gpu --disable-gpu-compositing --disable-direct-composition ' +
+        '--use-angle=swiftshader --enable-unsafe-swiftshader --in-process-gpu'
+
+    $userDataFolder = 'X:\Temp\WebView2Data'
+    if (-not (Test-Path $userDataFolder)) {
+        $null = New-Item -Path $userDataFolder -ItemType Directory -Force
+    }
+
+    # Locate the browser runtime folder (contains msedgewebview2.exe).
+    $runtimeFolder = $null
+    $edgeDir = Join-Path $webViewPath 'Edge'
+    if (Test-Path $edgeDir) { $runtimeFolder = $edgeDir }
+
+    $environment = $null
+    try {
+        $envTask     = [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::CreateAsync(
+                           $runtimeFolder, $userDataFolder, $options)
+        $environment = $envTask.GetAwaiter().GetResult()
+    } catch {
+        Write-Verbose "WebView2 environment creation failed: $_"
+        return $false
+    }
+
+    # ── Create the browser dialog ───────────────────────────────────────────
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text            = 'AmpCloud — Sign In'
+    $dlg.Size            = New-Object System.Drawing.Size(520, 660)
+    $dlg.StartPosition   = 'CenterScreen'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MaximizeBox     = $false
+    $dlg.MinimizeBox     = $false
+    $dlg.BackColor       = [System.Drawing.Color]::White
+    $dlg.Font            = New-Object System.Drawing.Font('Segoe UI', 10)
+
+    # Header label
+    $msLabel = New-Object System.Windows.Forms.Label
+    $msLabel.Text      = 'Microsoft 365'
+    $msLabel.Font      = New-Object System.Drawing.Font('Segoe UI Semibold', 14)
+    $msLabel.ForeColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
+    $msLabel.Location  = New-Object System.Drawing.Point(20, 12)
+    $msLabel.AutoSize  = $true
+    $dlg.Controls.Add($msLabel)
+
+    # Prompt label
+    $promptLabel = New-Object System.Windows.Forms.Label
+    $promptLabel.Text     = $S.AuthPrompt
+    $promptLabel.Location = New-Object System.Drawing.Point(20, 48)
+    $promptLabel.Size     = New-Object System.Drawing.Size(470, 22)
+    $promptLabel.Font     = New-Object System.Drawing.Font('Segoe UI', 9)
+    $dlg.Controls.Add($promptLabel)
+
+    # WebView2 control
+    $webView = New-Object Microsoft.Web.WebView2.WinForms.WebView2
+    $webView.Location = New-Object System.Drawing.Point(10, 78)
+    $webView.Size     = New-Object System.Drawing.Size(492, 490)
+    $dlg.Controls.Add($webView)
+
+    # Cancel button
+    $cancelBtn = New-Object System.Windows.Forms.Button
+    $cancelBtn.Text         = 'Cancel'
+    $cancelBtn.Size         = New-Object System.Drawing.Size(120, 36)
+    $cancelBtn.Location     = New-Object System.Drawing.Point(382, 578)
+    $cancelBtn.DialogResult = 'Cancel'
+    $cancelBtn.FlatStyle    = 'Flat'
+    $dlg.Controls.Add($cancelBtn)
+    $dlg.CancelButton = $cancelBtn
+
+    # ── Initialize WebView2 and set up navigation interception ──────────────
+    $script:_wv2AuthCode  = $null
+    $script:_wv2AuthError = $null
+
+    try {
+        $initTask = $webView.EnsureCoreWebView2Async($environment)
+        $initTask.GetAwaiter().GetResult()
+    } catch {
+        Write-Verbose "WebView2 control initialization failed: $_"
+        $dlg.Dispose()
+        return $false
+    }
+
+    # Intercept navigation to capture the authorization code.
+    $webView.CoreWebView2.Add_NavigationStarting({
+        param($sender, $e)
+        $url = $e.Uri
+        if ($url.StartsWith($redirectUri, [StringComparison]::OrdinalIgnoreCase)) {
+            $e.Cancel = $true
+            $parsed = New-Object System.Uri($url)
+            $query  = $parsed.Query
+            if ($query) {
+                foreach ($pair in $query.TrimStart('?').Split('&')) {
+                    $kv = $pair.Split('=', 2)
+                    if ($kv.Count -eq 2) {
+                        if ($kv[0] -eq 'code')  { $script:_wv2AuthCode  = [uri]::UnescapeDataString($kv[1]) }
+                        if ($kv[0] -eq 'error') { $script:_wv2AuthError = [uri]::UnescapeDataString($kv[1]) }
+                    }
+                }
+            }
+            if ($script:_wv2AuthCode) {
+                $dlg.DialogResult = 'OK'
+            } else {
+                $dlg.DialogResult = 'Abort'
+            }
+            $dlg.Close()
+        }
+    })
+
+    # Navigate to Azure AD login page.
+    $webView.CoreWebView2.Navigate($authorizeUrl)
+    $dialogResult = $dlg.ShowDialog()
+
+    # Dispose WebView2 and dialog to release Chromium process.
+    try { $webView.Dispose() } catch {}
+    try { $dlg.Dispose()     } catch {}
+
+    if ($dialogResult -ne 'OK' -or -not $script:_wv2AuthCode) {
+        if ($script:_wv2AuthError) {
+            Write-Verbose "WebView2 auth error: $($script:_wv2AuthError)"
+        }
+        return $false
+    }
+
+    # ── Exchange authorization code for tokens ──────────────────────────────
+    $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
+    try {
+        $body = "client_id=$([uri]::EscapeDataString($ClientId))" +
+                "&scope=$([uri]::EscapeDataString('openid profile'))" +
+                "&code=$([uri]::EscapeDataString($script:_wv2AuthCode))" +
+                "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
+                '&grant_type=authorization_code' +
+                "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+        $raw = $wc.UploadString($tokenUrl, 'POST', $body)
+        $tokenResponse = $raw | ConvertFrom-Json
+        if ($tokenResponse.id_token) {
+            return $true
+        }
+    } catch {
+        Write-Verbose "Token exchange failed: $_"
+    }
+
+    return $false
+}
+
 function Invoke-M365DeviceCodeAuth {
     <#
-    .SYNOPSIS  Authenticate the operator via Device Code Flow.
+    .SYNOPSIS  Authenticate the operator via Device Code Flow (fallback).
     .DESCRIPTION
-        Initiates the OAuth 2.0 Device Code Flow and shows a WinForms
-        dialog with the one-time code and verification URL.
+        Fallback authentication path used when the WebView2 runtime is not
+        available in the WinPE image.  Initiates the Device Code Flow and
+        shows a WinForms dialog with the one-time code and verification URL.
     .PARAMETER ClientId
         Azure AD application (client) ID.
     .OUTPUTS
@@ -1828,12 +2040,14 @@ function Invoke-M365DeviceCodeAuth {
 
 function Invoke-M365Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via M365 Device Code Flow.
+    .SYNOPSIS  Authenticate the operator via M365 (WebView2 browser, Device Code fallback).
     .DESCRIPTION
         Downloads Config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
-        initiates the Device Code Flow so the operator can sign in on a
-        separate device.
+        first attempts interactive sign-in via an embedded WebView2
+        (Chromium) browser (Authorization Code Flow with PKCE).  If
+        the WebView2 runtime is not present or fails, it falls back to
+        Device Code Flow.
         Tenant restrictions are enforced at the Entra ID app registration
         level — only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
@@ -1871,7 +2085,27 @@ function Invoke-M365Auth {
     Write-Status $S.AuthSigning 'Cyan'
     [System.Windows.Forms.Application]::DoEvents()
 
-    # ── Device Code Flow ────────────────────────────────────────────────────
+    # ── Try WebView2 (Chromium) browser first ───────────────────────────────
+    # The WebView2 control uses the Chromium engine and renders modern Azure
+    # AD login pages correctly in WinPE.  Requires the runtime to be embedded
+    # during Build-WinPE (step 4e).  If the runtime is not present or fails,
+    # fall back to Device Code Flow transparently.
+    $browserOk = $false
+    try {
+        $browserOk = Invoke-M365WebView2Auth -ClientId $clientId
+    } catch {
+        Write-Verbose "WebView2 auth failed, will fall back to Device Code Flow: $_"
+    }
+
+    if ($browserOk) {
+        Write-Status $S.AuthSuccess 'Green'
+        Invoke-Sound 1000 200
+        Start-Sleep -Seconds 1
+        return $true
+    }
+
+    # ── Fallback: Device Code Flow ──────────────────────────────────────────
+    Write-Verbose 'Falling back to Device Code Flow...'
     $deviceOk = $false
     try {
         $deviceOk = Invoke-M365DeviceCodeAuth -ClientId $clientId
@@ -1908,8 +2142,9 @@ function ProceedToEngine {
     # When Config/auth.json has requireAuth = true, the operator must sign in
     # with a Microsoft 365 account from an allowed Entra ID tenant.
     # Tenant restrictions are enforced at the app registration level.
-    # Uses Device Code Flow — the operator enters a code at
-    # microsoft.com/devicelogin on a separate device to authenticate.
+    # Uses an embedded WebView2 (Chromium) browser with Auth Code + PKCE as
+    # the primary method; falls back to Device Code Flow if the WebView2
+    # runtime is not present in the WinPE image.
     $authPassed = Invoke-M365Auth
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect

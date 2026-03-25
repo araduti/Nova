@@ -12,7 +12,7 @@
 3. [Component Analysis](#component-analysis)
    - [Config/auth.json](#configauthjson)
    - [Trigger.ps1 — Authorization Code Flow with PKCE](#triggerps1--authorization-code-flow-with-pkce)
-   - [Bootstrap.ps1 — Device Code Flow](#bootstrapps1--device-code-flow)
+   - [Bootstrap.ps1 — WebView2 Browser (Auth Code + PKCE) with Device Code Fallback](#bootstrapps1--webview2-browser-auth-code--pkce-with-device-code-fallback)
    - [Editor (Web UI) — MSAL.js Popup Flow](#editor-web-ui--msaljs-popup-flow)
    - [GitHub API — Personal Access Token](#github-api--personal-access-token)
 4. [Findings and Recommendations](#findings-and-recommendations)
@@ -40,16 +40,18 @@ AmpCloud implements **three distinct OAuth 2.0 authentication flows** to protect
 │  ↓ fetched by all three entry points                                  │
 ├───────────────┬────────────────────────┬──────────────────────────────┤
 │  Trigger.ps1  │     Bootstrap.ps1      │    Editor (Web UI)           │
-│  Auth Code +  │     Device Code Flow   │    MSAL.js Popup Flow        │
-│  PKCE (local  │     (WinPE WinForms    │    (browser, sessionStorage) │
-│  browser)     │      dialog)           │                              │
+│  Auth Code +  │     Auth Code + PKCE   │    MSAL.js Popup Flow        │
+│  PKCE (local  │     (WinPE WebView2    │    (browser, sessionStorage) │
+│  browser)     │      Chromium browser, │                              │
+│               │      Device Code       │                              │
+│               │      fallback)         │                              │
 ├───────────────┼────────────────────────┼──────────────────────────────┤
-│  Opens browser│  Shows one-time code   │  MSAL loginPopup()           │
-│  → localhost  │  → operator enters at  │  → Azure AD popup            │
-│  listener     │  microsoft.com/device  │  → redirect callback         │
-│  captures code│  login on another      │  → sessionStorage cache      │
-│  → token      │  device → token poll   │                              │
-│  exchange     │                        │                              │
+│  Opens browser│  Embedded WebView2     │  MSAL loginPopup()           │
+│  → localhost  │  control in WinForms   │  → Azure AD popup            │
+│  listener     │  → intercepts redirect │  → redirect callback         │
+│  captures code│  → token exchange      │  → sessionStorage cache      │
+│  → token      │  Falls back to Device  │                              │
+│  exchange     │  Code Flow if needed   │                              │
 └───────────────┴────────────────────────┴──────────────────────────────┘
 ```
 
@@ -111,27 +113,44 @@ All three flows request only `openid profile` scopes — they function as a **pu
 
 ---
 
-### Bootstrap.ps1 — Device Code Flow
+### Bootstrap.ps1 — WebView2 Browser (Auth Code + PKCE) with Device Code Fallback
 
-**Function:** `Invoke-M365DeviceCodeAuth`
-**Orchestrator:** `Invoke-M365Auth`
-**OAuth Flow:** Device Code (RFC 8628)
-**Environment:** Windows PE (WinForms dialog)
+**Primary function:** `Invoke-M365WebView2Auth` (embedded WebView2/Chromium control with PKCE)
+**Fallback function:** `Invoke-M365DeviceCodeAuth` (Device Code Flow)
+**Orchestrator:** `Invoke-M365Auth` (tries WebView2 first, falls back to device code)
+**OAuth Flow:** Authorization Code with PKCE (primary) / Device Code (fallback)
+**Environment:** Windows PE (WinForms WebView2 control with Chromium + SwiftShader rendering)
 
-#### Flow Steps
+#### Flow Steps (Primary — WebView2 Browser)
 
 1. **Config fetch** (`Invoke-M365Auth`): Downloads `auth.json` from GitHub over HTTPS
-2. **Device code request** (`Invoke-M365DeviceCodeAuth`): POSTs to the `/devicecode` endpoint to obtain `user_code` and `device_code`
-3. **WinForms dialog** (`Invoke-M365DeviceCodeAuth`): Displays the `user_code` in a styled dialog with the verification URL
-4. **Token polling** (`Invoke-M365DeviceCodeAuth`): Timer-based polling every `interval` seconds; handles `authorization_pending` and `slow_down` responses
+2. **WebView2 prerequisite check** (`Invoke-M365WebView2Auth`): Verifies managed DLLs exist at `X:\WebView2`; loads assemblies
+3. **PKCE generation** (`Invoke-M365WebView2Auth`): Generates 32 random bytes → base64url code verifier; SHA-256 hash → code challenge
+4. **WebView2 environment** (`Invoke-M365WebView2Auth`): Creates Chromium environment with WinPE-safe flags (`--disable-gpu`, `--use-angle=swiftshader`, `--in-process-gpu`, etc.)
+5. **WinForms dialog with WebView2** (`Invoke-M365WebView2Auth`): Opens a dialog containing an embedded WebView2 control navigated to Azure AD `/authorize` with PKCE challenge
+6. **Redirect interception** (`Invoke-M365WebView2Auth`): The `NavigationStarting` event handler intercepts the localhost redirect and captures the authorization code from the query string
+7. **Token exchange** (`Invoke-M365WebView2Auth`): POSTs code + code_verifier to the `/token` endpoint; validates `id_token` presence
+8. **Fallback** (`Invoke-M365Auth`): If WebView2 is unavailable or fails, transparently falls back to Device Code Flow
+
+#### Flow Steps (Fallback — Device Code)
+
+1. **Device code request** (`Invoke-M365DeviceCodeAuth`): POSTs to the `/devicecode` endpoint to obtain `user_code` and `device_code`
+2. **WinForms dialog** (`Invoke-M365DeviceCodeAuth`): Displays the `user_code` in a styled dialog with the verification URL
+3. **Token polling** (`Invoke-M365DeviceCodeAuth`): Timer-based polling every `interval` seconds; handles `authorization_pending` and `slow_down` responses
 
 #### Security Assessment
 
 | Aspect | Status | Details |
 |--------|--------|---------|
-| Token storage | ✅ Ephemeral | Tokens are validated for presence but not stored. |
-| Device Code Flow | ✅ Standard | Full Device Code Flow with timer polling per RFC 8628. |
-| Phishing risk | ⚠️ Inherent | Device Code Flow inherently requires users to visit a URL and enter a code (see Finding F-02). |
+| PKCE (primary flow) | ✅ Implemented | 32-byte random verifier with S256 challenge method. Prevents authorization code interception. |
+| WebView2 rendering | ✅ Chromium-based | Uses Edge WebView2 runtime with SwiftShader software rendering for WinPE compatibility. |
+| Redirect interception | ✅ Client-side | WebView2 `NavigationStarting` event captures the redirect before any HTTP request is made to localhost. |
+| Graceful fallback | ✅ Transparent | If WebView2 runtime is missing or fails, Device Code Flow is used automatically. |
+| Token storage | ✅ Ephemeral | Tokens are validated for presence but not stored. Code verifier exists only in function scope. |
+| `prompt=select_account` | ✅ Good | Forces account picker, preventing silent sign-in with the wrong account. |
+| WinPE GPU flags | ✅ Applied | `--disable-gpu --use-angle=swiftshader --enable-unsafe-swiftshader` ensures rendering without GPU hardware. |
+| Device Code Flow (fallback) | ✅ Preserved | Full Device Code Flow with timer polling is kept as fallback. |
+| Phishing risk | ✅ Reduced | Primary flow uses an embedded browser — no codes to copy, no external device needed. Fallback Device Code Flow still has inherent phishing risk (see Finding F-02). |
 
 ---
 
@@ -215,13 +234,13 @@ The following security best practices are already implemented:
 **Mitigation factors:** The localhost HTTP listener binds to a random ephemeral port and runs for at most 2 minutes, which limits the window of opportunity. Additionally, PKCE provides strong protection against code injection. However, the `state` parameter is still recommended by RFC 6749 §10.12 as a defense-in-depth measure.
 **Recommendation:** Generate a random `state` value before the authorize request, include it in the URL, and validate it when parsing the callback response. This is a defense-in-depth measure on top of the existing PKCE protection.
 
-#### F-02: Device Code Flow Phishing Risk (Informational)
+#### F-02: Device Code Flow Phishing Risk — Mitigated (Informational)
 
-**Component:** `Bootstrap.ps1`, `Invoke-M365DeviceCodeAuth`
+**Component:** `Bootstrap.ps1`, `Invoke-M365DeviceCodeAuth` (fallback path)
 **Severity:** Informational
 **Description:** The Device Code Flow inherently requires users to visit a URL and enter a code. An attacker who initiates a device code flow on their own could display a code to an unsuspecting user and trick them into authenticating on the attacker's behalf. This is a known limitation of the Device Code Flow (RFC 8628 §5.4) and is not a vulnerability in AmpCloud's implementation.
-**Mitigation:** WinPE does not include a modern browser engine, so Device Code Flow is the appropriate OAuth method for this environment. The Azure AD consent screen always shows the application name, giving the user an opportunity to verify the request.
-**Recommendation:** No code change required. Operators should be trained to verify the application name on the Azure AD consent screen matches AmpCloud.
+**Mitigation:** Bootstrap.ps1 now uses an embedded WebView2 (Chromium) browser with Auth Code + PKCE as the primary authentication method. The Device Code Flow is only used as a fallback when the WebView2 runtime is not present in the WinPE image. This significantly reduces the phishing surface since most deployments will use the browser-based flow.
+**Recommendation:** No further code change required. For maximum security, ensure WinPE images are built using Trigger.ps1's Build-WinPE function, which embeds the WebView2 runtime (step 4e).
 
 #### F-03: Editor Fails Open When Config is Unavailable (Low)
 
@@ -266,7 +285,7 @@ The following security best practices are already implemented:
 | **Token theft (web)** | XSS or browser extension steals tokens from sessionStorage | Same-origin policy; no `eval()` or dynamic script injection in editor code; tokens cleared on tab close | Low |
 | **Token theft (PowerShell)** | Memory dump or process inspection | Tokens are ephemeral (not stored); GitHub PAT is zeroed after use | Low |
 | **Script tampering** | Man-in-the-middle modifying downloaded scripts | All downloads use HTTPS (TLS 1.2); GitHub SSL certificates provide server authentication | Low |
-| **Device Code phishing** | Attacker displays their own code to an operator | Azure AD consent screen shows app name; operators trained to verify | Low |
+| **Device Code phishing** | Attacker displays their own code to an operator | Primary flow uses embedded WebView2 browser (no codes); Device Code is fallback only; Azure AD consent screen shows app name | Very Low (mitigated by WebView2 browser) |
 | **MSAL library supply chain** | Compromised MSAL library | Self-hosted (not CDN); version pinned at v2.39.0; integrity can be verified against the npm package | Very Low |
 | **Replay attacks** | Reuse of captured authorization codes | PKCE code verifier is single-use; authorization codes expire quickly (typically 10 minutes) | Very Low |
 | **TLS downgrade** | Downgrade to SSL3/TLS 1.0 | Explicit `Tls12` enforcement in Bootstrap.ps1 and AmpCloud.ps1; recommended for Trigger.ps1 (F-04) | Low |
