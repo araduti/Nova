@@ -101,7 +101,6 @@ $Strings = @{
             ConfigEdition="Windows Edition";
             ConfigBtn="Start deployment";
             AuthSigning="Signing in with Microsoft 365...";
-            AuthPrompt="Sign in with your Microsoft 365 account to continue.";
             AuthUrl="https://microsoft.com/devicelogin";
             AuthWaiting="Waiting for sign-in...";
             AuthSuccess="Identity verified";
@@ -128,7 +127,6 @@ $Strings = @{
             ConfigEdition="Édition Windows";
             ConfigBtn="Démarrer le déploiement";
             AuthSigning="Connexion avec Microsoft 365...";
-            AuthPrompt="Connectez-vous avec votre compte Microsoft 365 pour continuer.";
             AuthUrl="https://microsoft.com/devicelogin";
             AuthWaiting="En attente de connexion...";
             AuthSuccess="Identité vérifiée";
@@ -155,7 +153,6 @@ $Strings = @{
             ConfigEdition="Edición de Windows";
             ConfigBtn="Iniciar implementación";
             AuthSigning="Iniciando sesión con Microsoft 365...";
-            AuthPrompt="Inicie sesión con su cuenta de Microsoft 365 para continuar.";
             AuthUrl="https://microsoft.com/devicelogin";
             AuthWaiting="Esperando inicio de sesión...";
             AuthSuccess="Identidad verificada";
@@ -1681,163 +1678,11 @@ function Show-ConfigurationMenu {
 
 #region ── M365 Authentication ────────────────────────────────────────────────
 
-function Invoke-M365BrowserAuth {
-    <#
-    .SYNOPSIS  Authenticate the operator via an embedded mini-browser (Auth Code + PKCE).
-    .DESCRIPTION
-        Opens a WinForms dialog containing a WebBrowser control that navigates
-        to the Azure AD authorization endpoint.  The user signs in directly
-        inside the embedded browser — no codes to copy or external devices
-        needed.  The control intercepts the localhost redirect carrying the
-        authorization code, then exchanges it for tokens using PKCE.
-        Requires IE 11 emulation mode to be pre-configured in the WinPE
-        registry (injected by Trigger.ps1 Build-WinPE step 4e).
-    .PARAMETER ClientId
-        Azure AD application (client) ID.
-    .OUTPUTS
-        $true on success, $false on failure or cancellation.
-    #>
-    param([string] $ClientId)
-
-    # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────
-    $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $bytes = New-Object byte[] 32
-    $rng.GetBytes($bytes)
-    $codeVerifier  = [Convert]::ToBase64String($bytes) -replace '\+','-' -replace '/','_' -replace '='
-
-    $sha256        = [System.Security.Cryptography.SHA256]::Create()
-    $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
-    $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
-
-    # Redirect to localhost on a random ephemeral port.
-    $port        = Get-Random -Minimum 49152 -Maximum 65536
-    $redirectUri = "http://localhost:$port/"
-
-    # ── Build the authorize URL ─────────────────────────────────────────────
-    $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
-        "client_id=$([uri]::EscapeDataString($ClientId))" +
-        '&response_type=code' +
-        "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-        "&scope=$([uri]::EscapeDataString('openid profile'))" +
-        "&code_challenge=$codeChallenge" +
-        '&code_challenge_method=S256' +
-        '&prompt=select_account'
-
-    # ── Create the browser dialog ───────────────────────────────────────────
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text            = 'AmpCloud — Sign In'
-    $dlg.Size            = New-Object System.Drawing.Size(520, 660)
-    $dlg.StartPosition   = 'CenterScreen'
-    $dlg.FormBorderStyle = 'FixedDialog'
-    $dlg.MaximizeBox     = $false
-    $dlg.MinimizeBox     = $false
-    $dlg.BackColor       = [System.Drawing.Color]::White
-    $dlg.Font            = New-Object System.Drawing.Font('Segoe UI', 10)
-
-    # Header label
-    $msLabel = New-Object System.Windows.Forms.Label
-    $msLabel.Text      = 'Microsoft 365'
-    $msLabel.Font      = New-Object System.Drawing.Font('Segoe UI Semibold', 14)
-    $msLabel.ForeColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $msLabel.Location  = New-Object System.Drawing.Point(20, 12)
-    $msLabel.AutoSize  = $true
-    $dlg.Controls.Add($msLabel)
-
-    # Prompt label
-    $promptLabel = New-Object System.Windows.Forms.Label
-    $promptLabel.Text     = $S.AuthPrompt
-    $promptLabel.Location = New-Object System.Drawing.Point(20, 48)
-    $promptLabel.Size     = New-Object System.Drawing.Size(470, 22)
-    $promptLabel.Font     = New-Object System.Drawing.Font('Segoe UI', 9)
-    $dlg.Controls.Add($promptLabel)
-
-    # Embedded WebBrowser control
-    $browser = New-Object System.Windows.Forms.WebBrowser
-    $browser.Location     = New-Object System.Drawing.Point(10, 78)
-    $browser.Size         = New-Object System.Drawing.Size(492, 490)
-    $browser.ScriptErrorsSuppressed = $true
-    $dlg.Controls.Add($browser)
-
-    # Cancel button
-    $cancelBtn = New-Object System.Windows.Forms.Button
-    $cancelBtn.Text         = 'Cancel'
-    $cancelBtn.Size         = New-Object System.Drawing.Size(120, 36)
-    $cancelBtn.Location     = New-Object System.Drawing.Point(382, 578)
-    $cancelBtn.DialogResult = 'Cancel'
-    $cancelBtn.FlatStyle    = 'Flat'
-    $dlg.Controls.Add($cancelBtn)
-    $dlg.CancelButton = $cancelBtn
-
-    # ── Intercept navigation to capture the authorization code ──────────────
-    $script:_browserAuthCode  = $null
-    $script:_browserAuthError = $null
-
-    $browser.Add_Navigating({
-        param($sender, $e)
-        $url = $e.Url.ToString()
-        # Check if this is the localhost redirect carrying the auth code.
-        if ($url.StartsWith($redirectUri, [StringComparison]::OrdinalIgnoreCase)) {
-            $e.Cancel = $true
-            # Parse the authorization code or error from the query string.
-            $query = $e.Url.Query
-            if ($query) {
-                foreach ($pair in $query.TrimStart('?').Split('&')) {
-                    $kv = $pair.Split('=', 2)
-                    if ($kv.Count -eq 2) {
-                        if ($kv[0] -eq 'code')  { $script:_browserAuthCode  = [uri]::UnescapeDataString($kv[1]) }
-                        if ($kv[0] -eq 'error') { $script:_browserAuthError = [uri]::UnescapeDataString($kv[1]) }
-                    }
-                }
-            }
-            if ($script:_browserAuthCode) {
-                $dlg.DialogResult = 'OK'
-            } else {
-                $dlg.DialogResult = 'Abort'
-            }
-            $dlg.Close()
-        }
-    })
-
-    # Navigate to Azure AD login page.
-    $browser.Navigate($authorizeUrl)
-    $dialogResult = $dlg.ShowDialog()
-
-    if ($dialogResult -ne 'OK' -or -not $script:_browserAuthCode) {
-        if ($script:_browserAuthError) {
-            Write-Verbose "Browser auth error: $($script:_browserAuthError)"
-        }
-        return $false
-    }
-
-    # ── Exchange authorization code for tokens ──────────────────────────────
-    $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
-    try {
-        $body = "client_id=$([uri]::EscapeDataString($ClientId))" +
-                "&scope=$([uri]::EscapeDataString('openid profile'))" +
-                "&code=$([uri]::EscapeDataString($script:_browserAuthCode))" +
-                "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-                '&grant_type=authorization_code' +
-                "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-        $raw = $wc.UploadString($tokenUrl, 'POST', $body)
-        $tokenResponse = $raw | ConvertFrom-Json
-        if ($tokenResponse.id_token) {
-            return $true
-        }
-    } catch {
-        Write-Verbose "Token exchange failed: $_"
-    }
-
-    return $false
-}
-
 function Invoke-M365DeviceCodeAuth {
     <#
-    .SYNOPSIS  Authenticate the operator via Device Code Flow (fallback).
+    .SYNOPSIS  Authenticate the operator via Device Code Flow.
     .DESCRIPTION
-        Fallback authentication path used when the embedded mini-browser is
-        not available.  Initiates the Device Code Flow and shows a WinForms
+        Initiates the OAuth 2.0 Device Code Flow and shows a WinForms
         dialog with the one-time code and verification URL.
     .PARAMETER ClientId
         Azure AD application (client) ID.
@@ -1983,13 +1828,12 @@ function Invoke-M365DeviceCodeAuth {
 
 function Invoke-M365Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via M365 (browser-first, device code fallback).
+    .SYNOPSIS  Authenticate the operator via M365 Device Code Flow.
     .DESCRIPTION
         Downloads Config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
-        first attempts interactive sign-in via an embedded mini-browser
-        (Authorization Code Flow with PKCE).  If the browser control is
-        unavailable or fails, it falls back to Device Code Flow.
+        initiates the Device Code Flow so the operator can sign in on a
+        separate device.
         Tenant restrictions are enforced at the Entra ID app registration
         level — only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
@@ -2027,27 +1871,7 @@ function Invoke-M365Auth {
     Write-Status $S.AuthSigning 'Cyan'
     [System.Windows.Forms.Application]::DoEvents()
 
-    # ── Try embedded mini-browser first ─────────────────────────────────────
-    # The WebBrowser control works when IE 11 emulation is configured in the
-    # registry (done by Trigger.ps1 Build-WinPE step 4e).  If it fails for
-    # any reason (missing emulation key, COM error, script error on the login
-    # page), fall back to Device Code Flow transparently.
-    $browserOk = $false
-    try {
-        $browserOk = Invoke-M365BrowserAuth -ClientId $clientId
-    } catch {
-        Write-Verbose "Embedded browser auth failed, will fall back to Device Code Flow: $_"
-    }
-
-    if ($browserOk) {
-        Write-Status $S.AuthSuccess 'Green'
-        Invoke-Sound 1000 200
-        Start-Sleep -Seconds 1
-        return $true
-    }
-
-    # ── Fallback: Device Code Flow ──────────────────────────────────────────
-    Write-Verbose 'Falling back to Device Code Flow...'
+    # ── Device Code Flow ────────────────────────────────────────────────────
     $deviceOk = $false
     try {
         $deviceOk = Invoke-M365DeviceCodeAuth -ClientId $clientId
@@ -2084,8 +1908,8 @@ function ProceedToEngine {
     # When Config/auth.json has requireAuth = true, the operator must sign in
     # with a Microsoft 365 account from an allowed Entra ID tenant.
     # Tenant restrictions are enforced at the app registration level.
-    # Uses the embedded mini-browser (Auth Code + PKCE) with automatic
-    # fallback to Device Code Flow if the browser control is unavailable.
+    # Uses Device Code Flow — the operator enters a code at
+    # microsoft.com/devicelogin on a separate device to authenticate.
     $authPassed = Invoke-M365Auth
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect

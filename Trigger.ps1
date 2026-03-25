@@ -1046,26 +1046,6 @@ function Build-WinPE {
             }
         }
 
-        # ── 4e. Configure IE 11 emulation for the embedded mini-browser ─────
-        # Bootstrap.ps1 uses a WinForms WebBrowser control for interactive
-        # Microsoft 365 sign-in (Authorization Code Flow with PKCE).  The
-        # control defaults to IE 7 rendering mode, which cannot handle the
-        # modern Azure AD login page.  Setting the FEATURE_BROWSER_EMULATION
-        # registry key to 11001 (IE 11 edge mode) in the offline WinPE image
-        # ensures the login page renders and functions correctly at boot time.
-        $browserHivePath = Join-Path $paths.MountDir 'Windows\System32\config\SOFTWARE'
-        $browserHiveKey  = 'PE_BROWSER'
-        try {
-            $null = & reg.exe load "HKLM\$browserHiveKey" $browserHivePath 2>&1
-            $featurePath = "HKLM\$browserHiveKey\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION"
-            $null = & reg.exe add $featurePath /v 'powershell.exe' /t REG_DWORD /d 11001 /f 2>&1
-            Write-Success 'IE 11 browser emulation configured for WinPE sign-in.'
-        } catch {
-            Write-Warn "Browser emulation registry update failed (non-fatal — sign-in will fall back to Device Code Flow): $_"
-        } finally {
-            $null = & reg.exe unload "HKLM\$browserHiveKey" 2>&1
-        }
-
         # ── 5. Embed Bootstrap.ps1 ────────────────────────────────────────────
         $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
