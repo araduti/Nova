@@ -1571,6 +1571,10 @@ function Invoke-M365DeviceCodeAuth {
 
     $userCode   = $deviceResponse.user_code
     $deviceCode = $deviceResponse.device_code
+    if (-not $userCode -or -not $deviceCode) {
+        Write-Fail 'Device code response is missing required fields.'
+        return $false
+    }
     $expiresIn  = if ($deviceResponse.expires_in) { [int]$deviceResponse.expires_in } else { 900 }
     $interval   = if ($deviceResponse.interval)   { [int]$deviceResponse.interval   } else { 5   }
 
