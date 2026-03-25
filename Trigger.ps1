@@ -1506,6 +1506,119 @@ function Publish-BootImage {
 
 #endregion
 
+#region ── M365 Authentication ──────────────────────────────────────────────────
+
+function Invoke-M365DeviceCodeAuth {
+    <#
+    .SYNOPSIS  Authenticate the operator via the OAuth 2.0 Device Code Flow (console).
+    .DESCRIPTION
+        Downloads Config/auth.json from the GitHub repository.  When
+        requireAuth is true and a clientId is configured, the function
+        initiates the Device Code Flow against Azure AD
+        (login.microsoftonline.com/organizations) and displays the one-time
+        code and verification URL in the console.
+        Tenant restrictions are enforced at the Entra ID app registration
+        level — only tenants explicitly allowed in the app's
+        "Supported account types" configuration can complete sign-in.
+    .OUTPUTS
+        $true  if authentication succeeded or was not required.
+        $false if authentication failed or timed out.
+    #>
+
+    # ── Fetch auth configuration from the repository ────────────────────────
+    $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/auth.json"
+    $authConfig    = $null
+    try {
+        $wc      = New-Object System.Net.WebClient
+        $rawJson = $wc.DownloadString($authConfigUrl)
+        $authConfig = $rawJson | ConvertFrom-Json
+    } catch {
+        Write-Verbose "Could not fetch auth config: $_"
+    }
+
+    # If auth is not configured or not required, skip silently.
+    if (-not $authConfig -or -not $authConfig.requireAuth) {
+        return $true
+    }
+
+    # Validate that the config has the minimum required fields.
+    if (-not $authConfig.clientId) {
+        Write-Verbose "Auth config incomplete — skipping authentication."
+        return $true
+    }
+
+    $clientId = $authConfig.clientId
+
+    # ── Step 1: Request a device code ───────────────────────────────────────
+    Write-Step 'Signing in with Microsoft 365...'
+
+    $deviceCodeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/devicecode'
+    $tokenUrl      = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
+    $scope         = 'openid profile'
+    $grantType     = 'urn:ietf:params:oauth:grant-type:device_code'
+
+    $deviceResponse = $null
+    try {
+        $body = "client_id=$([uri]::EscapeDataString($clientId))&scope=$([uri]::EscapeDataString($scope))"
+        $wc   = New-Object System.Net.WebClient
+        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+        $raw  = $wc.UploadString($deviceCodeUrl, 'POST', $body)
+        $deviceResponse = $raw | ConvertFrom-Json
+    } catch {
+        Write-Fail 'Device code request failed.'
+        return $false
+    }
+
+    $userCode   = $deviceResponse.user_code
+    $deviceCode = $deviceResponse.device_code
+    $expiresIn  = if ($deviceResponse.expires_in) { [int]$deviceResponse.expires_in } else { 900 }
+    $interval   = if ($deviceResponse.interval)   { [int]$deviceResponse.interval   } else { 5   }
+
+    # ── Step 2: Display sign-in instructions ────────────────────────────────
+    Write-Host ''
+    Write-Host '  To sign in, use a web browser and go to:' -ForegroundColor White
+    Write-Host '  https://microsoft.com/devicelogin'        -ForegroundColor Cyan
+    Write-Host ''
+    Write-Host "  Enter this code: $userCode"               -ForegroundColor Yellow
+    Write-Host ''
+    Write-Host '  Waiting for sign-in...' -NoNewline        -ForegroundColor Gray
+
+    # ── Step 3: Poll for token ──────────────────────────────────────────────
+    $deadline = [datetime]::UtcNow.AddSeconds($expiresIn)
+    while ([datetime]::UtcNow -lt $deadline) {
+        Start-Sleep -Seconds $interval
+        try {
+            $body = "grant_type=$([uri]::EscapeDataString($grantType))" +
+                    "&client_id=$([uri]::EscapeDataString($clientId))" +
+                    "&device_code=$([uri]::EscapeDataString($deviceCode))"
+            $wc = New-Object System.Net.WebClient
+            $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+            $raw = $wc.UploadString($tokenUrl, 'POST', $body)
+            $tokenResponse = $raw | ConvertFrom-Json
+            if ($tokenResponse.id_token) {
+                Write-Host ''
+                Write-Success 'Identity verified.'
+                return $true
+            }
+        } catch {
+            # Azure AD returns HTTP 400 with authorization_pending while the
+            # user has not yet completed sign-in.  Any other error is kept
+            # silent — we continue polling until expiry rather than aborting
+            # on transient network errors.
+            $msg = $_.ToString()
+            if ($msg -notmatch 'authorization_pending' -and $msg -notmatch 'slow_down') {
+                Write-Verbose "Token poll error: $msg"
+            }
+        }
+    }
+
+    Write-Host ''
+    Write-Fail 'Authentication timed out.'
+    return $false
+}
+
+#endregion
+
 #region ── Main ─────────────────────────────────────────────────────────────────
 
 Write-Host @"
@@ -1521,11 +1634,18 @@ Write-Host @"
 "@ -ForegroundColor Cyan
 
 try {
-    # ── 0. Detect architecture ────────────────────────────────────────────────
+    # ── 0. M365 authentication gate ──────────────────────────────────────────
+    $authPassed = Invoke-M365DeviceCodeAuth
+    if (-not $authPassed) {
+        Write-Fail 'Authentication is required. Exiting.'
+        exit 1
+    }
+
+    # ── 1. Detect architecture ────────────────────────────────────────────────
     $arch = Get-WinPEArchitecture
     Write-Step "Host architecture: $arch"
 
-    # ── 0b. Check for a pre-built cloud boot image ───────────────────────────
+    # ── 1b. Check for a pre-built cloud boot image ──────────────────────────
     Write-Step 'Checking for pre-built boot image on GitHub...'
     $cloudImage = Get-CloudBootImage -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo
     $useCloud   = $false
