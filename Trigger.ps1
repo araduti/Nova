@@ -82,7 +82,7 @@ if ($_modPath -and (Test-Path $_modPath)) {
 } else {
     # Running via iex or module not installed — download from GitHub.
     $_tmpMod = Join-Path ([System.IO.Path]::GetTempPath()) 'AmpCloud'
-    if (Test-Path $_tmpMod) { Remove-Item $_tmpMod -Recurse -Force }
+    if (Test-Path $_tmpMod) { Remove-Item $_tmpMod -Recurse -Force -ErrorAction SilentlyContinue }
     $null = New-Item -Path $_tmpMod -ItemType Directory -Force
     $_zipUrl  = "https://github.com/$GitHubUser/$GitHubRepo/archive/refs/heads/$GitHubBranch.zip"
     $_zipFile = Join-Path $_tmpMod 'repo.zip'
