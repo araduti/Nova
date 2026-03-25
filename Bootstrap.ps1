@@ -1787,9 +1787,15 @@ function Invoke-M365EdgeAuth {
     # not be writable in WinPE.
     # --no-first-run / --disable-fre suppress Edge first-run experience
     # screens (welcome wizard, default-browser prompt, etc.).
-    # --disable-features=msWebOOBE,WebAuthentication suppresses the Edge
-    # out-of-box setup and disables the WebAuthn (passkey/FIDO2) API, which
-    # cannot work in WinPE (no TPM, no Windows Hello, no biometric hardware).
+    # --disable-features=msWebOOBE suppresses the Edge out-of-box setup.
+    # WebAuthentication is left enabled so that the cross-device / hybrid
+    # (caBLE v2) flow works — the user can scan a QR code with a phone
+    # (e.g. iPhone or Android) to complete FIDO2 / passkey authentication.
+    # Platform authenticators (TPM, Windows Hello, biometrics) are
+    # unavailable in WinPE, but Edge automatically skips them when the
+    # hardware is absent and offers the QR-code option instead.
+    # --enable-features=WebAuthenticationCableSecondFactor explicitly
+    # enables the cross-device QR code authenticator flow.
     $userDataDir = 'X:\Temp\EdgeAuthData'
     if (-not (Test-Path $userDataDir)) {
         $null = New-Item -Path $userDataDir -ItemType Directory -Force
@@ -1806,7 +1812,8 @@ function Invoke-M365EdgeAuth {
         '--in-process-gpu'
         '--no-first-run'
         '--disable-fre'
-        '--disable-features=msWebOOBE,WebAuthentication'
+        '--disable-features=msWebOOBE'
+        '--enable-features=WebAuthenticationCableSecondFactor'
         $authorizeUrl
     )
 
