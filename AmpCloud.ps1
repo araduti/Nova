@@ -73,7 +73,13 @@ param(
 
     # IPC status file — Bootstrap.ps1 polls this JSON file to show live progress
     # in the WinForms UI.  Leave empty to disable status reporting.
-    [string]$StatusFile = ''
+    [string]$StatusFile = '',
+
+    # Task sequence JSON — when specified, the engine reads the step list from
+    # this file instead of running the default hardcoded sequence.  The file is
+    # produced by the web-based Task Sequence Editor (Editor/index.html) and
+    # follows the schema defined in TaskSequence/default.json.
+    [string]$TaskSequencePath = ''
 )
 
 Set-StrictMode -Version Latest
@@ -1035,6 +1041,122 @@ function Invoke-PostScript {
 
 #endregion
 
+#region ── Task Sequence ────────────────────────────────────────────────────────
+
+function Read-TaskSequence {
+    <#
+    .SYNOPSIS  Loads a task sequence JSON file produced by the web-based Editor.
+    .DESCRIPTION
+        Reads the JSON file, validates the required structure (name + steps array),
+        and returns a hashtable matching the schema in TaskSequence/default.json.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+    if (-not (Test-Path $Path)) {
+        throw "Task sequence file not found: $Path"
+    }
+    Write-Step "Loading task sequence from $Path"
+    $raw = Get-Content $Path -Raw -ErrorAction Stop
+    $ts  = $raw | ConvertFrom-Json -ErrorAction Stop
+
+    if (-not $ts.steps -or $ts.steps -isnot [System.Collections.IEnumerable]) {
+        throw "Invalid task sequence file: missing 'steps' array"
+    }
+    Write-Success "Loaded task sequence '$($ts.name)' with $($ts.steps.Count) steps"
+    return $ts
+}
+
+function Invoke-TaskSequenceStep {
+    <#
+    .SYNOPSIS  Executes a single task sequence step by dispatching to the matching engine function.
+    .DESCRIPTION
+        Maps each step type string to the corresponding AmpCloud engine function,
+        passing the step's parameters.  Uses the same functions that the hardcoded
+        path calls, so behaviour is identical.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$Step,
+        [int]$Index,
+        [int]$TotalSteps,
+        # Shared state needed across steps (set by the caller)
+        [string]$CurrentScratchDir,
+        [string]$CurrentOSDrive,
+        [string]$CurrentFirmwareType,
+        [int]$CurrentDiskNumber
+    )
+
+    $pct = [math]::Min(100, [math]::Round(($Index / $TotalSteps) * 100))
+    $uiStep = if ($Index -lt ($TotalSteps * 0.4)) { 1 } elseif ($Index -lt ($TotalSteps * 0.8)) { 2 } else { 3 }
+    $p = $Step.parameters
+
+    switch ($Step.type) {
+        'PartitionDisk' {
+            $disk = if ($p -and $null -ne $p.diskNumber) { $p.diskNumber } else { $CurrentDiskNumber }
+            $drv  = if ($p -and $p.osDriveLetter)        { $p.osDriveLetter } else { $CurrentOSDrive }
+            Update-BootstrapStatus -Message "Partitioning disk..." -Detail "Creating layout on disk $disk" -Step $uiStep -Progress $pct
+            Initialize-TargetDisk -DiskNumber $disk -FirmwareType $CurrentFirmwareType -OSDriveLetter $drv
+        }
+        'DownloadImage' {
+            $url  = if ($p -and $p.imageUrl)      { $p.imageUrl }      else { $WindowsImageUrl }
+            $ed   = if ($p -and $p.edition)        { $p.edition }       else { $WindowsEdition }
+            $lang = if ($p -and $p.language)        { $p.language }      else { $WindowsLanguage }
+            $arch = if ($p -and $p.architecture)    { $p.architecture }  else { $WindowsArchitecture }
+            Update-BootstrapStatus -Message "Downloading Windows image..." -Detail "Fetching $ed $lang $arch" -Step $uiStep -Progress $pct
+            $script:TsImagePath = Get-WindowsImageSource `
+                -ImageUrl $url -Edition $ed -Language $lang -Architecture $arch `
+                -FirmwareType $CurrentFirmwareType -ScratchDir $CurrentScratchDir
+        }
+        'ApplyImage' {
+            $ed = if ($p -and $p.edition) { $p.edition } else { $WindowsEdition }
+            Update-BootstrapStatus -Message "Applying Windows image..." -Detail "Expanding Windows files" -Step $uiStep -Progress $pct
+            Install-WindowsImage -ImagePath $script:TsImagePath -Edition $ed -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
+        }
+        'SetBootloader' {
+            Update-BootstrapStatus -Message "Configuring bootloader..." -Detail "Writing BCD store" -Step $uiStep -Progress $pct
+            Set-Bootloader -OSDriveLetter $CurrentOSDrive -FirmwareType $CurrentFirmwareType -DiskNumber $CurrentDiskNumber
+        }
+        'InjectDrivers' {
+            $dp = if ($p -and $p.driverPath) { $p.driverPath } else { $DriverPath }
+            Update-BootstrapStatus -Message "Injecting drivers..." -Detail "Adding drivers" -Step $uiStep -Progress $pct
+            Add-Driver -DriverPath $dp -OSDriveLetter $CurrentOSDrive
+        }
+        'InjectOemDrivers' {
+            Update-BootstrapStatus -Message "Injecting OEM drivers..." -Detail "Fetching manufacturer drivers" -Step $uiStep -Progress $pct
+            Invoke-OemDriverInjection -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
+        }
+        'ApplyAutopilot' {
+            $jUrl  = if ($p -and $p.jsonUrl)  { $p.jsonUrl }  else { $AutopilotJsonUrl }
+            $jPath = if ($p -and $p.jsonPath) { $p.jsonPath } else { $AutopilotJsonPath }
+            Update-BootstrapStatus -Message "Applying Autopilot configuration..." -Detail "Embedding provisioning profile" -Step $uiStep -Progress $pct
+            Set-AutopilotConfig -JsonUrl $jUrl -JsonPath $jPath -OSDriveLetter $CurrentOSDrive
+        }
+        'StageCCMSetup' {
+            $url = if ($p -and $p.ccmSetupUrl) { $p.ccmSetupUrl } else { $CCMSetupUrl }
+            Update-BootstrapStatus -Message "Staging ConfigMgr setup..." -Detail "Preparing ccmsetup.exe" -Step $uiStep -Progress $pct
+            Install-CCMSetup -CCMSetupUrl $url -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
+        }
+        'CustomizeOOBE' {
+            $uUrl  = if ($p -and $p.unattendUrl)  { $p.unattendUrl }  else { $UnattendUrl }
+            $uPath = if ($p -and $p.unattendPath) { $p.unattendPath } else { $UnattendPath }
+            Update-BootstrapStatus -Message "Customizing OOBE..." -Detail "Applying unattend.xml" -Step $uiStep -Progress $pct
+            Set-OOBECustomization -UnattendUrl $uUrl -UnattendPath $uPath -OSDriveLetter $CurrentOSDrive
+        }
+        'RunPostScripts' {
+            $urls = if ($p -and $p.scriptUrls) { @($p.scriptUrls) } else { $PostScriptUrls }
+            Update-BootstrapStatus -Message "Staging post-scripts..." -Detail "Downloading post-provisioning scripts" -Step $uiStep -Progress $pct
+            Invoke-PostScript -ScriptUrls $urls -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
+        }
+        default {
+            Write-Warn "Unknown step type '$($Step.type)' — skipping"
+        }
+    }
+}
+
+#endregion
+
 #region ── Main ─────────────────────────────────────────────────────────────────
 
 Write-Host @"
@@ -1058,6 +1180,54 @@ if (-not $PSBoundParameters.ContainsKey('FirmwareType')) {
 
 $stepName = ''
 try {
+
+    # ── Task-sequence-driven execution path ─────────────────────────
+    # When a JSON task sequence file is supplied, execute only the
+    # enabled steps in the order defined by the editor.  This path
+    # replaces the default hardcoded sequence below.
+    if ($TaskSequencePath) {
+        $ts = Read-TaskSequence -Path $TaskSequencePath
+        Write-Step "Firmware type: $FirmwareType"
+        New-ScratchDirectory -Path $ScratchDir
+
+        $enabledSteps = @($ts.steps | Where-Object { $_.enabled -ne $false })
+        Write-Step "Executing $($enabledSteps.Count) enabled steps"
+
+        $script:TsImagePath = ''
+        for ($i = 0; $i -lt $enabledSteps.Count; $i++) {
+            $s = $enabledSteps[$i]
+            $stepName = $s.name
+            Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type))"
+
+            # After PartitionDisk, redirect scratch to OS drive
+            if ($s.type -eq 'PartitionDisk') {
+                Invoke-TaskSequenceStep -Step $s -Index ($i+1) -TotalSteps $enabledSteps.Count `
+                    -CurrentScratchDir $ScratchDir `
+                    -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
+                    -CurrentDiskNumber $TargetDiskNumber
+                $ScratchDir = Join-Path "${OSDrive}:" 'AmpCloud'
+                New-ScratchDirectory -Path $ScratchDir
+            } else {
+                try {
+                    Invoke-TaskSequenceStep -Step $s -Index ($i+1) -TotalSteps $enabledSteps.Count `
+                        -CurrentScratchDir $ScratchDir `
+                        -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
+                        -CurrentDiskNumber $TargetDiskNumber
+                } catch {
+                    if ($s.continueOnError) {
+                        Write-Warn "Step '$($s.name)' failed but continueOnError is set — continuing: $_"
+                    } else {
+                        throw
+                    }
+                }
+            }
+        }
+
+        Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Detail 'Windows installation finished successfully' -Step 3 -Progress 100 -Done
+
+    } else {
+
+    # ── Default hardcoded execution path (backward compatible) ──────
     Write-Step "Firmware type: $FirmwareType"
 
     # Ensure scratch directory exists
@@ -1152,6 +1322,8 @@ try {
         -ScratchDir    $ScratchDir
 
     Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Detail 'Windows installation finished successfully' -Step 3 -Progress 100 -Done
+
+    } # end if/else TaskSequencePath
 
     Write-Host @"
 

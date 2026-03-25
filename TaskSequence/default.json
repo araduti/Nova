@@ -1,0 +1,119 @@
+{
+  "name": "Default AmpCloud Task Sequence",
+  "version": "1.0",
+  "description": "Standard cloud-native Windows deployment via AmpCloud",
+  "steps": [
+    {
+      "id": "partition-disk",
+      "name": "Partition Disk",
+      "type": "PartitionDisk",
+      "enabled": true,
+      "description": "Create GPT (UEFI) or MBR (BIOS) layout on the target drive",
+      "continueOnError": false,
+      "parameters": {
+        "diskNumber": 0,
+        "osDriveLetter": "C"
+      }
+    },
+    {
+      "id": "download-image",
+      "name": "Download Windows Image",
+      "type": "DownloadImage",
+      "enabled": true,
+      "description": "Fetch the Windows ESD/WIM from Microsoft CDN or a custom URL",
+      "continueOnError": false,
+      "parameters": {
+        "imageUrl": "",
+        "edition": "Professional",
+        "language": "en-us",
+        "architecture": "x64"
+      }
+    },
+    {
+      "id": "apply-image",
+      "name": "Apply Windows Image",
+      "type": "ApplyImage",
+      "enabled": true,
+      "description": "Expand the Windows image onto the target partition",
+      "continueOnError": false,
+      "parameters": {
+        "edition": "Professional"
+      }
+    },
+    {
+      "id": "set-bootloader",
+      "name": "Configure Bootloader",
+      "type": "SetBootloader",
+      "enabled": true,
+      "description": "Write BCD store and EFI/MBR boot entries",
+      "continueOnError": false,
+      "parameters": {}
+    },
+    {
+      "id": "inject-drivers",
+      "name": "Inject Drivers",
+      "type": "InjectDrivers",
+      "enabled": true,
+      "description": "Add network and storage drivers from a local or network path",
+      "continueOnError": true,
+      "parameters": {
+        "driverPath": ""
+      }
+    },
+    {
+      "id": "inject-oem-drivers",
+      "name": "Inject OEM Drivers",
+      "type": "InjectOemDrivers",
+      "enabled": false,
+      "description": "Auto-detect manufacturer (Dell/HP/Lenovo) and fetch latest drivers",
+      "continueOnError": true,
+      "parameters": {}
+    },
+    {
+      "id": "apply-autopilot",
+      "name": "Apply Autopilot Configuration",
+      "type": "ApplyAutopilot",
+      "enabled": true,
+      "description": "Embed the Autopilot/Intune provisioning profile",
+      "continueOnError": true,
+      "parameters": {
+        "jsonUrl": "",
+        "jsonPath": ""
+      }
+    },
+    {
+      "id": "stage-ccmsetup",
+      "name": "Stage ConfigMgr Setup",
+      "type": "StageCCMSetup",
+      "enabled": false,
+      "description": "Stage ccmsetup.exe for first-boot ConfigMgr enrollment",
+      "continueOnError": true,
+      "parameters": {
+        "ccmSetupUrl": ""
+      }
+    },
+    {
+      "id": "customize-oobe",
+      "name": "Customize OOBE",
+      "type": "CustomizeOOBE",
+      "enabled": true,
+      "description": "Apply unattend.xml for out-of-box experience customization",
+      "continueOnError": true,
+      "parameters": {
+        "unattendUrl": "",
+        "unattendPath": ""
+      }
+    },
+    {
+      "id": "run-post-scripts",
+      "name": "Run Post-Provisioning Scripts",
+      "type": "RunPostScripts",
+      "enabled": true,
+      "description": "Download and stage PowerShell scripts for first-boot execution",
+      "continueOnError": true,
+      "parameters": {
+        "scriptUrls": []
+      }
+    }
+  ]
+}
