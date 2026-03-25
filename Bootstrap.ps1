@@ -1781,10 +1781,12 @@ function Invoke-M365WebView2Auth {
     # to use SwiftShader (software OpenGL ES implementation) for rendering.
     # --enable-unsafe-swiftshader is required because SwiftShader is normally
     # blocked in elevated/SYSTEM contexts; in WinPE there is no alternative.
+    # --allow-run-as-system permits Chromium to run under the SYSTEM account.
     $options = [Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions]::new()
     $options.AdditionalBrowserArguments =
         '--disable-gpu --disable-gpu-compositing --disable-direct-composition ' +
-        '--use-angle=swiftshader --enable-unsafe-swiftshader --in-process-gpu'
+        '--use-angle=swiftshader --enable-unsafe-swiftshader --in-process-gpu ' +
+        '--allow-run-as-system'
 
     $userDataFolder = 'X:\Temp\WebView2Data'
     if (-not (Test-Path $userDataFolder)) {
