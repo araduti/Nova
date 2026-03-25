@@ -1785,6 +1785,11 @@ function Invoke-M365EdgeAuth {
     # (WinPE always runs as SYSTEM).
     # --user-data-dir avoids writing to the default profile path, which may
     # not be writable in WinPE.
+    # --no-first-run / --disable-fre suppress Edge first-run experience
+    # screens (welcome wizard, default-browser prompt, etc.).
+    # --disable-features=msWebOOBE,WebAuthentication suppresses the Edge
+    # out-of-box setup and disables the WebAuthn (passkey/FIDO2) API, which
+    # cannot work in WinPE (no TPM, no Windows Hello, no biometric hardware).
     $userDataDir = 'X:\Temp\EdgeAuthData'
     if (-not (Test-Path $userDataDir)) {
         $null = New-Item -Path $userDataDir -ItemType Directory -Force
@@ -1799,6 +1804,9 @@ function Invoke-M365EdgeAuth {
         '--use-angle=swiftshader'
         '--enable-unsafe-swiftshader'
         '--in-process-gpu'
+        '--no-first-run'
+        '--disable-fre'
+        '--disable-features=msWebOOBE,WebAuthentication'
         $authorizeUrl
     )
 
