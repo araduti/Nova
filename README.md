@@ -272,6 +272,7 @@ Tenant restrictions are managed directly in the **Entra ID app registration** un
    - Under **Authentication → Advanced settings**, enable **Allow public client flows** (required for Device Code Flow fallback in WinPE)
    - Under **Authentication → Platform configurations → Single-page application**, add your GitHub Pages URL as a redirect URI (e.g. `https://yourusername.github.io/AmpCloud/Editor/`)
    - Under **Authentication → Platform configurations → Mobile and desktop applications**, add `http://localhost` as a redirect URI (required for the Edge browser sign-in in WinPE)
+   - *(Optional — for Autopilot import)* Under **API permissions**, add **Microsoft Graph → Delegated permissions → DeviceManagementServiceConfig.ReadWrite.All** and grant admin consent
    - Note the **Application (client) ID**
 
 2. **Configure `Config/auth.json`:**
@@ -280,7 +281,9 @@ Tenant restrictions are managed directly in the **Entra ID app registration** un
    {
        "requireAuth": true,
        "clientId": "YOUR-APPLICATION-CLIENT-ID",
-       "redirectUri": "https://yourusername.github.io/AmpCloud/Editor/"
+       "redirectUri": "https://yourusername.github.io/AmpCloud/Editor/",
+       "autopilotImport": true,
+       "graphScopes": "DeviceManagementServiceConfig.ReadWrite.All"
    }
    ```
 
@@ -289,6 +292,8 @@ Tenant restrictions are managed directly in the **Entra ID app registration** un
    | `requireAuth` | Set to `true` to enforce authentication. When `false` (default), auth is skipped. |
    | `clientId` | The Application (client) ID from your Azure AD app registration. |
    | `redirectUri` | The redirect URI registered in your app registration under **Single-page application** platform. Must match exactly. |
+   | `autopilotImport` | Set to `true` to enable API-based Autopilot device import during WinPE deployment. The device is imported only if not already registered. |
+   | `graphScopes` | Space-separated Microsoft Graph delegated permissions to request during sign-in (e.g. `DeviceManagementServiceConfig.ReadWrite.All` for Autopilot). No client secret is needed — uses delegated permissions from the interactive sign-in. |
 
 ---
 

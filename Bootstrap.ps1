@@ -1719,7 +1719,10 @@ function Invoke-M365EdgeAuth {
     .OUTPUTS
         $true on success, $false on failure or cancellation.
     #>
-    param([string] $ClientId)
+    param(
+        [string] $ClientId,
+        [string] $Scope = 'openid profile'
+    )
 
     $edgePath = 'X:\WebView2\Edge\msedge.exe'
 
@@ -1773,7 +1776,7 @@ function Invoke-M365EdgeAuth {
         "client_id=$([uri]::EscapeDataString($ClientId))" +
         '&response_type=code' +
         "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-        "&scope=$([uri]::EscapeDataString('openid profile'))" +
+        "&scope=$([uri]::EscapeDataString($Scope))" +
         "&code_challenge=$codeChallenge" +
         '&code_challenge_method=S256' +
         '&prompt=select_account'
@@ -1955,7 +1958,7 @@ function Invoke-M365EdgeAuth {
     $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
     try {
         $body = "client_id=$([uri]::EscapeDataString($ClientId))" +
-                "&scope=$([uri]::EscapeDataString('openid profile'))" +
+                "&scope=$([uri]::EscapeDataString($Scope))" +
                 "&code=$([uri]::EscapeDataString($script:_edgeAuthCode))" +
                 "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
                 '&grant_type=authorization_code' +
@@ -1965,6 +1968,9 @@ function Invoke-M365EdgeAuth {
         $raw = $wc.UploadString($tokenUrl, 'POST', $body)
         $tokenResponse = $raw | ConvertFrom-Json
         if ($tokenResponse.id_token) {
+            if ($tokenResponse.access_token) {
+                $script:GraphAccessToken = $tokenResponse.access_token
+            }
             Write-AuthLog "Edge auth succeeded — token obtained."
             return $true
         }
@@ -1984,19 +1990,23 @@ function Invoke-M365DeviceCodeAuth {
         shows a WinForms dialog with the one-time code and verification URL.
     .PARAMETER ClientId
         Azure AD application (client) ID.
+    .PARAMETER Scope
+        OAuth 2.0 scopes to request (space-separated).
     .OUTPUTS
         $true on success, $false on failure or cancellation.
     #>
-    param([string] $ClientId)
+    param(
+        [string] $ClientId,
+        [string] $Scope = 'openid profile'
+    )
 
     $deviceCodeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/devicecode'
     $tokenUrl      = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
-    $scope         = 'openid profile'
     $grantType     = 'urn:ietf:params:oauth:grant-type:device_code'
 
     $deviceResponse = $null
     try {
-        $body = "client_id=$([uri]::EscapeDataString($ClientId))&scope=$([uri]::EscapeDataString($scope))"
+        $body = "client_id=$([uri]::EscapeDataString($ClientId))&scope=$([uri]::EscapeDataString($Scope))"
         $wc   = New-Object System.Net.WebClient
         $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
         $raw  = $wc.UploadString($deviceCodeUrl, 'POST', $body)
@@ -2101,6 +2111,9 @@ function Invoke-M365DeviceCodeAuth {
             $tokenResponse = $raw | ConvertFrom-Json
             if ($tokenResponse.id_token) {
                 $script:_authResult = $tokenResponse
+                if ($tokenResponse.access_token) {
+                    $script:GraphAccessToken = $tokenResponse.access_token
+                }
                 $pollTimer.Stop()
                 $dlg.DialogResult = 'OK'
                 $dlg.Close()
@@ -2168,6 +2181,18 @@ function Invoke-M365Auth {
 
     $clientId = $authConfig.clientId
 
+    # ── Build scope string ──────────────────────────────────────────────────
+    # Always include openid profile; append Graph API scopes when configured
+    # (e.g. DeviceManagementServiceConfig.ReadWrite.All for Autopilot import).
+    # Delegated permissions — no client secret required.
+    $scope = 'openid profile'
+    if ($authConfig.graphScopes) {
+        $scope = "openid profile $($authConfig.graphScopes)"
+    }
+
+    # Expose the auth config for post-auth integration (Autopilot import).
+    $script:AuthConfig = $authConfig
+
     Write-Status $S.AuthSigning 'Cyan'
     [System.Windows.Forms.Application]::DoEvents()
 
@@ -2178,7 +2203,7 @@ function Invoke-M365Auth {
     # or fails, fall back to Device Code Flow transparently.
     $browserOk = $false
     try {
-        $browserOk = Invoke-M365EdgeAuth -ClientId $clientId
+        $browserOk = Invoke-M365EdgeAuth -ClientId $clientId -Scope $scope
     } catch {
         Write-AuthLog "Edge auth failed, will fall back to Device Code Flow: $_"
     }
@@ -2194,7 +2219,7 @@ function Invoke-M365Auth {
     Write-AuthLog "Falling back to Device Code Flow... (see $script:AuthLogPath for details)"
     $deviceOk = $false
     try {
-        $deviceOk = Invoke-M365DeviceCodeAuth -ClientId $clientId
+        $deviceOk = Invoke-M365DeviceCodeAuth -ClientId $clientId -Scope $scope
     } catch {
         Write-AuthLog "Device Code Flow failed: $_"
     }
@@ -2237,6 +2262,36 @@ function ProceedToEngine {
         $ringTimer.Stop()
         $ringPanel.Visible = $false
         return
+    }
+
+    # ── Autopilot device import ─────────────────────────────────────────────
+    # When autopilotImport is enabled in auth.json and a Graph access token
+    # was obtained during sign-in, register the device in Autopilot via
+    # the Microsoft Graph API (delegated permissions — no client secret).
+    # The device is only imported if it is not already registered.
+    if ($script:AuthConfig -and $script:AuthConfig.autopilotImport -and $script:GraphAccessToken) {
+        Write-AuthLog "Autopilot import enabled — checking device registration..."
+        try {
+            $serial = $null
+            try { $serial = (Get-WmiObject -Class Win32_BIOS).SerialNumber } catch {}
+            if ($serial -and $serial.Trim() -ne '') {
+                $filter = [uri]::EscapeDataString("contains(serialNumber,'$serial')")
+                $uri    = "https://graph.microsoft.com/v1.0/deviceManagement/windowsAutopilotDeviceIdentities?`$filter=$filter"
+                $check  = Invoke-RestMethod -Uri $uri -Headers @{
+                    'Authorization' = "Bearer $($script:GraphAccessToken)"
+                } -Method GET
+
+                if ($check.value -and $check.value.Count -gt 0) {
+                    Write-AuthLog "Device $serial is already registered in Autopilot — skipping import."
+                } else {
+                    Write-AuthLog "Device $serial not found in Autopilot — this device can be imported after OS deployment using the Autopilot tools."
+                }
+            } else {
+                Write-AuthLog "Could not determine device serial number — skipping Autopilot check."
+            }
+        } catch {
+            Write-AuthLog "Autopilot check failed (non-fatal): $_"
+        }
     }
 
     Update-Step 4
