@@ -221,6 +221,20 @@ Updates to `AmpCloud.ps1` take effect **immediately** — no rebuilds, no redist
 
 ---
 
+## Task Sequence Editor
+
+AmpCloud includes a browser-based Task Sequence Editor for visually creating and editing deployment task sequences.
+
+**Live editor:** [https://araduti.github.io/AmpCloud/Editor/](https://araduti.github.io/AmpCloud/Editor/)
+
+- Create, reorder, and configure deployment steps in a drag-and-drop interface
+- Open existing `default.json` task sequences or start from scratch
+- Export edited sequences as JSON for use with the `-TaskSequencePath` parameter
+
+The editor is a static web app (HTML/CSS/JS) hosted on GitHub Pages and requires no installation.
+
+---
+
 ## Security Considerations
 
 - Always host scripts in a **private** repository if they contain sensitive configuration
