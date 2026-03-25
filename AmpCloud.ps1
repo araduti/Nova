@@ -1155,11 +1155,9 @@ function Invoke-TaskSequenceStep {
             Install-CCMSetup -CCMSetupUrl $url -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
         'CustomizeOOBE' {
-            $uUrl     = if ($p -and $p.unattendUrl)     { $p.unattendUrl }     else { $UnattendUrl }
-            $uPath    = if ($p -and $p.unattendPath)    { $p.unattendPath }    else { $UnattendPath }
-            $uContent = if ($p -and $p.unattendContent -and $p.unattendSource -eq 'default') { $p.unattendContent } else { $UnattendContent }
-            # When source is 'cloud', only use URL/path; when 'default', use content
-            if ($p -and $p.unattendSource -eq 'cloud') { $uContent = '' }
+            $uUrl     = if ($p -and $p.unattendUrl)  { $p.unattendUrl }  else { $UnattendUrl }
+            $uPath    = if ($p -and $p.unattendPath)  { $p.unattendPath }  else { $UnattendPath }
+            $uContent = if ($p -and $p.unattendSource -eq 'default' -and $p.unattendContent) { $p.unattendContent } elseif (-not $p -or $p.unattendSource -ne 'cloud') { $UnattendContent } else { '' }
             Update-BootstrapStatus -Message "Customizing OOBE..." -Detail "Applying unattend.xml" -Step $uiStep -Progress $pct
             Set-OOBECustomization -UnattendUrl $uUrl -UnattendPath $uPath -UnattendContent $uContent -OSDriveLetter $CurrentOSDrive
         }

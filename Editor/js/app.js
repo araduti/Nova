@@ -418,11 +418,7 @@ $fileInput.addEventListener('change', (e) => {
             taskSequence = data;
 
             /* Fill empty unattendContent from the repo file */
-            taskSequence.steps.forEach(step => {
-                if (step.type === 'CustomizeOOBE' && step.parameters && !step.parameters.unattendContent && defaultUnattendXml) {
-                    step.parameters.unattendContent = defaultUnattendXml;
-                }
-            });
+            populateDefaultUnattendContent(taskSequence.steps);
 
             $tsName.textContent = taskSequence.name || 'Untitled';
             selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
@@ -466,6 +462,16 @@ document.addEventListener('keydown', (e) => {
 /* ── Default unattend.xml content (loaded from repo) ──────────────── */
 let defaultUnattendXml = '';
 
+/** Fill empty unattendContent from the repo-hosted file for all CustomizeOOBE steps */
+function populateDefaultUnattendContent(steps) {
+    if (!defaultUnattendXml) return;
+    steps.forEach(step => {
+        if (step.type === 'CustomizeOOBE' && step.parameters && !step.parameters.unattendContent) {
+            step.parameters.unattendContent = defaultUnattendXml;
+        }
+    });
+}
+
 /* ── Load default task sequence on start ──────────────────────────── */
 (function loadDefault() {
     Promise.all([
@@ -485,11 +491,7 @@ let defaultUnattendXml = '';
         taskSequence = data;
 
         /* Fill empty unattendContent from the repo file */
-        taskSequence.steps.forEach(step => {
-            if (step.type === 'CustomizeOOBE' && step.parameters && !step.parameters.unattendContent && defaultUnattendXml) {
-                step.parameters.unattendContent = defaultUnattendXml;
-            }
-        });
+        populateDefaultUnattendContent(taskSequence.steps);
 
         $tsName.textContent = taskSequence.name || 'Untitled';
         selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
