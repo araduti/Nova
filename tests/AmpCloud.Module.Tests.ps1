@@ -249,6 +249,38 @@ Describe 'Public function parameters' {
     }
 }
 
+Describe 'Entry script module loading' {
+
+    Context 'Trigger.ps1 handles empty PSScriptRoot' {
+        It 'Does not call Join-Path with an empty string' {
+            $content = Get-Content (Join-Path $PSScriptRoot '..' 'Trigger.ps1') -Raw
+            # Must guard $PSScriptRoot before using it in Join-Path
+            $content | Should -Match '\$PSScriptRoot\b' -Because 'script should reference PSScriptRoot'
+            $content | Should -Match 'if\s*\(\s*\$PSScriptRoot\s*\)' -Because 'script should check PSScriptRoot is not empty before using it'
+        }
+
+        It 'Has a GitHub download fallback for the iex scenario' {
+            $content = Get-Content (Join-Path $PSScriptRoot '..' 'Trigger.ps1') -Raw
+            $content | Should -Match 'Invoke-WebRequest' -Because 'script should download the module when running via iex'
+            $content | Should -Match 'Expand-Archive'    -Because 'script should extract the downloaded module'
+        }
+    }
+
+    Context 'AmpCloud.ps1 handles empty PSScriptRoot' {
+        It 'Does not call Join-Path with an empty string' {
+            $content = Get-Content (Join-Path $PSScriptRoot '..' 'AmpCloud.ps1') -Raw
+            $content | Should -Match 'if\s*\(\s*\$PSScriptRoot\s*\)' -Because 'script should check PSScriptRoot is not empty before using it'
+        }
+    }
+
+    Context 'Bootstrap.ps1 handles empty PSScriptRoot' {
+        It 'Does not call Join-Path with an empty string' {
+            $content = Get-Content (Join-Path $PSScriptRoot '..' 'Bootstrap.ps1') -Raw
+            $content | Should -Match 'if\s*\(\s*\$PSScriptRoot\s*\)' -Because 'script should check PSScriptRoot is not empty before using it'
+        }
+    }
+}
+
 AfterAll {
     Remove-Module AmpCloud -Force -ErrorAction SilentlyContinue
 }

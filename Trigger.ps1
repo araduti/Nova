@@ -69,11 +69,30 @@ param(
     [switch] $NoReboot
 )
 
-# Import the AmpCloud module — try local development path first, then PSModulePath.
-$_modPath = Join-Path $PSScriptRoot 'src\AmpCloud\AmpCloud.psd1'
-if (Test-Path $_modPath) {
+# Import the AmpCloud module — try local development path first, then PSModulePath,
+# then download from GitHub (for the iex scenario).
+$_modPath = $null
+if ($PSScriptRoot) {
+    $_modPath = Join-Path $PSScriptRoot 'src\AmpCloud\AmpCloud.psd1'
+}
+if ($_modPath -and (Test-Path $_modPath)) {
     Import-Module $_modPath -Force
-} else {
+} elseif (Get-Module -ListAvailable -Name AmpCloud) {
     Import-Module AmpCloud -Force
+} else {
+    # Running via iex or module not installed — download from GitHub.
+    $_tmpMod = Join-Path ([System.IO.Path]::GetTempPath()) 'AmpCloud'
+    if (Test-Path $_tmpMod) { Remove-Item $_tmpMod -Recurse -Force -ErrorAction SilentlyContinue }
+    $null = New-Item -Path $_tmpMod -ItemType Directory -Force
+    $_zipUrl  = "https://github.com/$GitHubUser/$GitHubRepo/archive/refs/heads/$GitHubBranch.zip"
+    $_zipFile = Join-Path $_tmpMod 'repo.zip'
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -Uri $_zipUrl -OutFile $_zipFile -UseBasicParsing
+    Expand-Archive -Path $_zipFile -DestinationPath $_tmpMod -Force
+    $_extracted = Get-ChildItem -Path $_tmpMod -Directory |
+                  Where-Object Name -like "$GitHubRepo-*" |
+                  Select-Object -First 1
+    Import-Module (Join-Path $_extracted.FullName 'src\AmpCloud\AmpCloud.psd1') -Force
+    Remove-Item $_zipFile -Force
 }
 Invoke-AmpCloudTrigger @PSBoundParameters
