@@ -124,6 +124,7 @@ $Strings = @{
             AuthSuccess="Identity verified";
             AuthFailed="Authentication failed. Please try again.";
             AuthSkipped="Authentication not required";
+            AuthEdgePrompt="Microsoft Edge has opened for sign-in.`nComplete the sign-in in the browser window, then this dialog will close automatically.";
             AuthDeviceCodePrompt="To sign in, use a web browser on another device`nand enter this code:" }
     FR = @{ Header="A M P C L O U D"; Subtitle="Moteur d'imagerie cloud";
             Step1="Réseau"; Step2="Connexion"; Step3="Identification"; Step4="Déploiement";
@@ -151,6 +152,7 @@ $Strings = @{
             AuthSuccess="Identité vérifiée";
             AuthFailed="Échec de l'authentification. Veuillez réessayer.";
             AuthSkipped="Authentification non requise";
+            AuthEdgePrompt="Microsoft Edge s'est ouvert pour la connexion.`nTerminez la connexion dans la fenêtre du navigateur, cette boîte se fermera automatiquement.";
             AuthDeviceCodePrompt="Pour vous connecter, utilisez un navigateur web sur un autre appareil`net entrez ce code :" }
     ES = @{ Header="A M P C L O U D"; Subtitle="Motor de imágenes en la nube";
             Step1="Red"; Step2="Conectar"; Step3="Iniciar sesión"; Step4="Desplegar";
@@ -178,6 +180,7 @@ $Strings = @{
             AuthSuccess="Identidad verificada";
             AuthFailed="Error de autenticación. Por favor, inténtelo de nuevo.";
             AuthSkipped="Autenticación no requerida";
+            AuthEdgePrompt="Microsoft Edge se ha abierto para iniciar sesión.`nComplete el inicio de sesión en la ventana del navegador, este cuadro se cerrará automáticamente.";
             AuthDeviceCodePrompt="Para iniciar sesión, use un navegador web en otro dispositivo`ne ingrese este código:" }
 }
 $script:S = $Strings[$script:Lang]
@@ -1698,19 +1701,19 @@ function Show-ConfigurationMenu {
 
 #region ── M365 Authentication ────────────────────────────────────────────────
 
-function Invoke-M365WebView2Auth {
+function Invoke-M365EdgeAuth {
     <#
-    .SYNOPSIS  Authenticate the operator via an embedded WebView2 browser (Auth Code + PKCE).
+    .SYNOPSIS  Authenticate the operator via a standalone Edge browser (Auth Code + PKCE).
     .DESCRIPTION
-        Opens a WinForms dialog containing a WebView2 (Chromium) control that
+        Launches msedge.exe directly in WinPE with GPU-disabled flags and
         navigates to the Azure AD authorization endpoint.  The user signs in
-        directly inside the embedded browser — no codes to copy or external
-        devices needed.  The control intercepts the redirect carrying the
-        authorization code, then exchanges it for tokens using PKCE.
-        Requires the WebView2 runtime and managed DLLs to be pre-staged in
-        the WinPE image at X:\WebView2 (done by Trigger.ps1 Build-WinPE
-        step 4e).  Special Chromium flags (--disable-gpu, SwiftShader, etc.)
-        are used to ensure rendering works in the WinPE environment.
+        inside the standalone Edge browser window.  A temporary localhost
+        HTTP listener captures the redirect carrying the authorization code,
+        then exchanges it for tokens using PKCE.
+        Requires the Edge browser to be pre-staged in the WinPE image at
+        X:\WebView2\Edge (done by Trigger.ps1 Build-WinPE step 4e).
+        WinPE-safe Chromium flags (--disable-gpu, SwiftShader, etc.) are
+        used to ensure rendering works without GPU hardware.
     .PARAMETER ClientId
         Azure AD application (client) ID.
     .OUTPUTS
@@ -1718,35 +1721,15 @@ function Invoke-M365WebView2Auth {
     #>
     param([string] $ClientId)
 
-    $webViewPath = 'X:\WebView2'
+    $edgePath = 'X:\WebView2\Edge\msedge.exe'
 
     # ── Log environment diagnostics ─────────────────────────────────────────
-    Write-AuthLog "WebView2 auth starting — checking prerequisites at $webViewPath"
-    Write-AuthLog "  WebView2 folder exists : $(Test-Path $webViewPath)"
-    $coreDll     = Join-Path $webViewPath 'Microsoft.Web.WebView2.Core.dll'
-    $winFormsDll = Join-Path $webViewPath 'Microsoft.Web.WebView2.WinForms.dll'
-    Write-AuthLog "  Core DLL exists        : $(Test-Path $coreDll)  ($coreDll)"
-    Write-AuthLog "  WinForms DLL exists    : $(Test-Path $winFormsDll)  ($winFormsDll)"
-    $edgeDirCheck = Join-Path $webViewPath 'Edge'
-    Write-AuthLog "  Edge runtime folder    : $(Test-Path $edgeDirCheck)  ($edgeDirCheck)"
-    if (Test-Path $edgeDirCheck) {
-        $edgeExe = Get-ChildItem -Path $edgeDirCheck -Filter 'msedgewebview2.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        Write-AuthLog "  msedgewebview2.exe     : $(if ($edgeExe) { $edgeExe.FullName } else { 'NOT FOUND' })"
-    }
+    Write-AuthLog "Edge auth starting — checking prerequisites"
+    Write-AuthLog "  msedge.exe exists : $(Test-Path $edgePath)  ($edgePath)"
 
-    # ── Verify WebView2 prerequisites ───────────────────────────────────────
-    if (-not (Test-Path $coreDll) -or -not (Test-Path $winFormsDll)) {
-        Write-AuthLog "WebView2 DLLs not found at $webViewPath — skipping browser auth."
-        return $false
-    }
-
-    try {
-        $env:PATH = "$webViewPath;$env:PATH"
-        Add-Type -Path $coreDll
-        Add-Type -Path $winFormsDll
-        Write-AuthLog "WebView2 assemblies loaded successfully."
-    } catch {
-        Write-AuthLog "Failed to load WebView2 assemblies: $_"
+    # ── Verify Edge browser prerequisite ────────────────────────────────────
+    if (-not (Test-Path $edgePath)) {
+        Write-AuthLog "msedge.exe not found at $edgePath — skipping Edge auth."
         return $false
     }
 
@@ -1760,11 +1743,30 @@ function Invoke-M365WebView2Auth {
     $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
     $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
 
-    # Redirect to a fixed localhost URI.  For Azure AD public client apps
-    # registered with the "Mobile and desktop applications" platform,
-    # http://localhost redirects are allowed by default (RFC 8252 §7.3)
-    # without explicit registration.
-    $redirectUri = 'http://localhost/auth'
+    # ── Start a temporary localhost HTTP listener ───────────────────────────
+    # A random high port is used to avoid conflicts.  The listener captures
+    # the OAuth redirect after the user completes sign-in in Edge.
+    $listener    = New-Object System.Net.HttpListener
+    $redirectUri = $null
+    foreach ($attempt in 1..5) {
+        $port        = Get-Random -Minimum 49152 -Maximum 65535
+        $redirectUri = "http://localhost:$port/"
+        $listener.Prefixes.Clear()
+        $listener.Prefixes.Add($redirectUri)
+        try {
+            $listener.Start()
+            Write-AuthLog "HTTP listener started on port $port"
+            break
+        } catch {
+            Write-AuthLog "Listener port $port failed (attempt $attempt of 5): $_"
+            if ($attempt -eq 5) {
+                Write-AuthLog "Could not start HTTP listener after $attempt attempts."
+                return $false
+            }
+        }
+    }
+
+    try {
 
     # ── Build the authorize URL ─────────────────────────────────────────────
     $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
@@ -1776,163 +1778,160 @@ function Invoke-M365WebView2Auth {
         '&code_challenge_method=S256' +
         '&prompt=select_account'
 
-    # ── Create WebView2 environment with WinPE-safe flags ──────────────────
+    # ── Launch Edge with WinPE-safe Chromium flags ──────────────────────────
     # WinPE has no GPU hardware or driver stack.  These flags force Chromium
     # to use SwiftShader (software OpenGL ES implementation) for rendering.
-    # --enable-unsafe-swiftshader is required because SwiftShader is normally
-    # blocked in elevated/SYSTEM contexts; in WinPE there is no alternative.
-    # --allow-run-as-system permits Chromium to run under the SYSTEM account.
-    $options = [Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions]::new()
-    $options.AdditionalBrowserArguments =
-        '--disable-gpu --disable-gpu-compositing --disable-direct-composition ' +
-        '--use-angle=swiftshader --enable-unsafe-swiftshader --in-process-gpu ' +
-        '--allow-run-as-system'
-
-    $userDataFolder = 'X:\Temp\WebView2Data'
-    if (-not (Test-Path $userDataFolder)) {
-        $null = New-Item -Path $userDataFolder -ItemType Directory -Force
+    # --allow-run-as-system permits Chromium to run under the SYSTEM account
+    # (WinPE always runs as SYSTEM).
+    # --user-data-dir avoids writing to the default profile path, which may
+    # not be writable in WinPE.
+    $userDataDir = 'X:\Temp\EdgeAuthData'
+    if (-not (Test-Path $userDataDir)) {
+        $null = New-Item -Path $userDataDir -ItemType Directory -Force
     }
 
-    # Locate the browser runtime folder (contains msedgewebview2.exe).
-    $runtimeFolder = $null
-    $edgeDir = Join-Path $webViewPath 'Edge'
-    if (Test-Path $edgeDir) { $runtimeFolder = $edgeDir }
+    $edgeArgs = @(
+        '--allow-run-as-system'
+        "--user-data-dir=`"$userDataDir`""
+        '--disable-gpu'
+        '--disable-gpu-compositing'
+        '--disable-direct-composition'
+        '--use-angle=swiftshader'
+        '--enable-unsafe-swiftshader'
+        '--in-process-gpu'
+        $authorizeUrl
+    )
 
-    $environment = $null
+    Write-AuthLog "Launching Edge: $edgePath $($edgeArgs -join ' ')"
+    $edgeProcess = $null
     try {
-        $envTask     = [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::CreateAsync(
-                           $runtimeFolder, $userDataFolder, $options)
-        # Pump messages while waiting so COM/async callbacks can complete;
-        # a plain GetAwaiter().GetResult() blocks the UI thread and deadlocks.
-        $deadline = [DateTime]::UtcNow.AddSeconds(30)
-        while (-not $envTask.IsCompleted -and [DateTime]::UtcNow -lt $deadline) {
-            [System.Windows.Forms.Application]::DoEvents()
-            if (-not $envTask.IsCompleted) { Start-Sleep -Milliseconds 50 }
-        }
-        if (-not $envTask.IsCompleted) {
-            Write-AuthLog "WebView2 environment creation timed out after 30 s."
-            return $false
-        }
-        if ($envTask.IsFaulted) { throw $envTask.Exception.InnerException }
-        $environment = $envTask.Result
-        Write-AuthLog "WebView2 environment created successfully."
+        $edgeProcess = Start-Process -FilePath $edgePath -ArgumentList $edgeArgs -PassThru
+        Write-AuthLog "Edge launched (PID $($edgeProcess.Id))"
     } catch {
-        Write-AuthLog "WebView2 environment creation failed: $_"
+        Write-AuthLog "Failed to launch Edge: $_"
         return $false
     }
 
-    # ── Create the browser dialog ───────────────────────────────────────────
+    # ── Show a WinForms status dialog while waiting for sign-in ─────────────
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text            = 'AmpCloud — Sign In'
-    $dlg.Size            = New-Object System.Drawing.Size(520, 660)
+    $dlg.Size            = New-Object System.Drawing.Size(480, 220)
     $dlg.StartPosition   = 'CenterScreen'
     $dlg.FormBorderStyle = 'FixedDialog'
     $dlg.MaximizeBox     = $false
     $dlg.MinimizeBox     = $false
     $dlg.BackColor       = [System.Drawing.Color]::White
     $dlg.Font            = New-Object System.Drawing.Font('Segoe UI', 10)
+    $dlg.TopMost         = $false
 
-    # Header label
     $msLabel = New-Object System.Windows.Forms.Label
     $msLabel.Text      = 'Microsoft 365'
     $msLabel.Font      = New-Object System.Drawing.Font('Segoe UI Semibold', 14)
     $msLabel.ForeColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $msLabel.Location  = New-Object System.Drawing.Point(20, 12)
+    $msLabel.Location  = New-Object System.Drawing.Point(30, 20)
     $msLabel.AutoSize  = $true
     $dlg.Controls.Add($msLabel)
 
-    # Prompt label
     $promptLabel = New-Object System.Windows.Forms.Label
-    $promptLabel.Text     = $S.AuthPrompt
-    $promptLabel.Location = New-Object System.Drawing.Point(20, 48)
-    $promptLabel.Size     = New-Object System.Drawing.Size(470, 22)
-    $promptLabel.Font     = New-Object System.Drawing.Font('Segoe UI', 9)
+    $promptLabel.Text     = $S.AuthEdgePrompt
+    $promptLabel.Location = New-Object System.Drawing.Point(30, 65)
+    $promptLabel.Size     = New-Object System.Drawing.Size(410, 50)
+    $promptLabel.Font     = New-Object System.Drawing.Font('Segoe UI', 10)
     $dlg.Controls.Add($promptLabel)
 
-    # WebView2 control
-    $webView = [Microsoft.Web.WebView2.WinForms.WebView2]::new()
-    $webView.Location = New-Object System.Drawing.Point(10, 78)
-    $webView.Size     = New-Object System.Drawing.Size(492, 490)
-    $dlg.Controls.Add($webView)
-
-    # Cancel button
     $cancelBtn = New-Object System.Windows.Forms.Button
     $cancelBtn.Text         = 'Cancel'
     $cancelBtn.Size         = New-Object System.Drawing.Size(120, 36)
-    $cancelBtn.Location     = New-Object System.Drawing.Point(382, 578)
+    $cancelBtn.Location     = New-Object System.Drawing.Point(330, 135)
     $cancelBtn.DialogResult = 'Cancel'
     $cancelBtn.FlatStyle    = 'Flat'
     $dlg.Controls.Add($cancelBtn)
     $dlg.CancelButton = $cancelBtn
 
-    # ── Initialize WebView2 and set up navigation interception ──────────────
-    $script:_wv2AuthCode  = $null
-    $script:_wv2AuthError = $null
+    # ── Poll the HTTP listener for the redirect in a timer ──────────────────
+    $script:_edgeAuthCode  = $null
+    $script:_edgeAuthError = $null
+    $script:_edgeListener  = $listener
+    $script:_edgeDlg       = $dlg
+    $script:_edgeAsyncResult = $listener.BeginGetContext($null, $null)
 
-    try {
-        $initTask = $webView.EnsureCoreWebView2Async($environment)
-        # Pump messages while waiting — same deadlock-avoidance pattern.
-        $deadline = [DateTime]::UtcNow.AddSeconds(30)
-        while (-not $initTask.IsCompleted -and [DateTime]::UtcNow -lt $deadline) {
-            [System.Windows.Forms.Application]::DoEvents()
-            if (-not $initTask.IsCompleted) { Start-Sleep -Milliseconds 50 }
-        }
-        if (-not $initTask.IsCompleted) {
-            Write-AuthLog "WebView2 control initialization timed out after 30 s."
-            $dlg.Dispose()
-            return $false
-        }
-        if ($initTask.IsFaulted) { throw $initTask.Exception.InnerException }
-    } catch {
-        Write-AuthLog "WebView2 control initialization failed: $_"
-        $dlg.Dispose()
-        return $false
-    }
+    $pollTimer = New-Object System.Windows.Forms.Timer
+    $pollTimer.Interval = 500
+    $pollTimer.Add_Tick({
+        if ($script:_edgeAsyncResult.IsCompleted -or $script:_edgeAsyncResult.AsyncWaitHandle.WaitOne(0)) {
+            $pollTimer.Stop()
+            try {
+                $context = $script:_edgeListener.EndGetContext($script:_edgeAsyncResult)
 
-    # Intercept navigation to capture the authorization code.
-    $webView.CoreWebView2.Add_NavigationStarting({
-        param($sender, $e)
-        $url = $e.Uri
-        if ($url.StartsWith($redirectUri, [StringComparison]::OrdinalIgnoreCase)) {
-            $e.Cancel = $true
-            $parsed = New-Object System.Uri($url)
-            $query  = $parsed.Query
-            if ($query) {
-                foreach ($pair in $query.TrimStart('?').Split('&')) {
+                # Parse authorization code (or error) from the query string.
+                foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
                     $kv = $pair.Split('=', 2)
                     if ($kv.Count -eq 2) {
-                        if ($kv[0] -eq 'code')  { $script:_wv2AuthCode  = [uri]::UnescapeDataString($kv[1]) }
-                        if ($kv[0] -eq 'error') { $script:_wv2AuthError = [uri]::UnescapeDataString($kv[1]) }
+                        if ($kv[0] -eq 'code')  { $script:_edgeAuthCode  = [uri]::UnescapeDataString($kv[1]) }
+                        if ($kv[0] -eq 'error') { $script:_edgeAuthError = [uri]::UnescapeDataString($kv[1]) }
                     }
                 }
+
+                # Send a friendly response page to the browser.
+                $html = if ($script:_edgeAuthCode) {
+                    '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
+                    '<h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
+                    '<p>You can close this window and return to AmpCloud.</p>' +
+                    '<script>setTimeout(function(){window.close()},2000)</script></body></html>'
+                } else {
+                    '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
+                    '<h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
+                    '<p>Please close this window and try again.</p></body></html>'
+                }
+                $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
+                $context.Response.ContentType     = 'text/html; charset=utf-8'
+                $context.Response.ContentLength64 = $buf.Length
+                $context.Response.OutputStream.Write($buf, 0, $buf.Length)
+                $context.Response.OutputStream.Close()
+            } catch {
+                Write-AuthLog "Listener callback error: $_"
             }
-            if ($script:_wv2AuthCode) {
-                $dlg.DialogResult = 'OK'
+
+            if ($script:_edgeAuthCode) {
+                $script:_edgeDlg.DialogResult = 'OK'
             } else {
-                $dlg.DialogResult = 'Abort'
+                $script:_edgeDlg.DialogResult = 'Abort'
             }
-            $dlg.Close()
+            $script:_edgeDlg.Close()
         }
     })
-
-    # Navigate to Azure AD login page.
-    $webView.CoreWebView2.Navigate($authorizeUrl)
+    $pollTimer.Start()
     $dialogResult = $dlg.ShowDialog()
+    $pollTimer.Stop()
+    $pollTimer.Dispose()
+    try { $dlg.Dispose() } catch {}
 
-    # Dispose WebView2 and dialog to release Chromium process.
-    try { $webView.Dispose() } catch { Write-AuthLog "WebView2 disposal: $_" }
-    try { $dlg.Dispose()     } catch { Write-AuthLog "Dialog disposal: $_" }
-
-    # Clean up WebView2 user data (cookies, cache) to prevent credential leakage.
-    if (Test-Path $userDataFolder) {
-        try { Remove-Item $userDataFolder -Recurse -Force } catch {}
+    # ── Stop the Edge process ───────────────────────────────────────────────
+    if ($edgeProcess -and -not $edgeProcess.HasExited) {
+        try {
+            $edgeProcess.CloseMainWindow() | Out-Null
+            if (-not $edgeProcess.WaitForExit(3000)) {
+                $edgeProcess.Kill()
+                $edgeProcess.WaitForExit(2000)
+            }
+            Write-AuthLog "Edge process stopped."
+        } catch { Write-AuthLog "Edge process cleanup: $_" }
     }
 
-    if ($dialogResult -ne 'OK' -or -not $script:_wv2AuthCode) {
-        $codeStatus = if ($script:_wv2AuthCode) { 'present' } else { 'missing' }
-        Write-AuthLog "WebView2 dialog closed without auth code. DialogResult=$dialogResult, AuthCode=$codeStatus"
-        if ($script:_wv2AuthError) {
-            Write-AuthLog "WebView2 auth error: $($script:_wv2AuthError)"
+    # Clean up Edge user data (cookies, cache) to prevent credential leakage.
+    if (Test-Path $userDataDir) {
+        try { Remove-Item $userDataDir -Recurse -Force } catch {}
+    }
+
+    } finally {
+        try { $listener.Stop(); $listener.Close() } catch {}
+    }
+
+    if ($dialogResult -ne 'OK' -or -not $script:_edgeAuthCode) {
+        $codeStatus = if ($script:_edgeAuthCode) { 'present' } else { 'missing' }
+        Write-AuthLog "Edge auth dialog closed without auth code. DialogResult=$dialogResult, AuthCode=$codeStatus"
+        if ($script:_edgeAuthError) {
+            Write-AuthLog "Edge auth error: $($script:_edgeAuthError)"
         }
         return $false
     }
@@ -1942,7 +1941,7 @@ function Invoke-M365WebView2Auth {
     try {
         $body = "client_id=$([uri]::EscapeDataString($ClientId))" +
                 "&scope=$([uri]::EscapeDataString('openid profile'))" +
-                "&code=$([uri]::EscapeDataString($script:_wv2AuthCode))" +
+                "&code=$([uri]::EscapeDataString($script:_edgeAuthCode))" +
                 "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
                 '&grant_type=authorization_code' +
                 "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
@@ -1951,7 +1950,7 @@ function Invoke-M365WebView2Auth {
         $raw = $wc.UploadString($tokenUrl, 'POST', $body)
         $tokenResponse = $raw | ConvertFrom-Json
         if ($tokenResponse.id_token) {
-            Write-AuthLog "WebView2 auth succeeded — token obtained."
+            Write-AuthLog "Edge auth succeeded — token obtained."
             return $true
         }
     } catch {
@@ -1965,7 +1964,7 @@ function Invoke-M365DeviceCodeAuth {
     <#
     .SYNOPSIS  Authenticate the operator via Device Code Flow (fallback).
     .DESCRIPTION
-        Fallback authentication path used when the WebView2 runtime is not
+        Fallback authentication path used when the Edge browser is not
         available in the WinPE image.  Initiates the Device Code Flow and
         shows a WinForms dialog with the one-time code and verification URL.
     .PARAMETER ClientId
@@ -2112,14 +2111,14 @@ function Invoke-M365DeviceCodeAuth {
 
 function Invoke-M365Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via M365 (WebView2 browser, Device Code fallback).
+    .SYNOPSIS  Authenticate the operator via M365 (Edge browser, Device Code fallback).
     .DESCRIPTION
         Downloads Config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
-        first attempts interactive sign-in via an embedded WebView2
-        (Chromium) browser (Authorization Code Flow with PKCE).  If
-        the WebView2 runtime is not present or fails, it falls back to
-        Device Code Flow.
+        first attempts interactive sign-in by launching a standalone
+        Edge browser (Authorization Code Flow with PKCE).  If the Edge
+        browser is not present or fails, it falls back to Device Code
+        Flow.
         Tenant restrictions are enforced at the Entra ID app registration
         level — only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
@@ -2157,16 +2156,16 @@ function Invoke-M365Auth {
     Write-Status $S.AuthSigning 'Cyan'
     [System.Windows.Forms.Application]::DoEvents()
 
-    # ── Try WebView2 (Chromium) browser first ───────────────────────────────
-    # The WebView2 control uses the Chromium engine and renders modern Azure
-    # AD login pages correctly in WinPE.  Requires the runtime to be embedded
-    # during Build-WinPE (step 4e).  If the runtime is not present or fails,
-    # fall back to Device Code Flow transparently.
+    # ── Try standalone Edge browser first ───────────────────────────────────
+    # Edge is launched directly with WinPE-safe Chromium flags.  A localhost
+    # HTTP listener captures the OAuth redirect.  Requires the Edge browser
+    # to be embedded during Build-WinPE (step 4e).  If Edge is not present
+    # or fails, fall back to Device Code Flow transparently.
     $browserOk = $false
     try {
-        $browserOk = Invoke-M365WebView2Auth -ClientId $clientId
+        $browserOk = Invoke-M365EdgeAuth -ClientId $clientId
     } catch {
-        Write-AuthLog "WebView2 auth failed, will fall back to Device Code Flow: $_"
+        Write-AuthLog "Edge auth failed, will fall back to Device Code Flow: $_"
     }
 
     if ($browserOk) {
@@ -2214,9 +2213,9 @@ function ProceedToEngine {
     # When Config/auth.json has requireAuth = true, the operator must sign in
     # with a Microsoft 365 account from an allowed Entra ID tenant.
     # Tenant restrictions are enforced at the app registration level.
-    # Uses an embedded WebView2 (Chromium) browser with Auth Code + PKCE as
-    # the primary method; falls back to Device Code Flow if the WebView2
-    # runtime is not present in the WinPE image.
+    # Uses a standalone Edge browser with Auth Code + PKCE as
+    # the primary method; falls back to Device Code Flow if the Edge
+    # browser is not present in the WinPE image.
     $authPassed = Invoke-M365Auth
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect
