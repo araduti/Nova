@@ -5,11 +5,12 @@
 .DESCRIPTION
     Runs inside the WinRE/WinPE boot environment via winpeshl.ini.
     - Calls wpeinit.exe to initialise the WinPE network stack and DHCP.
-    - Shows a language selection prompt (EN / FR / ES).
     - Presents an animated Fluent-style WinForms interface.
     - Applies high-performance network tuning.
     - Offers an interactive graphical WiFi selector when wired internet is unavailable.
+    - Shows a unified configuration dialog (language + Windows edition) once connected.
     - Downloads and executes AmpCloud.ps1 from GitHub once connected.
+    - Supports a customisable background image embedded in the boot image.
 #>
 
 [CmdletBinding()]
@@ -78,122 +79,6 @@ $script:BulletChar             = [char]0x2022  # '•' used in progress text
 
 #region ── Language System ───────────────────────────────────────────────────
 $script:Lang = 'EN'
-function Select-Language {
-    [System.Windows.Forms.Application]::EnableVisualStyles()
-
-    $accentBlue = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $gradTop    = [System.Drawing.Color]::FromArgb(218, 232, 252)
-    $gradBot    = [System.Drawing.Color]::FromArgb(234, 240, 250)
-    $cardColor  = [System.Drawing.Color]::White
-    $fgColor    = [System.Drawing.Color]::FromArgb(32, 32, 32)
-    $subtleText = [System.Drawing.Color]::FromArgb(100, 100, 100)
-    $inputBg    = [System.Drawing.Color]::FromArgb(245, 247, 250)
-
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text            = "AmpCloud"
-    $dlg.Size            = New-Object System.Drawing.Size(540, 400)
-    $dlg.StartPosition   = "CenterScreen"
-    $dlg.FormBorderStyle = "None"
-    $dlg.BackColor       = $gradTop
-    $dlg.Font            = New-Object System.Drawing.Font("Segoe UI", 10)
-    $dlg.ShowInTaskbar   = $true
-
-    # Double-buffer for gradient paint
-    try {
-        $dlgType = $dlg.GetType()
-        $dlgDb   = $dlgType.GetProperty('DoubleBuffered',
-            [System.Reflection.BindingFlags]'Instance,NonPublic')
-        if ($dlgDb) { $dlgDb.SetValue($dlg, $true, $null) }
-    } catch { Write-Verbose "Language dialog double-buffering unavailable: $_" }
-    $dlg.Add_Paint({
-        $g = $_.Graphics
-        $dw = $dlg.ClientSize.Width;  $dh = $dlg.ClientSize.Height
-        if ($dw -le 0 -or $dh -le 0) { return }
-        $gr = New-Object System.Drawing.Rectangle(0, 0, $dw, $dh)
-        $gb = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-                  $gr, $gradTop, $gradBot,
-                  [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-        $g.FillRectangle($gb, $gr)
-        $gb.Dispose()
-    })
-
-    # ── Card panel (white, centred) ────────────────────────────────────────
-    $card = New-Object System.Windows.Forms.Panel
-    $card.Location  = New-Object System.Drawing.Point(50, 50)
-    $card.Size      = New-Object System.Drawing.Size(440, 300)
-    $card.BackColor = $cardColor
-    $dlg.Controls.Add($card)
-
-    # Rounded corners on card
-    $card.Add_SizeChanged({
-        if ($card.Width -le 0 -or $card.Height -le 0) { return }
-        $p = New-Object System.Drawing.Drawing2D.GraphicsPath
-        $rr = 12
-        $p.AddArc(0, 0, $rr * 2, $rr * 2, 180, 90)
-        $p.AddArc($card.Width - $rr * 2, 0, $rr * 2, $rr * 2, 270, 90)
-        $p.AddArc($card.Width - $rr * 2, $card.Height - $rr * 2, $rr * 2, $rr * 2, 0, 90)
-        $p.AddArc(0, $card.Height - $rr * 2, $rr * 2, $rr * 2, 90, 90)
-        $p.CloseFigure()
-        if ($card.Region) { $card.Region.Dispose() }
-        $card.Region = New-Object System.Drawing.Region($p)
-        $p.Dispose()
-    })
-
-    # ── Title label ─────────────────────────────────────────────────────────
-    $titleLbl = New-Object System.Windows.Forms.Label
-    $titleLbl.Text      = "A M P C L O U D"
-    $titleLbl.Location  = New-Object System.Drawing.Point(0, 30)
-    $titleLbl.Size      = New-Object System.Drawing.Size(440, 40)
-    $titleLbl.Font      = New-Object System.Drawing.Font("Segoe UI Light", 20)
-    $titleLbl.ForeColor = $accentBlue
-    $titleLbl.TextAlign = "MiddleCenter"
-    $card.Controls.Add($titleLbl)
-
-    # ── Subtitle ────────────────────────────────────────────────────────────
-    $subLbl = New-Object System.Windows.Forms.Label
-    $subLbl.Text      = "Choose your language / Choisissez votre langue / Elija su idioma"
-    $subLbl.Location  = New-Object System.Drawing.Point(0, 80)
-    $subLbl.Size      = New-Object System.Drawing.Size(440, 30)
-    $subLbl.ForeColor = $subtleText
-    $subLbl.TextAlign = "MiddleCenter"
-    $card.Controls.Add($subLbl)
-
-    $combo = New-Object System.Windows.Forms.ComboBox
-    $combo.Items.AddRange(@("English (EN)", "Français (FR)", "Español (ES)"))
-    $combo.SelectedIndex  = 0
-    $combo.Location       = New-Object System.Drawing.Point(50, 130)
-    $combo.Width          = 340
-    $combo.Height         = 32
-    $combo.DropDownStyle  = "DropDownList"
-    $combo.FlatStyle      = "Flat"
-    $combo.BackColor      = $inputBg
-    $combo.ForeColor      = $fgColor
-    $combo.Font           = New-Object System.Drawing.Font("Segoe UI", 11)
-    $card.Controls.Add($combo)
-
-    $btn = New-Object System.Windows.Forms.Button
-    $btn.Text                      = "Continue  $([char]0x2192)"
-    $btn.Location                  = New-Object System.Drawing.Point(120, 200)
-    $btn.Size                      = New-Object System.Drawing.Size(200, 46)
-    $btn.BackColor                 = $accentBlue
-    $btn.ForeColor                 = [System.Drawing.Color]::White
-    $btn.FlatStyle                 = "Flat"
-    $btn.FlatAppearance.BorderSize = 0
-    $btn.Font                      = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
-    $btn.Cursor                    = [System.Windows.Forms.Cursors]::Hand
-    $btn.DialogResult              = "OK"
-    $card.Controls.Add($btn)
-    $dlg.AcceptButton = $btn
-
-    if ($dlg.ShowDialog() -eq "OK") {
-        switch ($combo.SelectedIndex) {
-            0 { $script:Lang = 'EN' }
-            1 { $script:Lang = 'FR' }
-            2 { $script:Lang = 'ES' }
-        }
-    }
-}
-Select-Language
 
 $Strings = @{
     EN = @{ Header="A M P C L O U D"; Subtitle="Cloud Imaging Engine";
@@ -209,7 +94,10 @@ $Strings = @{
             CatalogFail="Could not load catalog — using default edition.";
             EditionTitle="Choose edition";
             EditionLabel="Select the Windows edition to install:";
-            EditionBtn="Continue" }
+            EditionBtn="Continue";
+            ConfigSubtitle="Configure your deployment";
+            ConfigLang="Language"; ConfigEdition="Windows Edition";
+            ConfigBtn="Start deployment" }
     FR = @{ Header="A M P C L O U D"; Subtitle="Moteur d'imagerie cloud";
             Step1="Réseau"; Step2="Connexion"; Step3="Déploiement";
             StatusInit="Initialisation de la pile réseau...";
@@ -223,7 +111,10 @@ $Strings = @{
             CatalogFail="Impossible de charger le catalogue — édition par défaut utilisée.";
             EditionTitle="Choisir l'édition";
             EditionLabel="Sélectionnez l'édition Windows à installer :";
-            EditionBtn="Continuer" }
+            EditionBtn="Continuer";
+            ConfigSubtitle="Configurez votre déploiement";
+            ConfigLang="Langue"; ConfigEdition="Édition Windows";
+            ConfigBtn="Démarrer le déploiement" }
     ES = @{ Header="A M P C L O U D"; Subtitle="Motor de imágenes en la nube";
             Step1="Red"; Step2="Conectar"; Step3="Desplegar";
             StatusInit="Inicializando pila de red...";
@@ -237,7 +128,10 @@ $Strings = @{
             CatalogFail="No se pudo cargar el catálogo — usando edición predeterminada.";
             EditionTitle="Elegir edición";
             EditionLabel="Seleccione la edición de Windows a instalar:";
-            EditionBtn="Continuar" }
+            EditionBtn="Continuar";
+            ConfigSubtitle="Configure su implementación";
+            ConfigLang="Idioma"; ConfigEdition="Edición de Windows";
+            ConfigBtn="Iniciar implementación" }
 }
 $script:S = $Strings[$script:Lang]
 #endregion
@@ -246,6 +140,19 @@ $script:S = $Strings[$script:Lang]
 function Invoke-Sound {
     param([int]$Freq = 800, [int]$Dur = 200)
     [console]::beep($Freq, $Dur)
+}
+#endregion
+
+#region ── Customisable Background Image ─────────────────────────────────────
+# If a background image was embedded in the boot image during Build-WinPE,
+# load it once so the form Paint handler can render it instead of the default
+# procedural gradient.  This file is placed by Trigger.ps1 and can be
+# replaced by administrators with custom branding.
+$script:BackgroundImage = $null
+$bgPath = Join-Path $env:SystemRoot 'System32\AmpCloud-bg.png'
+if (Test-Path $bgPath) {
+    try   { $script:BackgroundImage = [System.Drawing.Image]::FromFile($bgPath) }
+    catch { Write-Verbose "Background image load failed — falling back to gradient: $_" }
 }
 #endregion
 
@@ -671,15 +578,20 @@ $form.Add_Paint({
     $ch = $form.ClientSize.Height
     if ($cw -le 0 -or $ch -le 0) { return }
 
-    # Vertical gradient fill
-    $gTop = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
-    $gBot = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
-    $gRect  = New-Object System.Drawing.Rectangle(0, 0, $cw, $ch)
-    $gBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-                  $gRect, $gTop, $gBot,
-                  [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-    $g.FillRectangle($gBrush, $gRect)
-    $gBrush.Dispose()
+    # Use embedded background image when available; fall back to gradient.
+    if ($null -ne $script:BackgroundImage -and -not $script:IsDarkMode) {
+        $g.InterpolationMode = 'HighQualityBicubic'
+        $g.DrawImage($script:BackgroundImage, 0, 0, $cw, $ch)
+    } else {
+        $gTop = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
+        $gBot = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
+        $gRect  = New-Object System.Drawing.Rectangle(0, 0, $cw, $ch)
+        $gBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                      $gRect, $gTop, $gBot,
+                      [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+        $g.FillRectangle($gBrush, $gRect)
+        $gBrush.Dispose()
+    }
 
     # Soft shadow behind the card panel
     if ($cardPanel.Width -gt 0 -and $cardPanel.Height -gt 0) {
@@ -958,6 +870,15 @@ $f8Hint.BackColor = $script:GradientBottom
 $f8Hint.AutoSize = $true
 $form.Controls.Add($f8Hint)
 
+# ── Company logo (bottom-right) ─────────────────────────────────────────────
+$brandLabel = New-Object System.Windows.Forms.Label
+$brandLabel.Text      = 'ampliosoft'
+$brandLabel.Font      = New-Object System.Drawing.Font('Segoe UI', 9)
+$brandLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 130, 150)
+$brandLabel.BackColor = $script:GradientBottom
+$brandLabel.AutoSize  = $true
+$form.Controls.Add($brandLabel)
+
 # ── Dynamic centering ───────────────────────────────────────────────────────
 # Positions the card panel centred on the form, then lays out all child
 # controls within the card.
@@ -1012,6 +933,9 @@ function Set-ControlLayout {
 
     # F8 hint anchored to bottom-left of form
     $f8Hint.Location = New-Object System.Drawing.Point(16, ($ch - 30))
+
+    # Company logo anchored to bottom-right of form
+    $brandLabel.Location = New-Object System.Drawing.Point(($cw - $brandLabel.Width - 16), ($ch - 30))
 }
 
 $form.Add_Resize({ Set-ControlLayout })
@@ -1051,6 +975,8 @@ function Switch-DarkMode {
     $deviceLabel.BackColor   = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(50, 50, 55) } else { [System.Drawing.Color]::FromArgb(245, 247, 250) }
     $f8Hint.BackColor        = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
     $f8Hint.ForeColor        = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(120, 120, 130) } else { [System.Drawing.Color]::FromArgb(120, 130, 150) }
+    $brandLabel.BackColor    = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
+    $brandLabel.ForeColor    = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(120, 120, 130) } else { [System.Drawing.Color]::FromArgb(120, 130, 150) }
     $btnDark.Text            = if ($script:IsDarkMode) { [char]0x2600 } else { [char]0x263D }
     $form.Invalidate()
     $form.Refresh()
@@ -1145,20 +1071,25 @@ function Show-CompletionScreen {
         $p.Dispose()
     })
 
-    # Gradient + shadow Paint handler
+    # Gradient / background-image + shadow Paint handler
     $finalForm.Add_Paint({
         $g  = $_.Graphics
         $fw = $finalForm.ClientSize.Width
         $fh = $finalForm.ClientSize.Height
         if ($fw -le 0 -or $fh -le 0) { return }
-        $gt = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
-        $gb = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
-        $gr = New-Object System.Drawing.Rectangle(0, 0, $fw, $fh)
-        $gBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-                   $gr, $gt, $gb,
-                   [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-        $g.FillRectangle($gBrush, $gr)
-        $gBrush.Dispose()
+        if ($null -ne $script:BackgroundImage -and -not $script:IsDarkMode) {
+            $g.InterpolationMode = 'HighQualityBicubic'
+            $g.DrawImage($script:BackgroundImage, 0, 0, $fw, $fh)
+        } else {
+            $gt = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
+            $gb = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
+            $gr = New-Object System.Drawing.Rectangle(0, 0, $fw, $fh)
+            $gBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+                       $gr, $gt, $gb,
+                       [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
+            $g.FillRectangle($gBrush, $gr)
+            $gBrush.Dispose()
+        }
         if ($fCard.Width -gt 0 -and $fCard.Height -gt 0) {
             $g.SmoothingMode = 'AntiAlias'
             $sp = New-RoundedRectPath -X ($fCard.Left + 4) -Y ($fCard.Top + 4) `
@@ -1248,6 +1179,15 @@ function Show-CompletionScreen {
     $f8HintFinal.AutoSize = $true
     $finalForm.Controls.Add($f8HintFinal)
 
+    # Company logo (bottom-right)
+    $brandFinal = New-Object System.Windows.Forms.Label
+    $brandFinal.Text      = 'ampliosoft'
+    $brandFinal.Font      = New-Object System.Drawing.Font('Segoe UI', 9)
+    $brandFinal.ForeColor = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(120, 120, 130) } else { [System.Drawing.Color]::FromArgb(120, 130, 150) }
+    $brandFinal.BackColor = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
+    $brandFinal.AutoSize  = $true
+    $finalForm.Controls.Add($brandFinal)
+
     # Centre card + controls on resize
     $finalForm.Add_Resize({
         $fw = $finalForm.ClientSize.Width
@@ -1265,6 +1205,7 @@ function Show-CompletionScreen {
         $btnPower.Location  = New-Object System.Drawing.Point(($bx + 200 + $gap), $by)
         $btnShell.Location  = New-Object System.Drawing.Point(($bx + 400 + $gap * 2), $by)
         $f8HintFinal.Location = New-Object System.Drawing.Point(16, ($fh - 30))
+        $brandFinal.Location  = New-Object System.Drawing.Point(($fw - $brandFinal.Width - 16), ($fh - 30))
     })
 
     $null = $finalForm.ShowDialog()
@@ -1274,29 +1215,29 @@ function Show-CompletionScreen {
 #region ── Main Flow ─────────────────────────────────────────────────────────
 $script:EngineStarted = $false
 
-function Select-WindowsEdition {
+function Show-ConfigurationMenu {
     <#
-    .SYNOPSIS  Downloads the Microsoft ESD catalog and shows a ComboBox so the
-               user can pick the exact Windows edition to install.
-    .OUTPUTS   The chosen edition string (e.g. "Windows 11 Pro"), or '' when
-               the catalog cannot be fetched or the dialog is cancelled.
+    .SYNOPSIS  Unified pre-deployment configuration dialog.
+    .DESCRIPTION
+        Downloads the Microsoft ESD catalog and shows a single OOBE-style
+        dialog where the user selects both the UI language and Windows
+        edition before imaging begins — replacing the separate language and
+        edition dialogs.
+    .OUTPUTS   A hashtable with 'Language' (EN/FR/ES) and 'Edition' (string)
+               keys, or a default hashtable when cancelled / on error.
     #>
+    $defaultResult = @{ Language = 'EN'; Edition = '' }
 
-    # Map Bootstrap language codes to catalog LanguageCode values.
-    $langMap     = @{ 'EN' = 'en-us'; 'FR' = 'fr-fr'; 'ES' = 'es-es' }
-    $catalogLang = if ($langMap.ContainsKey($script:Lang)) { $langMap[$script:Lang] } else { 'en-us' }
-
+    # ── Download products.xml ─────────────────────────────────────────────
     Write-Status $S.CatalogFetch 'Cyan'
     [System.Windows.Forms.Application]::DoEvents()
 
-    # Ensure scratch directory exists (same path AmpCloud.ps1 will use).
     $scratchPath = 'X:\AmpCloud'
     if (-not (Test-Path $scratchPath)) {
         $null = New-Item -ItemType Directory -Path $scratchPath -Force
     }
     $productsXml = Join-Path $scratchPath 'products.xml'
 
-    # Download products.xml directly from the repository — no CAB extraction needed.
     try {
         $productsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/products.xml"
         $wc   = New-Object System.Net.WebClient
@@ -1310,49 +1251,50 @@ function Select-WindowsEdition {
         Write-Status $S.CatalogFail 'Yellow'
         [System.Windows.Forms.Application]::DoEvents()
         Start-Sleep -Seconds 2
-        return ''
+        return $defaultResult
     }
 
     if (-not (Test-Path $productsXml)) {
         Write-Status $S.CatalogFail 'Yellow'
         [System.Windows.Forms.Application]::DoEvents()
         Start-Sleep -Seconds 2
-        return ''
+        return $defaultResult
     }
 
-    # Parse the catalog XML and collect unique edition names (x64 only).
+    # Parse the catalog XML once — edition filtering per language is done dynamically.
+    $catalog = $null
     try {
         [xml]$catalog = Get-Content $productsXml -ErrorAction Stop
-        $editions = @(
+    } catch {
+        Write-Status $S.CatalogFail 'Yellow'
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Seconds 2
+        return $defaultResult
+    }
+
+    $langMap = @{ 'EN' = 'en-us'; 'FR' = 'fr-fr'; 'ES' = 'es-es' }
+
+    # Helper: get x64 editions for a given catalog language code.
+    $getEditions = {
+        param([string]$CatLang)
+        $eds = @(
             $catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
-                Where-Object { $_.LanguageCode -eq $catalogLang -and $_.Architecture -eq 'x64' } |
+                Where-Object { $_.LanguageCode -eq $CatLang -and $_.Architecture -eq 'x64' } |
                 Select-Object -ExpandProperty Edition |
                 Sort-Object -Unique
         )
-        # Fall back to English if the selected language has no entries.
-        if (-not $editions -or $editions.Count -eq 0) {
-            $editions = @(
+        if (-not $eds -or $eds.Count -eq 0) {
+            $eds = @(
                 $catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File |
                     Where-Object { $_.LanguageCode -eq 'en-us' -and $_.Architecture -eq 'x64' } |
                     Select-Object -ExpandProperty Edition |
                     Sort-Object -Unique
             )
         }
-    } catch {
-        Write-Status $S.CatalogFail 'Yellow'
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Seconds 2
-        return ''
+        return $eds
     }
 
-    if (-not $editions -or $editions.Count -eq 0) {
-        Write-Status $S.CatalogFail 'Yellow'
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Seconds 2
-        return ''
-    }
-
-    # ── Edition selector dialog (OOBE gradient style) ──────────────────────────
+    # ── Build the unified dialog ─────────────────────────────────────────────
     $accentBlue = [System.Drawing.Color]::FromArgb(0, 120, 212)
     $edGradTop  = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
     $edGradBot  = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
@@ -1362,8 +1304,8 @@ function Select-WindowsEdition {
     $edInputBg  = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(60, 60, 60) } else { [System.Drawing.Color]::FromArgb(245, 247, 250) }
 
     $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text            = $S.EditionTitle
-    $dlg.Size            = New-Object System.Drawing.Size(540, 400)
+    $dlg.Text            = 'AmpCloud'
+    $dlg.Size            = New-Object System.Drawing.Size(580, 520)
     $dlg.StartPosition   = 'CenterScreen'
     $dlg.FormBorderStyle = 'None'
     $dlg.BackColor       = $edGradTop
@@ -1375,7 +1317,7 @@ function Select-WindowsEdition {
         $edDb   = $edType.GetProperty('DoubleBuffered',
             [System.Reflection.BindingFlags]'Instance,NonPublic')
         if ($edDb) { $edDb.SetValue($dlg, $true, $null) }
-    } catch { Write-Verbose "Edition dialog double-buffering unavailable: $_" }
+    } catch { Write-Verbose "Config dialog double-buffering unavailable: $_" }
 
     $dlg.Add_Paint({
         $g = $_.Graphics
@@ -1391,8 +1333,8 @@ function Select-WindowsEdition {
 
     # ── Card panel ──────────────────────────────────────────────────────────
     $card = New-Object System.Windows.Forms.Panel
-    $card.Location  = New-Object System.Drawing.Point(50, 50)
-    $card.Size      = New-Object System.Drawing.Size(440, 300)
+    $card.Location  = New-Object System.Drawing.Point(40, 40)
+    $card.Size      = New-Object System.Drawing.Size(500, 440)
     $card.BackColor = $edCardBg
     $dlg.Controls.Add($card)
 
@@ -1412,69 +1354,141 @@ function Select-WindowsEdition {
 
     # ── Title ───────────────────────────────────────────────────────────────
     $titleLbl = New-Object System.Windows.Forms.Label
-    $titleLbl.Text      = $S.EditionTitle
-    $titleLbl.Location  = New-Object System.Drawing.Point(0, 30)
-    $titleLbl.Size      = New-Object System.Drawing.Size(440, 40)
+    $titleLbl.Text      = 'A M P C L O U D'
+    $titleLbl.Location  = New-Object System.Drawing.Point(0, 28)
+    $titleLbl.Size      = New-Object System.Drawing.Size(500, 40)
     $titleLbl.Font      = New-Object System.Drawing.Font('Segoe UI Light', 20)
     $titleLbl.ForeColor = $accentBlue
     $titleLbl.TextAlign = 'MiddleCenter'
     $card.Controls.Add($titleLbl)
 
-    # ── Subtitle ────────────────────────────────────────────────────────────
+    # ── Subtitle (updates dynamically when language changes) ────────────────
     $subLbl = New-Object System.Windows.Forms.Label
-    $subLbl.Text      = $S.EditionLabel
-    $subLbl.Location  = New-Object System.Drawing.Point(0, 80)
-    $subLbl.Size      = New-Object System.Drawing.Size(440, 30)
+    $subLbl.Text      = $S.ConfigSubtitle
+    $subLbl.Location  = New-Object System.Drawing.Point(0, 75)
+    $subLbl.Size      = New-Object System.Drawing.Size(500, 24)
     $subLbl.ForeColor = $edSubtle
     $subLbl.TextAlign = 'MiddleCenter'
     $card.Controls.Add($subLbl)
 
-    $combo = New-Object System.Windows.Forms.ComboBox
-    $combo.Items.AddRange($editions)
-    $combo.DropDownStyle = 'DropDownList'
-    $combo.FlatStyle     = 'Flat'
-    $combo.Location      = New-Object System.Drawing.Point(50, 130)
-    $combo.Width         = 340
-    $combo.BackColor     = $edInputBg
-    $combo.ForeColor     = $edFg
-    $combo.Font          = New-Object System.Drawing.Font('Segoe UI', 11)
+    # ── Language label + combo ──────────────────────────────────────────────
+    $langLabel = New-Object System.Windows.Forms.Label
+    $langLabel.Text      = $S.ConfigLang
+    $langLabel.Location  = New-Object System.Drawing.Point(50, 125)
+    $langLabel.Size      = New-Object System.Drawing.Size(400, 22)
+    $langLabel.ForeColor = $edFg
+    $langLabel.Font      = New-Object System.Drawing.Font('Segoe UI', 10)
+    $card.Controls.Add($langLabel)
 
-    # Pre-select Professional if available; fall back to any Pro-like edition.
-    $defaultIdx = 0
-    $foundPref  = $false
-    for ($i = 0; $i -lt $editions.Count; $i++) {
-        if ($editions[$i] -eq 'Professional') { $defaultIdx = $i; $foundPref = $true; break }
-    }
-    if (-not $foundPref) {
-        for ($i = 0; $i -lt $editions.Count; $i++) {
-            if ($editions[$i] -like '*Pro*' -and
-                $editions[$i] -notlike '*Education*' -and
-                $editions[$i] -notlike '*Workstation*') {
-                $defaultIdx = $i; break
+    $langCombo = New-Object System.Windows.Forms.ComboBox
+    $langCombo.Items.AddRange(@('English (EN)', "Fran$([char]0xE7)ais (FR)", "Espa$([char]0xF1)ol (ES)"))
+    $langCombo.SelectedIndex  = 0
+    $langCombo.Location       = New-Object System.Drawing.Point(50, 150)
+    $langCombo.Width          = 400
+    $langCombo.DropDownStyle  = 'DropDownList'
+    $langCombo.FlatStyle      = 'Flat'
+    $langCombo.BackColor      = $edInputBg
+    $langCombo.ForeColor      = $edFg
+    $langCombo.Font           = New-Object System.Drawing.Font('Segoe UI', 11)
+    $card.Controls.Add($langCombo)
+
+    # ── Edition label + combo ──────────────────────────────────────────────
+    $edLabel = New-Object System.Windows.Forms.Label
+    $edLabel.Text      = $S.ConfigEdition
+    $edLabel.Location  = New-Object System.Drawing.Point(50, 205)
+    $edLabel.Size      = New-Object System.Drawing.Size(400, 22)
+    $edLabel.ForeColor = $edFg
+    $edLabel.Font      = New-Object System.Drawing.Font('Segoe UI', 10)
+    $card.Controls.Add($edLabel)
+
+    $edCombo = New-Object System.Windows.Forms.ComboBox
+    $edCombo.DropDownStyle = 'DropDownList'
+    $edCombo.FlatStyle     = 'Flat'
+    $edCombo.Location      = New-Object System.Drawing.Point(50, 230)
+    $edCombo.Width         = 400
+    $edCombo.BackColor     = $edInputBg
+    $edCombo.ForeColor     = $edFg
+    $edCombo.Font          = New-Object System.Drawing.Font('Segoe UI', 11)
+    $card.Controls.Add($edCombo)
+
+    # Helper: populate edition combo with a pre-selected default.
+    $populateEditions = {
+        param([int]$LangIdx)
+        $langCode    = switch ($LangIdx) { 0 { 'EN' } 1 { 'FR' } 2 { 'ES' } default { 'EN' } }
+        $catalogLang = if ($langMap.ContainsKey($langCode)) { $langMap[$langCode] } else { 'en-us' }
+        $editions    = & $getEditions $catalogLang
+        $edCombo.Items.Clear()
+        if ($editions -and $editions.Count -gt 0) {
+            $edCombo.Items.AddRange($editions)
+            $defaultIdx = 0
+            $foundPref  = $false
+            for ($i = 0; $i -lt $editions.Count; $i++) {
+                if ($editions[$i] -eq 'Professional') { $defaultIdx = $i; $foundPref = $true; break }
             }
+            if (-not $foundPref) {
+                for ($i = 0; $i -lt $editions.Count; $i++) {
+                    if ($editions[$i] -like '*Pro*' -and
+                        $editions[$i] -notlike '*Education*' -and
+                        $editions[$i] -notlike '*Workstation*') {
+                        $defaultIdx = $i; break
+                    }
+                }
+            }
+            $edCombo.SelectedIndex = $defaultIdx
         }
     }
-    $combo.SelectedIndex = $defaultIdx
-    $card.Controls.Add($combo)
 
+    # Initial population (English by default).
+    & $populateEditions 0
+
+    # When the user changes language, refresh editions and update labels.
+    $langCombo.Add_SelectedIndexChanged({
+        & $populateEditions $langCombo.SelectedIndex
+        $lCode  = switch ($langCombo.SelectedIndex) { 0 { 'EN' } 1 { 'FR' } 2 { 'ES' } default { 'EN' } }
+        $tmpS   = $Strings[$lCode]
+        $subLbl.Text   = $tmpS.ConfigSubtitle
+        $langLabel.Text = $tmpS.ConfigLang
+        $edLabel.Text  = $tmpS.ConfigEdition
+        $btn.Text      = "$($tmpS.ConfigBtn)  $([char]0x2192)"
+    })
+
+    # ── Continue button ─────────────────────────────────────────────────────
     $btn = New-Object System.Windows.Forms.Button
-    $btn.Text                        = $S.EditionBtn
-    $btn.Location                    = New-Object System.Drawing.Point(120, 210)
-    $btn.Size                        = New-Object System.Drawing.Size(200, 46)
-    $btn.BackColor                   = $accentBlue
-    $btn.ForeColor                   = [System.Drawing.Color]::White
-    $btn.FlatStyle                   = 'Flat'
-    $btn.FlatAppearance.BorderSize   = 0
-    $btn.Font                        = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
-    $btn.Cursor                      = [System.Windows.Forms.Cursors]::Hand
-    $btn.DialogResult                = 'OK'
+    $btn.Text                      = "$($S.ConfigBtn)  $([char]0x2192)"
+    $btn.Location                  = New-Object System.Drawing.Point(150, 320)
+    $btn.Size                      = New-Object System.Drawing.Size(200, 46)
+    $btn.BackColor                 = $accentBlue
+    $btn.ForeColor                 = [System.Drawing.Color]::White
+    $btn.FlatStyle                 = 'Flat'
+    $btn.FlatAppearance.BorderSize = 0
+    $btn.Font                      = New-Object System.Drawing.Font('Segoe UI', 11, [System.Drawing.FontStyle]::Bold)
+    $btn.Cursor                    = [System.Windows.Forms.Cursors]::Hand
+    $btn.DialogResult              = 'OK'
     $card.Controls.Add($btn)
     $dlg.AcceptButton = $btn
 
-    if ($dlg.ShowDialog() -eq 'OK' -and $null -ne $combo.SelectedItem) {
-        return $combo.SelectedItem.ToString()
+    # ── Company logo (bottom-right of card) ─────────────────────────────────
+    $cfgBrand = New-Object System.Windows.Forms.Label
+    $cfgBrand.Text      = 'ampliosoft'
+    $cfgBrand.Location  = New-Object System.Drawing.Point(380, 405)
+    $cfgBrand.Size      = New-Object System.Drawing.Size(110, 20)
+    $cfgBrand.Font      = New-Object System.Drawing.Font('Segoe UI', 8)
+    $cfgBrand.ForeColor = $edSubtle
+    $cfgBrand.TextAlign = 'MiddleRight'
+    $cfgBrand.BackColor = $edCardBg
+    $card.Controls.Add($cfgBrand)
+
+    if ($dlg.ShowDialog() -eq 'OK') {
+        $langCode = switch ($langCombo.SelectedIndex) {
+            0 { 'EN' }
+            1 { 'FR' }
+            2 { 'ES' }
+            default { 'EN' }
+        }
+        $edition = if ($null -ne $edCombo.SelectedItem) { $edCombo.SelectedItem.ToString() } else { '' }
+        return @{ Language = $langCode; Edition = $edition }
     }
-    return ''
+    return $defaultResult
 }
 
 function ProceedToEngine {
@@ -1489,8 +1503,11 @@ function ProceedToEngine {
     $ringPanel.Visible = $true
     $ringTimer.Start()
 
-    # Download the ESD catalog and let the user pick a Windows edition.
-    $script:SelectedEdition = Select-WindowsEdition
+    # Unified configuration dialog: language + Windows edition in one step.
+    $config = Show-ConfigurationMenu
+    $script:Lang = $config.Language
+    $script:S    = $Strings[$script:Lang]
+    $script:SelectedEdition = $config.Edition
 
     # Clean up any stale status file from a previous run.
     if (Test-Path $script:StatusFile) { Remove-Item $script:StatusFile -Force }
