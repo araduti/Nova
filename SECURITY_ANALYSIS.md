@@ -171,15 +171,15 @@ All three flows request only `openid profile` scopes — they function as a **pu
 
 ### GitHub API — Personal Access Token
 
-**Function:** `Publish-BootImage` in `Trigger.ps1` (lines 1374–1505)
+**Function:** `Publish-BootImage` in `Trigger.ps1` (lines 1374–1505), called from the Main region (lines 1789–1811)
 **Auth method:** GitHub Personal Access Token (PAT) with `repo` scope
 
 #### Flow Steps
 
-1. **Token prompt** (line 1793): `Read-Host -AsSecureString` — masked console input
-2. **Conversion** (lines 1794–1796): `SecureString` → `BSTR` → plain text (scoped to `try` block)
-3. **Usage** (lines 1391–1393, 1459): `Authorization: token <PAT>` header on GitHub API calls
-4. **Cleanup** (lines 1808–1809): Plain text set to `$null`; BSTR zeroed via `ZeroFreeBSTR()`
+1. **Token prompt** (Main region, line 1793): `Read-Host -AsSecureString` — masked console input
+2. **Conversion** (Main region, lines 1794–1796): `SecureString` → `BSTR` → plain text (scoped to `try` block)
+3. **Usage** (`Publish-BootImage`, lines 1391–1393, 1459): `Authorization: token <PAT>` header on GitHub API calls
+4. **Cleanup** (Main region, lines 1808–1809): Plain text set to `$null`; BSTR zeroed via `ZeroFreeBSTR()`
 
 #### Security Assessment
 
