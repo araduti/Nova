@@ -6,6 +6,7 @@ on:
     paths:
       - "Editor/**"
       - "TaskSequence/**"
+      - "Config/**"
       - "index.html"
       - ".github/workflows/pages.yml"
   workflow_dispatch:

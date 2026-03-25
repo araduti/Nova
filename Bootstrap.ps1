@@ -105,7 +105,6 @@ $Strings = @{
             AuthUrl="https://microsoft.com/devicelogin";
             AuthWaiting="Waiting for sign-in...";
             AuthSuccess="Identity verified";
-            AuthDenied="Your organisation is not authorised to use this tool.";
             AuthFailed="Authentication failed. Please try again.";
             AuthSkipped="Authentication not required" }
     FR = @{ Header="A M P C L O U D"; Subtitle="Moteur d'imagerie cloud";
@@ -132,7 +131,6 @@ $Strings = @{
             AuthUrl="https://microsoft.com/devicelogin";
             AuthWaiting="En attente de connexion...";
             AuthSuccess="Identité vérifiée";
-            AuthDenied="Votre organisation n'est pas autorisée à utiliser cet outil.";
             AuthFailed="Échec de l'authentification. Veuillez réessayer.";
             AuthSkipped="Authentification non requise" }
     ES = @{ Header="A M P C L O U D"; Subtitle="Motor de imágenes en la nube";
@@ -159,7 +157,6 @@ $Strings = @{
             AuthUrl="https://microsoft.com/devicelogin";
             AuthWaiting="Esperando inicio de sesión...";
             AuthSuccess="Identidad verificada";
-            AuthDenied="Su organización no está autorizada para usar esta herramienta.";
             AuthFailed="Error de autenticación. Por favor, inténtelo de nuevo.";
             AuthSkipped="Autenticación no requerida" }
 }
@@ -1685,15 +1682,16 @@ function Invoke-M365DeviceCodeAuth {
     .SYNOPSIS  Authenticate the operator via the OAuth 2.0 Device Code Flow.
     .DESCRIPTION
         Downloads Config/auth.json from the GitHub repository.  When
-        requireAuth is true and a clientId + allowedTenants list are
-        configured, the function initiates the Device Code Flow against
-        Azure AD (login.microsoftonline.com/organizations) and shows a
-        WinForms dialog with the one-time code and verification URL.
-        After the user completes sign-in on another device the function
-        validates the returned tenant ID against the allowed list.
+        requireAuth is true and a clientId is configured, the function
+        initiates the Device Code Flow against Azure AD
+        (login.microsoftonline.com/organizations) and shows a WinForms
+        dialog with the one-time code and verification URL.
+        Tenant restrictions are enforced at the Entra ID app registration
+        level — only tenants explicitly allowed in the app's
+        "Supported account types" configuration can complete sign-in.
     .OUTPUTS
         $true  if authentication succeeded or was not required.
-        $false if authentication failed or the tenant was denied.
+        $false if authentication failed.
     #>
 
     # ── Fetch auth configuration from the repository ────────────────────────
@@ -1714,16 +1712,13 @@ function Invoke-M365DeviceCodeAuth {
     }
 
     # Validate that the config has the minimum required fields.
-    if (-not $authConfig.clientId -or
-        -not $authConfig.allowedTenants -or
-        $authConfig.allowedTenants.Count -eq 0) {
+    if (-not $authConfig.clientId) {
         Write-Verbose "Auth config incomplete — skipping authentication."
         Write-Status $S.AuthSkipped 'Green'
         return $true
     }
 
-    $clientId       = $authConfig.clientId
-    $allowedTenants = @($authConfig.allowedTenants)
+    $clientId = $authConfig.clientId
 
     # ── Step 1: Request a device code ───────────────────────────────────────
     Write-Status $S.AuthSigning 'Cyan'
@@ -1875,43 +1870,8 @@ function Invoke-M365DeviceCodeAuth {
         return $false
     }
 
-    # ── Step 4: Validate tenant ID from the id_token ────────────────────────
-    $idToken = $script:_authResult.id_token
-    try {
-        $parts   = $idToken.Split('.')
-        $payload = $parts[1]
-        # Pad base64url to standard base64.
-        switch ($payload.Length % 4) {
-            1 { throw "Invalid base64url payload length." }
-            2 { $payload += '==' }
-            3 { $payload += '='  }
-        }
-        $payload = $payload.Replace('-', '+').Replace('_', '/')
-        $json    = [System.Text.Encoding]::UTF8.GetString(
-                       [System.Convert]::FromBase64String($payload))
-        $claims  = $json | ConvertFrom-Json
-    } catch {
-        Write-Verbose "Failed to decode id_token: $_"
-        Write-Status $S.AuthFailed 'Red'
-        Start-Sleep -Seconds 3
-        return $false
-    }
-
-    $tenantId = $claims.tid
-    if (-not $tenantId) {
-        Write-Verbose "id_token did not contain a tid claim."
-        Write-Status $S.AuthFailed 'Red'
-        Start-Sleep -Seconds 3
-        return $false
-    }
-
-    if ($allowedTenants -notcontains $tenantId) {
-        Write-Verbose "Tenant $tenantId is not in the allowed list."
-        Write-Status $S.AuthDenied 'Red'
-        Start-Sleep -Seconds 4
-        return $false
-    }
-
+    # Tenant restriction is enforced by Entra ID at the app registration level.
+    # If the token was issued successfully, the tenant is allowed.
     Write-Status $S.AuthSuccess 'Green'
     Invoke-Sound 1000 200
     Start-Sleep -Seconds 1
@@ -1933,7 +1893,8 @@ function ProceedToEngine {
 
     # ── M365 authentication gate ────────────────────────────────────────────
     # When Config/auth.json has requireAuth = true, the operator must sign in
-    # with a Microsoft 365 account whose tenant ID is on the allowed list.
+    # with a Microsoft 365 account from an allowed Entra ID tenant.
+    # Tenant restrictions are enforced at the app registration level.
     $authPassed = Invoke-M365DeviceCodeAuth
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect
