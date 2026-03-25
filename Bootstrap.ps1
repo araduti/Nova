@@ -1731,10 +1731,12 @@ function Invoke-M365DeviceCodeAuth {
 
     $deviceCodeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/devicecode'
     $tokenUrl      = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
+    $scope         = 'openid profile'
+    $grantType     = 'urn:ietf:params:oauth:grant-type:device_code'
 
     $deviceResponse = $null
     try {
-        $body = "client_id=$([uri]::EscapeDataString($clientId))&scope=openid%20profile"
+        $body = "client_id=$([uri]::EscapeDataString($clientId))&scope=$([uri]::EscapeDataString($scope))"
         $wc   = New-Object System.Net.WebClient
         $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
         $raw  = $wc.UploadString($deviceCodeUrl, 'POST', $body)
@@ -1828,6 +1830,7 @@ function Invoke-M365DeviceCodeAuth {
     $script:_deviceCode   = $deviceCode
     $script:_clientId     = $clientId
     $script:_tokenUrl     = $tokenUrl
+    $script:_grantType    = $grantType
 
     $pollTimer.Add_Tick({
         if ([datetime]::UtcNow -ge $script:_authExpiry) {
@@ -1837,7 +1840,7 @@ function Invoke-M365DeviceCodeAuth {
             return
         }
         try {
-            $body = "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code" +
+            $body = "grant_type=$([uri]::EscapeDataString($script:_grantType))" +
                     "&client_id=$([uri]::EscapeDataString($script:_clientId))" +
                     "&device_code=$([uri]::EscapeDataString($script:_deviceCode))"
             $wc = New-Object System.Net.WebClient
@@ -1879,6 +1882,7 @@ function Invoke-M365DeviceCodeAuth {
         $payload = $parts[1]
         # Pad base64url to standard base64.
         switch ($payload.Length % 4) {
+            1 { throw "Invalid base64url payload length." }
             2 { $payload += '==' }
             3 { $payload += '='  }
         }
