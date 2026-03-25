@@ -1510,16 +1510,21 @@ function Publish-BootImage {
 
 function Invoke-M365DeviceCodeAuth {
     <#
-    .SYNOPSIS  Authenticate the operator via the OAuth 2.0 Device Code Flow (console).
+    .SYNOPSIS  Authenticate the operator via an interactive browser sign-in popup.
     .DESCRIPTION
         Downloads Config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
-        initiates the Device Code Flow against Azure AD
-        (login.microsoftonline.com/organizations) and displays the one-time
-        code and verification URL in the console.
+        opens the default browser to the Azure AD login page using the
+        Authorization Code Flow with PKCE.  A temporary localhost HTTP
+        listener captures the redirect after sign-in completes.
+        This provides the same single-step sign-in experience as the
+        Task Sequence Editor — no codes to copy or URLs to visit.
         Tenant restrictions are enforced at the Entra ID app registration
         level — only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
+    .NOTES
+        The Azure AD app registration must include http://localhost as a
+        redirect URI under the "Mobile and desktop applications" platform.
     .OUTPUTS
         $true  if authentication succeeded or was not required.
         $false if authentication failed or timed out.
@@ -1549,75 +1554,113 @@ function Invoke-M365DeviceCodeAuth {
 
     $clientId = $authConfig.clientId
 
-    # ── Step 1: Request a device code ───────────────────────────────────────
+    # ── Step 1: Generate PKCE code verifier and challenge (RFC 7636) ────────
     Write-Step 'Signing in with Microsoft 365...'
 
-    $deviceCodeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/devicecode'
-    $tokenUrl      = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
-    $scope         = 'openid profile'
-    $grantType     = 'urn:ietf:params:oauth:grant-type:device_code'
+    $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $bytes = New-Object byte[] 32
+    $rng.GetBytes($bytes)
+    $codeVerifier  = [Convert]::ToBase64String($bytes) -replace '\+','-' -replace '/','_' -replace '='
 
-    $deviceResponse = $null
+    $sha256        = [System.Security.Cryptography.SHA256]::Create()
+    $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
+    $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
+
+    # ── Step 2: Start a temporary localhost HTTP listener ───────────────────
+    $port        = Get-Random -Minimum 49152 -Maximum 65535
+    $redirectUri = "http://localhost:$port/"
+    $listener    = New-Object System.Net.HttpListener
+    $listener.Prefixes.Add($redirectUri)
     try {
-        $body = "client_id=$([uri]::EscapeDataString($clientId))&scope=$([uri]::EscapeDataString($scope))"
-        $wc   = New-Object System.Net.WebClient
-        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-        $raw  = $wc.UploadString($deviceCodeUrl, 'POST', $body)
-        $deviceResponse = $raw | ConvertFrom-Json
+        $listener.Start()
     } catch {
-        Write-Fail 'Device code request failed.'
+        Write-Fail "Could not start local HTTP listener: $_"
         return $false
     }
 
-    $userCode   = $deviceResponse.user_code
-    $deviceCode = $deviceResponse.device_code
-    if (-not $userCode -or -not $deviceCode) {
-        Write-Fail 'Device code response is missing required fields.'
+    # ── Step 3: Open the browser to Azure AD authorize endpoint ─────────────
+    $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
+        "client_id=$([uri]::EscapeDataString($clientId))" +
+        '&response_type=code' +
+        "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
+        "&scope=$([uri]::EscapeDataString('openid profile'))" +
+        "&code_challenge=$codeChallenge" +
+        '&code_challenge_method=S256' +
+        '&prompt=select_account'
+
+    Write-Host ''
+    Write-Host '  A browser window will open for sign-in.' -ForegroundColor White
+    Write-Host '  Complete the sign-in in your browser.'    -ForegroundColor Gray
+    Write-Host ''
+
+    Start-Process $authorizeUrl
+
+    # ── Step 4: Wait for the redirect callback (2-minute timeout) ───────────
+    $asyncResult = $listener.BeginGetContext($null, $null)
+    if (-not $asyncResult.AsyncWaitHandle.WaitOne(120000)) {
+        $listener.Stop(); $listener.Close()
+        Write-Fail 'Sign-in timed out.'
         return $false
     }
-    $expiresIn  = if ($deviceResponse.expires_in) { [int]$deviceResponse.expires_in } else { 900 }
-    $interval   = if ($deviceResponse.interval)   { [int]$deviceResponse.interval   } else { 5   }
 
-    # ── Step 2: Display sign-in instructions ────────────────────────────────
-    Write-Host ''
-    Write-Host '  To sign in, use a web browser and go to:' -ForegroundColor White
-    Write-Host '  https://microsoft.com/devicelogin'        -ForegroundColor Cyan
-    Write-Host ''
-    Write-Host "  Enter this code: $userCode"               -ForegroundColor Yellow
-    Write-Host ''
-    Write-Host '  Waiting for sign-in...' -NoNewline        -ForegroundColor Gray
+    $context = $listener.EndGetContext($asyncResult)
 
-    # ── Step 3: Poll for token ──────────────────────────────────────────────
-    $deadline = [datetime]::UtcNow.AddSeconds($expiresIn)
-    while ([datetime]::UtcNow -lt $deadline) {
-        Start-Sleep -Seconds $interval
-        try {
-            $body = "grant_type=$([uri]::EscapeDataString($grantType))" +
-                    "&client_id=$([uri]::EscapeDataString($clientId))" +
-                    "&device_code=$([uri]::EscapeDataString($deviceCode))"
-            $wc = New-Object System.Net.WebClient
-            $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-            $raw = $wc.UploadString($tokenUrl, 'POST', $body)
-            $tokenResponse = $raw | ConvertFrom-Json
-            if ($tokenResponse.id_token) {
-                Write-Host ''
-                Write-Success 'Identity verified.'
-                return $true
-            }
-        } catch {
-            # Azure AD returns HTTP 400 with authorization_pending while the
-            # user has not yet completed sign-in.  Any other error is kept
-            # silent — we continue polling until expiry rather than aborting
-            # on transient network errors.
-            $msg = $_.ToString()
-            if ($msg -notmatch 'authorization_pending' -and $msg -notmatch 'slow_down') {
-                Write-Verbose "Token poll error: $msg"
-            }
+    # Parse authorization code (or error) from the query string.
+    $code      = $null
+    $authError = $null
+    foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
+        $kv = $pair.Split('=', 2)
+        if ($kv.Count -eq 2) {
+            if ($kv[0] -eq 'code')  { $code      = [uri]::UnescapeDataString($kv[1]) }
+            if ($kv[0] -eq 'error') { $authError  = [uri]::UnescapeDataString($kv[1]) }
         }
     }
 
-    Write-Host ''
-    Write-Fail 'Authentication timed out.'
+    # Send a friendly response page to the browser, then stop the listener.
+    $html = if ($code) {
+        '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
+        '<h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
+        '<p>You can close this window and return to AmpCloud.</p>' +
+        '<script>setTimeout(function(){window.close()},2000)</script></body></html>'
+    } else {
+        '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
+        '<h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
+        '<p>Please close this window and try again.</p></body></html>'
+    }
+    $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
+    $context.Response.ContentType   = 'text/html; charset=utf-8'
+    $context.Response.ContentLength64 = $buf.Length
+    $context.Response.OutputStream.Write($buf, 0, $buf.Length)
+    $context.Response.OutputStream.Close()
+    $listener.Stop(); $listener.Close()
+
+    if (-not $code) {
+        Write-Fail "Sign-in was not completed: $authError"
+        return $false
+    }
+
+    # ── Step 5: Exchange authorization code for tokens ──────────────────────
+    $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
+    try {
+        $body = "client_id=$([uri]::EscapeDataString($clientId))" +
+                "&scope=$([uri]::EscapeDataString('openid profile'))" +
+                "&code=$([uri]::EscapeDataString($code))" +
+                "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
+                '&grant_type=authorization_code' +
+                "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+        $raw = $wc.UploadString($tokenUrl, 'POST', $body)
+        $tokenResponse = $raw | ConvertFrom-Json
+        if ($tokenResponse.id_token) {
+            Write-Success 'Identity verified.'
+            return $true
+        }
+    } catch {
+        Write-Verbose "Token exchange failed: $_"
+    }
+
+    Write-Fail 'Token exchange failed.'
     return $false
 }
 
