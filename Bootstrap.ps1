@@ -107,7 +107,7 @@ $Strings = @{
             AuthSuccess="Identity verified";
             AuthFailed="Authentication failed. Please try again.";
             AuthSkipped="Authentication not required";
-            AuthFallbackPrompt="To sign in, use a web browser on another device`nand enter this code:" }
+            AuthDeviceCodePrompt="To sign in, use a web browser on another device`nand enter this code:" }
     FR = @{ Header="A M P C L O U D"; Subtitle="Moteur d'imagerie cloud";
             Step1="Réseau"; Step2="Connexion"; Step3="Identification"; Step4="Déploiement";
             StatusInit="Initialisation de la pile réseau...";
@@ -134,7 +134,7 @@ $Strings = @{
             AuthSuccess="Identité vérifiée";
             AuthFailed="Échec de l'authentification. Veuillez réessayer.";
             AuthSkipped="Authentification non requise";
-            AuthFallbackPrompt="Pour vous connecter, utilisez un navigateur web sur un autre appareil`net entrez ce code :" }
+            AuthDeviceCodePrompt="Pour vous connecter, utilisez un navigateur web sur un autre appareil`net entrez ce code :" }
     ES = @{ Header="A M P C L O U D"; Subtitle="Motor de imágenes en la nube";
             Step1="Red"; Step2="Conectar"; Step3="Iniciar sesión"; Step4="Desplegar";
             StatusInit="Inicializando pila de red...";
@@ -161,7 +161,7 @@ $Strings = @{
             AuthSuccess="Identidad verificada";
             AuthFailed="Error de autenticación. Por favor, inténtelo de nuevo.";
             AuthSkipped="Autenticación no requerida";
-            AuthFallbackPrompt="Para iniciar sesión, use un navegador web en otro dispositivo`ne ingrese este código:" }
+            AuthDeviceCodePrompt="Para iniciar sesión, use un navegador web en otro dispositivo`ne ingrese este código:" }
 }
 $script:S = $Strings[$script:Lang]
 #endregion
@@ -1710,7 +1710,7 @@ function Invoke-M365BrowserAuth {
     $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
 
     # Redirect to localhost on a random ephemeral port.
-    $port        = Get-Random -Minimum 49152 -Maximum 65535
+    $port        = Get-Random -Minimum 49152 -Maximum 65536
     $redirectUri = "http://localhost:$port/"
 
     # ── Build the authorize URL ─────────────────────────────────────────────
@@ -1776,8 +1776,7 @@ function Invoke-M365BrowserAuth {
         param($sender, $e)
         $url = $e.Url.ToString()
         # Check if this is the localhost redirect carrying the auth code.
-        if ($url.StartsWith($redirectUri, [StringComparison]::OrdinalIgnoreCase) -or
-            $url.StartsWith("http://localhost:$port", [StringComparison]::OrdinalIgnoreCase)) {
+        if ($url.StartsWith($redirectUri, [StringComparison]::OrdinalIgnoreCase)) {
             $e.Cancel = $true
             # Parse the authorization code or error from the query string.
             $query = $e.Url.Query
@@ -1889,7 +1888,7 @@ function Invoke-M365DeviceCodeAuth {
     $dlg.Controls.Add($msLabel)
 
     $promptLabel = New-Object System.Windows.Forms.Label
-    $promptLabel.Text     = $S.AuthFallbackPrompt
+    $promptLabel.Text     = $S.AuthDeviceCodePrompt
     $promptLabel.Location = New-Object System.Drawing.Point(30, 75)
     $promptLabel.Size     = New-Object System.Drawing.Size(450, 50)
     $promptLabel.Font     = New-Object System.Drawing.Font('Segoe UI', 10)
