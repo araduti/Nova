@@ -1567,16 +1567,25 @@ function Invoke-M365DeviceCodeAuth {
     $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
 
     # ── Step 2: Start a temporary localhost HTTP listener ───────────────────
-    $port        = Get-Random -Minimum 49152 -Maximum 65535
-    $redirectUri = "http://localhost:$port/"
-    $listener    = New-Object System.Net.HttpListener
-    $listener.Prefixes.Add($redirectUri)
-    try {
-        $listener.Start()
-    } catch {
-        Write-Fail "Could not start local HTTP listener: $_"
-        return $false
+    $listener = New-Object System.Net.HttpListener
+    $redirectUri = $null
+    foreach ($attempt in 1..5) {
+        $port        = Get-Random -Minimum 49152 -Maximum 65535
+        $redirectUri = "http://localhost:$port/"
+        $listener.Prefixes.Clear()
+        $listener.Prefixes.Add($redirectUri)
+        try {
+            $listener.Start()
+            break
+        } catch {
+            if ($attempt -eq 5) {
+                Write-Fail "Could not start local HTTP listener after $attempt attempts: $_"
+                return $false
+            }
+        }
     }
+
+    try {
 
     # ── Step 3: Open the browser to Azure AD authorize endpoint ─────────────
     $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
@@ -1595,10 +1604,10 @@ function Invoke-M365DeviceCodeAuth {
 
     Start-Process $authorizeUrl
 
-    # ── Step 4: Wait for the redirect callback (2-minute timeout) ───────────
+    # ── Step 4: Wait for the redirect callback ──────────────────────────────
+    $timeoutMs   = 120000   # 2 minutes
     $asyncResult = $listener.BeginGetContext($null, $null)
-    if (-not $asyncResult.AsyncWaitHandle.WaitOne(120000)) {
-        $listener.Stop(); $listener.Close()
+    if (-not $asyncResult.AsyncWaitHandle.WaitOne($timeoutMs)) {
         Write-Fail 'Sign-in timed out.'
         return $false
     }
@@ -1611,12 +1620,12 @@ function Invoke-M365DeviceCodeAuth {
     foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
         $kv = $pair.Split('=', 2)
         if ($kv.Count -eq 2) {
-            if ($kv[0] -eq 'code')  { $code      = [uri]::UnescapeDataString($kv[1]) }
-            if ($kv[0] -eq 'error') { $authError  = [uri]::UnescapeDataString($kv[1]) }
+            if ($kv[0] -eq 'code')  { $code     = [uri]::UnescapeDataString($kv[1]) }
+            if ($kv[0] -eq 'error') { $authError = [uri]::UnescapeDataString($kv[1]) }
         }
     }
 
-    # Send a friendly response page to the browser, then stop the listener.
+    # Send a friendly response page to the browser.
     $html = if ($code) {
         '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
         '<h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
@@ -1628,11 +1637,14 @@ function Invoke-M365DeviceCodeAuth {
         '<p>Please close this window and try again.</p></body></html>'
     }
     $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
-    $context.Response.ContentType   = 'text/html; charset=utf-8'
+    $context.Response.ContentType     = 'text/html; charset=utf-8'
     $context.Response.ContentLength64 = $buf.Length
     $context.Response.OutputStream.Write($buf, 0, $buf.Length)
     $context.Response.OutputStream.Close()
-    $listener.Stop(); $listener.Close()
+
+    } finally {
+        $listener.Stop(); $listener.Close()
+    }
 
     if (-not $code) {
         Write-Fail "Sign-in was not completed: $authError"
