@@ -242,7 +242,7 @@ html, body {
 .step-badge[data-type="ApplyImage"]      { background: #2f9e44; }
 .step-badge[data-type="SetBootloader"]   { background: #7048e8; }
 .step-badge[data-type="InjectDrivers"]   { background: #c2255c; }
-.step-badge[data-type="InjectOemDrivers"]{ background: #c2255c; }
+.step-badge[data-type="InjectOemDrivers"]{ background: #e8590c; }
 .step-badge[data-type="ApplyAutopilot"]  { background: #0c8599; }
 .step-badge[data-type="StageCCMSetup"]   { background: #5f3dc4; }
 .step-badge[data-type="CustomizeOOBE"]   { background: #d6336c; }
