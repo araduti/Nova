@@ -1703,8 +1703,20 @@ function ProceedToEngine {
 
         # Run AmpCloud.ps1 in a dedicated process so the WinForms UI thread
         # stays responsive and the spinner keeps animating.
+        # Detect firmware type so AmpCloud partitions and configures the
+        # bootloader correctly (UEFI → GPT + bcdboot /f UEFI,
+        # BIOS → MBR + bcdboot /f BIOS).  wpeutil UpdateBootInfo already
+        # populated the PEFirmwareType registry value during WinPE init.
+        $detectedFirmware = 'UEFI'
+        try {
+            $fwVal = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control' `
+                                       -Name PEFirmwareType -ErrorAction Stop).PEFirmwareType
+            if ($fwVal -eq 1) { $detectedFirmware = 'BIOS' }
+        } catch { Write-Verbose "PEFirmwareType unavailable: $_" }
+
         $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $localAmpCloud,
-                    '-StatusFile', $script:StatusFile)
+                    '-StatusFile', $script:StatusFile,
+                    '-FirmwareType', $detectedFirmware)
         if ($script:SelectedEdition)  { $psArgs += @('-WindowsEdition',      $script:SelectedEdition)  }
         if ($script:SelectedOsLang)   { $psArgs += @('-WindowsLanguage',     $script:SelectedOsLang)   }
         if ($script:SelectedArch)     { $psArgs += @('-WindowsArchitecture', $script:SelectedArch)     }
