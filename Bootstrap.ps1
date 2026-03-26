@@ -2286,7 +2286,7 @@ function ProceedToEngine {
                 if ($check.value -and $check.value.Count -gt 0) {
                     Write-AuthLog "Device $serial is already registered in Autopilot — skipping import."
                 } else {
-                    Write-AuthLog "Device $serial not found in Autopilot — this device can be imported after OS deployment using the Autopilot tools."
+                    Write-AuthLog "Device $serial not found in Autopilot — it will be imported during the task sequence."
                 }
             } else {
                 Write-AuthLog "Could not determine device serial number — skipping Autopilot check."
