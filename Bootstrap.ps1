@@ -97,92 +97,75 @@ $script:BulletChar             = [char]0x2022  # '•' used in progress text
 #region ── Language System ───────────────────────────────────────────────────
 $script:Lang = 'EN'
 
-$Strings = @{
-    EN = @{ Header="A M P C L O U D"; Subtitle="Cloud Imaging Engine";
-            Step1="Network"; Step2="Connect"; Step3="Sign in"; Step4="Deploy";
-            StatusInit="Initialising network stack...";
-            StatusNoNet="No wired connection detected`nTap below to join Wi-Fi";
-            Connected="Connected — verifying identity";
-            Download="Downloading AmpCloud.ps1  ({0}%)";
-            Complete="Ready to deploy";
-            Reboot="Restart now"; PowerOff="Shut down"; Shell="Command prompt";
-            Imaging="Imaging in progress...";
-            CatalogFetch="Loading Windows catalog...";
-            CatalogFail="Could not load catalog — using default edition.";
-            EditionTitle="Choose edition";
-            EditionLabel="Select the Windows edition to install:";
-            EditionBtn="Continue";
-            ConfigSubtitle="Configure your deployment";
-            ConfigLang="Language"; ConfigOsLang="OS Language";
-            ConfigArch="Architecture"; ConfigActivation="Activation";
-            ConfigEdition="Windows Edition";
-            ConfigBtn="Start deployment";
-            AuthSigning="Signing in with Microsoft 365...";
-            AuthPrompt="Sign in with your Microsoft 365 account to continue.";
-            AuthUrl="https://microsoft.com/devicelogin";
-            AuthWaiting="Waiting for sign-in...";
-            AuthSuccess="Identity verified";
-            AuthFailed="Authentication failed. Please try again.";
-            AuthSkipped="Authentication not required";
-            AuthEdgePrompt="Microsoft Edge has opened for sign-in.`nComplete the sign-in in the browser window, then this dialog will close automatically.";
-            AuthDeviceCodePrompt="To sign in, use a web browser on another device`nand enter this code:" }
-    FR = @{ Header="A M P C L O U D"; Subtitle="Moteur d'imagerie cloud";
-            Step1="Réseau"; Step2="Connexion"; Step3="Identification"; Step4="Déploiement";
-            StatusInit="Initialisation de la pile réseau...";
-            StatusNoNet="Pas de connexion filaire détectée`nAppuyez ci-dessous pour le Wi-Fi";
-            Connected="Connecté — vérification de l'identité";
-            Download="Téléchargement AmpCloud.ps1  ({0}%)";
-            Complete="Prêt à déployer";
-            Reboot="Redémarrer maintenant"; PowerOff="Éteindre"; Shell="Invite de commandes";
-            Imaging="Imagerie en cours...";
-            CatalogFetch="Chargement du catalogue Windows...";
-            CatalogFail="Impossible de charger le catalogue — édition par défaut utilisée.";
-            EditionTitle="Choisir l'édition";
-            EditionLabel="Sélectionnez l'édition Windows à installer :";
-            EditionBtn="Continuer";
-            ConfigSubtitle="Configurez votre déploiement";
-            ConfigLang="Langue"; ConfigOsLang="Langue du SE";
-            ConfigArch="Architecture"; ConfigActivation="Activation";
-            ConfigEdition="Édition Windows";
-            ConfigBtn="Démarrer le déploiement";
-            AuthSigning="Connexion avec Microsoft 365...";
-            AuthPrompt="Connectez-vous avec votre compte Microsoft 365 pour continuer.";
-            AuthUrl="https://microsoft.com/devicelogin";
-            AuthWaiting="En attente de connexion...";
-            AuthSuccess="Identité vérifiée";
-            AuthFailed="Échec de l'authentification. Veuillez réessayer.";
-            AuthSkipped="Authentification non requise";
-            AuthEdgePrompt="Microsoft Edge s'est ouvert pour la connexion.`nTerminez la connexion dans la fenêtre du navigateur, cette boîte se fermera automatiquement.";
-            AuthDeviceCodePrompt="Pour vous connecter, utilisez un navigateur web sur un autre appareil`net entrez ce code :" }
-    ES = @{ Header="A M P C L O U D"; Subtitle="Motor de imágenes en la nube";
-            Step1="Red"; Step2="Conectar"; Step3="Iniciar sesión"; Step4="Desplegar";
-            StatusInit="Inicializando pila de red...";
-            StatusNoNet="Sin conexión cableada detectada`nToque abajo para Wi-Fi";
-            Connected="Conectado — verificando identidad";
-            Download="Descargando AmpCloud.ps1  ({0}%)";
-            Complete="Listo para desplegar";
-            Reboot="Reiniciar ahora"; PowerOff="Apagar"; Shell="Símbolo del sistema";
-            Imaging="Creación de imagen en curso...";
-            CatalogFetch="Cargando catálogo de Windows...";
-            CatalogFail="No se pudo cargar el catálogo — usando edición predeterminada.";
-            EditionTitle="Elegir edición";
-            EditionLabel="Seleccione la edición de Windows a instalar:";
-            EditionBtn="Continuar";
-            ConfigSubtitle="Configure su implementación";
-            ConfigLang="Idioma"; ConfigOsLang="Idioma del SO";
-            ConfigArch="Arquitectura"; ConfigActivation="Activación";
-            ConfigEdition="Edición de Windows";
-            ConfigBtn="Iniciar implementación";
-            AuthSigning="Iniciando sesión con Microsoft 365...";
-            AuthPrompt="Inicie sesión con su cuenta de Microsoft 365 para continuar.";
-            AuthUrl="https://microsoft.com/devicelogin";
-            AuthWaiting="Esperando inicio de sesión...";
-            AuthSuccess="Identidad verificada";
-            AuthFailed="Error de autenticación. Por favor, inténtelo de nuevo.";
-            AuthSkipped="Autenticación no requerida";
-            AuthEdgePrompt="Microsoft Edge se ha abierto para iniciar sesión.`nComplete el inicio de sesión en la ventana del navegador, este cuadro se cerrará automáticamente.";
-            AuthDeviceCodePrompt="Para iniciar sesión, use un navegador web en otro dispositivo`ne ingrese este código:" }
+# Locale strings are loaded from Config/locale/<lang>.json.  The function
+# below downloads a locale file from the GitHub repository (same pattern used
+# for auth.json), converts it to a hashtable, and normalizes \n escape
+# sequences into real newlines so WinForms labels render them correctly.
+function Import-LocaleJson {
+    param([string]$LangCode)
+    $code = $LangCode.ToLower()
+    $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/locale/$code.json"
+    try {
+        $wc   = New-Object System.Net.WebClient
+        try {
+            $raw  = $wc.DownloadString($url)
+        } finally {
+            $wc.Dispose()
+        }
+        $obj  = $raw | ConvertFrom-Json
+        $ht   = @{}
+        $obj.PSObject.Properties | ForEach-Object {
+            $ht[$_.Name] = $_.Value -replace '\\n', "`n"
+        }
+        return $ht
+    } catch {
+        Write-Verbose "Failed to download locale $code from $url — $_"
+        return $null
+    }
 }
+
+# Pre-load locale files.  English is the required fallback; if it cannot be
+# loaded the script embeds a minimal inline default so the UI is never blank.
+$Strings = @{}
+foreach ($lc in @('EN', 'FR', 'ES')) {
+    $loaded = Import-LocaleJson -LangCode $lc
+    if ($loaded) { $Strings[$lc] = $loaded }
+}
+
+if (-not $Strings.ContainsKey('EN')) {
+    # Minimal inline fallback — only used when the network fetch fails for EN.
+    $Strings['EN'] = @{
+        Header="A M P C L O U D"; Subtitle="Cloud Imaging Engine";
+        Step1="Network"; Step2="Connect"; Step3="Sign in"; Step4="Deploy";
+        StatusInit="Initialising network stack...";
+        StatusNoNet="No wired connection detected`nTap below to join Wi-Fi";
+        Connected="Connected — verifying identity";
+        Download="Downloading AmpCloud.ps1  ({0}%)";
+        Complete="Ready to deploy";
+        Reboot="Restart now"; PowerOff="Shut down"; Shell="Command prompt";
+        Imaging="Imaging in progress...";
+        CatalogFetch="Loading Windows catalog...";
+        CatalogFail="Could not load catalog — using default edition.";
+        EditionTitle="Choose edition";
+        EditionLabel="Select the Windows edition to install:";
+        EditionBtn="Continue";
+        ConfigSubtitle="Configure your deployment";
+        ConfigLang="Language"; ConfigOsLang="OS Language";
+        ConfigArch="Architecture"; ConfigActivation="Activation";
+        ConfigEdition="Windows Edition";
+        ConfigBtn="Start deployment";
+        AuthSigning="Signing in with Microsoft 365...";
+        AuthPrompt="Sign in with your Microsoft 365 account to continue.";
+        AuthUrl="https://microsoft.com/devicelogin";
+        AuthWaiting="Waiting for sign-in...";
+        AuthSuccess="Identity verified";
+        AuthFailed="Authentication failed. Please try again.";
+        AuthSkipped="Authentication not required";
+        AuthEdgePrompt="Microsoft Edge has opened for sign-in.`nComplete the sign-in in the browser window, then this dialog will close automatically.";
+        AuthDeviceCodePrompt="To sign in, use a web browser on another device`nand enter this code:"
+    }
+}
+
 $script:S = $Strings[$script:Lang]
 #endregion
 
@@ -2286,7 +2269,7 @@ function ProceedToEngine {
                 if ($check.value -and $check.value.Count -gt 0) {
                     Write-AuthLog "Device $serial is already registered in Autopilot — skipping import."
                 } else {
-                    Write-AuthLog "Device $serial not found in Autopilot — this device can be imported after OS deployment using the Autopilot tools."
+                    Write-AuthLog "Device $serial not found in Autopilot — it will be imported during the task sequence."
                 }
             } else {
                 Write-AuthLog "Could not determine device serial number — skipping Autopilot check."
