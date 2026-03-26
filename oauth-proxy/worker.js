@@ -33,20 +33,45 @@ const ROUTE_MAP = {
  * data (client_id + device_code) — no secrets are involved.
  */
 function corsHeaders(request, env) {
-    const requestOrigin = request.headers.get('Origin');
-    const allowed = env.ALLOWED_ORIGIN || requestOrigin || '*';
+    const requestOrigin = (request && request.headers && request.headers.get('Origin')) || '';
+    const allowedOrigin = (env && env.ALLOWED_ORIGIN) || '';
+
+    /* When ALLOWED_ORIGIN is configured, validate the request origin.
+       If it doesn't match, still return the configured origin so the
+       browser receives a clear CORS rejection instead of a missing header. */
+    let origin;
+    if (allowedOrigin) {
+        origin = allowedOrigin;
+    } else if (requestOrigin) {
+        origin = requestOrigin;
+    } else {
+        origin = '*';
+    }
 
     return {
-        'Access-Control-Allow-Origin': allowed,
+        'Access-Control-Allow-Origin': origin,
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type, Accept',
+        'Access-Control-Max-Age': '86400',
         'Vary': 'Origin'
     };
 }
 
 export default {
     async fetch(request, env) {
-        const cors = corsHeaders(request, env);
+        /* Build CORS headers early — every response path must include them. */
+        let cors;
+        try {
+            cors = corsHeaders(request, env);
+        } catch (_) {
+            /* Absolute last resort — if corsHeaders itself throws, build
+               minimal CORS headers so the browser still gets a response. */
+            cors = {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Accept'
+            };
+        }
 
         try {
             /* CORS preflight */
