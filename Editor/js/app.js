@@ -456,16 +456,25 @@ $fileInput.addEventListener('change', (e) => {
 
 /**
  * Prompt for a GitHub PAT via a modal dialog.
- * Used as a fallback when githubClientId is not configured in auth.json.
+ * Used as a fallback when githubClientId is not configured in auth.json
+ * or when Device Flow fails.
+ * @param {string} [fallbackReason] - If provided, a warning banner explains why Device Flow failed.
  */
-function getGitHubTokenViaPAT() {
+function getGitHubTokenViaPAT(fallbackReason) {
     return new Promise(function (resolve) {
         var overlay = document.createElement('div');
         overlay.className = 'dialog-overlay';
         var dialog = document.createElement('div');
         dialog.className = 'dialog';
+        var warning = '';
+        if (fallbackReason) {
+            warning = '<p class="device-code-error" style="margin-bottom:10px;">' +
+                '\u26A0\uFE0F Device Flow failed: ' + escapeHtml(fallbackReason) +
+                '</p>';
+        }
         dialog.innerHTML =
             '<h2>GitHub Authentication</h2>' +
+            warning +
             '<p>Enter a GitHub Personal Access Token with <strong>repo contents write</strong> permission to save changes to the repository.</p>' +
             '<div class="prop-group"><label for="ghTokenInput">Personal Access Token</label>' +
             '<input id="ghTokenInput" type="password" placeholder="ghp_\u2026" autocomplete="off"></div>' +
@@ -588,7 +597,8 @@ function showDeviceCodeDialog(deviceData, resolve) {
                 showStatusError(data.error_description || 'Authentication failed. Please try again.');
             }
         })
-        .catch(function () {
+        .catch(function (err) {
+            console.warn('[AmpCloud] Device Flow token poll error:', err);
             networkErrors++;
             if (polling && networkErrors < maxNetworkErrors) {
                 setTimeout(poll, interval);
@@ -623,12 +633,19 @@ function getGitHubToken() {
                 return r.json();
             })
             .then(function (data) {
+                if (data.error) {
+                    throw new Error('GitHub Device Flow error: ' + data.error +
+                        (data.error_description ? ' — ' + data.error_description : ''));
+                }
                 if (!data.device_code || !data.user_code) throw new Error('Invalid device code response');
                 showDeviceCodeDialog(data, resolve);
             })
-            .catch(function () {
-                /* Device Flow unavailable (CORS, network, etc.) — fall back to PAT. */
-                getGitHubTokenViaPAT().then(resolve);
+            .catch(function (err) {
+                /* Device Flow unavailable — fall back to PAT. Log the reason so
+                   the user can diagnose (CORS block, invalid client ID, Device
+                   Flow not enabled on the OAuth App, network error, etc.). */
+                console.warn('[AmpCloud] GitHub Device Flow failed, falling back to Personal Access Token.', err);
+                getGitHubTokenViaPAT(err.message).then(resolve);
             });
             return;
         }
