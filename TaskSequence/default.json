@@ -16,6 +16,18 @@
       }
     },
     {
+      "id": "import-autopilot",
+      "name": "Import Autopilot Device",
+      "type": "ImportAutopilot",
+      "enabled": true,
+      "description": "Register this device in Windows Autopilot via Microsoft Graph API",
+      "continueOnError": true,
+      "parameters": {
+        "groupTag": "",
+        "userEmail": ""
+      }
+    },
+    {
       "id": "download-image",
       "name": "Download Windows Image",
       "type": "DownloadImage",

@@ -52,6 +52,8 @@ param(
     # Autopilot / Intune
     [string]$AutopilotJsonUrl = '',   # URL to AutopilotConfigurationFile.json
     [string]$AutopilotJsonPath = '',  # OR local path inside WinPE
+    [string]$AutopilotGroupTag = '',  # Group tag for Autopilot device import
+    [string]$AutopilotUserEmail = '', # User email for Autopilot device assignment
 
     # ConfigMgr (SCCM)
     [string]$CCMSetupUrl = '',        # URL to ccmsetup.exe
@@ -882,6 +884,60 @@ function Set-AutopilotConfig {
     }
 }
 
+function Invoke-AutopilotImport {
+    <#
+    .SYNOPSIS  Registers the current device in Windows Autopilot via Microsoft Graph API.
+    .DESCRIPTION
+        Dot-sources the staged Autopilot scripts from X:\OSDCloud\Config\Scripts\Custom
+        and calls Import-AutopilotDevice.  The Graph access token is read from the
+        AMPCLOUD_GRAPH_TOKEN environment variable set by Bootstrap.ps1.  If no group
+        tag is provided or no token is available the step is skipped gracefully.
+    #>
+    param(
+        [string]$GroupTag,
+        [string]$UserEmail
+    )
+
+    if (-not $GroupTag) {
+        Write-Warn 'No Autopilot GroupTag specified. Skipping Autopilot device import.'
+        return
+    }
+
+    $token = $env:AMPCLOUD_GRAPH_TOKEN
+    if (-not $token) {
+        Write-Warn 'No Graph access token available (AMPCLOUD_GRAPH_TOKEN). Skipping Autopilot device import.'
+        return
+    }
+
+    $customFolder = 'X:\OSDCloud\Config\Scripts\Custom'
+    $importScript = Join-Path $customFolder 'Invoke-ImportAutopilot.ps1'
+    $utilsScript  = Join-Path $customFolder 'Utils.ps1'
+
+    if (-not (Test-Path $importScript) -or -not (Test-Path $utilsScript)) {
+        Write-Warn 'Autopilot scripts not staged in WinPE. Skipping device import.'
+        return
+    }
+
+    Write-Step 'Importing device into Windows Autopilot...'
+
+    # Set the token so Get-GraphToken (in Utils.ps1) can return it.
+    $script:GraphAccessToken = $token
+
+    # Source the utility functions and the import script.
+    . $utilsScript
+    . $importScript
+
+    $importArgs = @{ GroupTag = $GroupTag }
+    if ($UserEmail) { $importArgs.UserEmail = $UserEmail }
+
+    $result = Import-AutopilotDevice @importArgs
+    if ($result.Success) {
+        Write-Success "Autopilot import: $($result.Message)"
+    } else {
+        throw "Autopilot device import failed: $($result.Message)"
+    }
+}
+
 #endregion
 
 #region ── ConfigMgr (SCCM) ─────────────────────────────────────────────────────
@@ -1114,6 +1170,12 @@ function Invoke-TaskSequenceStep {
             $drv  = if ($p -and $p.osDriveLetter)        { $p.osDriveLetter } else { $CurrentOSDrive }
             Update-BootstrapStatus -Message "Partitioning disk..." -Detail "Creating layout on disk $disk" -Step $uiStep -Progress $pct
             Initialize-TargetDisk -DiskNumber $disk -FirmwareType $CurrentFirmwareType -OSDriveLetter $drv
+        }
+        'ImportAutopilot' {
+            $tag   = if ($p -and $p.groupTag)  { $p.groupTag }  else { $AutopilotGroupTag }
+            $email = if ($p -and $p.userEmail) { $p.userEmail } else { $AutopilotUserEmail }
+            Update-BootstrapStatus -Message "Importing Autopilot device..." -Detail "Registering device in Windows Autopilot" -Step $uiStep -Progress $pct
+            Invoke-AutopilotImport -GroupTag $tag -UserEmail $email
         }
         'DownloadImage' {
             $url  = if ($p -and $p.imageUrl)      { $p.imageUrl }      else { $WindowsImageUrl }
