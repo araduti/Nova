@@ -97,95 +97,75 @@ $script:BulletChar             = [char]0x2022  # '•' used in progress text
 #region ── Language System ───────────────────────────────────────────────────
 $script:Lang = 'EN'
 
-$Strings = @{
-    EN = @{ Header="A M P C L O U D"; Subtitle="Cloud Imaging Engine";
-            Step1="Network"; Step2="Connect"; Step3="Sign in"; Step4="Deploy";
-            StatusInit="Initialising network stack...";
-            StatusNoNet="No wired connection detected`nTap below to join Wi-Fi";
-            Connected="Connected — verifying identity";
-            Download="Downloading AmpCloud.ps1  ({0}%)";
-            Complete="Ready to deploy";
-            Reboot="Restart now"; PowerOff="Shut down"; Shell="Command prompt";
-            Imaging="Imaging in progress...";
-            CatalogFetch="Loading Windows catalog...";
-            CatalogFail="Could not load catalog — using default edition.";
-            EditionTitle="Choose edition";
-            EditionLabel="Select the Windows edition to install:";
-            EditionBtn="Continue";
-            ConfigSubtitle="Configure your deployment";
-            ConfigLang="Language"; ConfigOsLang="OS Language";
-            ConfigArch="Architecture"; ConfigActivation="Activation";
-            ConfigEdition="Windows Edition";
-            ConfigGroupTag="Autopilot Group Tag"; ConfigUserEmail="User Email (UPN)";
-            ConfigBtn="Start deployment";
-            AuthSigning="Signing in with Microsoft 365...";
-            AuthPrompt="Sign in with your Microsoft 365 account to continue.";
-            AuthUrl="https://microsoft.com/devicelogin";
-            AuthWaiting="Waiting for sign-in...";
-            AuthSuccess="Identity verified";
-            AuthFailed="Authentication failed. Please try again.";
-            AuthSkipped="Authentication not required";
-            AuthEdgePrompt="Microsoft Edge has opened for sign-in.`nComplete the sign-in in the browser window, then this dialog will close automatically.";
-            AuthDeviceCodePrompt="To sign in, use a web browser on another device`nand enter this code:" }
-    FR = @{ Header="A M P C L O U D"; Subtitle="Moteur d'imagerie cloud";
-            Step1="Réseau"; Step2="Connexion"; Step3="Identification"; Step4="Déploiement";
-            StatusInit="Initialisation de la pile réseau...";
-            StatusNoNet="Pas de connexion filaire détectée`nAppuyez ci-dessous pour le Wi-Fi";
-            Connected="Connecté — vérification de l'identité";
-            Download="Téléchargement AmpCloud.ps1  ({0}%)";
-            Complete="Prêt à déployer";
-            Reboot="Redémarrer maintenant"; PowerOff="Éteindre"; Shell="Invite de commandes";
-            Imaging="Imagerie en cours...";
-            CatalogFetch="Chargement du catalogue Windows...";
-            CatalogFail="Impossible de charger le catalogue — édition par défaut utilisée.";
-            EditionTitle="Choisir l'édition";
-            EditionLabel="Sélectionnez l'édition Windows à installer :";
-            EditionBtn="Continuer";
-            ConfigSubtitle="Configurez votre déploiement";
-            ConfigLang="Langue"; ConfigOsLang="Langue du SE";
-            ConfigArch="Architecture"; ConfigActivation="Activation";
-            ConfigEdition="Édition Windows";
-            ConfigGroupTag="Balise de groupe Autopilot"; ConfigUserEmail="Adresse e-mail (UPN)";
-            ConfigBtn="Démarrer le déploiement";
-            AuthSigning="Connexion avec Microsoft 365...";
-            AuthPrompt="Connectez-vous avec votre compte Microsoft 365 pour continuer.";
-            AuthUrl="https://microsoft.com/devicelogin";
-            AuthWaiting="En attente de connexion...";
-            AuthSuccess="Identité vérifiée";
-            AuthFailed="Échec de l'authentification. Veuillez réessayer.";
-            AuthSkipped="Authentification non requise";
-            AuthEdgePrompt="Microsoft Edge s'est ouvert pour la connexion.`nTerminez la connexion dans la fenêtre du navigateur, cette boîte se fermera automatiquement.";
-            AuthDeviceCodePrompt="Pour vous connecter, utilisez un navigateur web sur un autre appareil`net entrez ce code :" }
-    ES = @{ Header="A M P C L O U D"; Subtitle="Motor de imágenes en la nube";
-            Step1="Red"; Step2="Conectar"; Step3="Iniciar sesión"; Step4="Desplegar";
-            StatusInit="Inicializando pila de red...";
-            StatusNoNet="Sin conexión cableada detectada`nToque abajo para Wi-Fi";
-            Connected="Conectado — verificando identidad";
-            Download="Descargando AmpCloud.ps1  ({0}%)";
-            Complete="Listo para desplegar";
-            Reboot="Reiniciar ahora"; PowerOff="Apagar"; Shell="Símbolo del sistema";
-            Imaging="Creación de imagen en curso...";
-            CatalogFetch="Cargando catálogo de Windows...";
-            CatalogFail="No se pudo cargar el catálogo — usando edición predeterminada.";
-            EditionTitle="Elegir edición";
-            EditionLabel="Seleccione la edición de Windows a instalar:";
-            EditionBtn="Continuar";
-            ConfigSubtitle="Configure su implementación";
-            ConfigLang="Idioma"; ConfigOsLang="Idioma del SO";
-            ConfigArch="Arquitectura"; ConfigActivation="Activación";
-            ConfigEdition="Edición de Windows";
-            ConfigGroupTag="Etiqueta de grupo Autopilot"; ConfigUserEmail="Correo electrónico (UPN)";
-            ConfigBtn="Iniciar implementación";
-            AuthSigning="Iniciando sesión con Microsoft 365...";
-            AuthPrompt="Inicie sesión con su cuenta de Microsoft 365 para continuar.";
-            AuthUrl="https://microsoft.com/devicelogin";
-            AuthWaiting="Esperando inicio de sesión...";
-            AuthSuccess="Identidad verificada";
-            AuthFailed="Error de autenticación. Por favor, inténtelo de nuevo.";
-            AuthSkipped="Autenticación no requerida";
-            AuthEdgePrompt="Microsoft Edge se ha abierto para iniciar sesión.`nComplete el inicio de sesión en la ventana del navegador, este cuadro se cerrará automáticamente.";
-            AuthDeviceCodePrompt="Para iniciar sesión, use un navegador web en otro dispositivo`ne ingrese este código:" }
+# Locale strings are loaded from Config/locale/<lang>.json.  The function
+# below downloads a locale file from the GitHub repository (same pattern used
+# for auth.json), converts it to a hashtable, and normalizes \n escape
+# sequences into real newlines so WinForms labels render them correctly.
+function Import-LocaleJson {
+    param([string]$LangCode)
+    $code = $LangCode.ToLower()
+    $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/locale/$code.json"
+    try {
+        $wc   = New-Object System.Net.WebClient
+        try {
+            $raw  = $wc.DownloadString($url)
+        } finally {
+            $wc.Dispose()
+        }
+        $obj  = $raw | ConvertFrom-Json
+        $ht   = @{}
+        $obj.PSObject.Properties | ForEach-Object {
+            $ht[$_.Name] = $_.Value -replace '\\n', "`n"
+        }
+        return $ht
+    } catch {
+        Write-Verbose "Failed to download locale $code from $url — $_"
+        return $null
+    }
 }
+
+# Pre-load locale files.  English is the required fallback; if it cannot be
+# loaded the script embeds a minimal inline default so the UI is never blank.
+$Strings = @{}
+foreach ($lc in @('EN', 'FR', 'ES')) {
+    $loaded = Import-LocaleJson -LangCode $lc
+    if ($loaded) { $Strings[$lc] = $loaded }
+}
+
+if (-not $Strings.ContainsKey('EN')) {
+    # Minimal inline fallback — only used when the network fetch fails for EN.
+    $Strings['EN'] = @{
+        Header="A M P C L O U D"; Subtitle="Cloud Imaging Engine";
+        Step1="Network"; Step2="Connect"; Step3="Sign in"; Step4="Deploy";
+        StatusInit="Initialising network stack...";
+        StatusNoNet="No wired connection detected`nTap below to join Wi-Fi";
+        Connected="Connected — verifying identity";
+        Download="Downloading AmpCloud.ps1  ({0}%)";
+        Complete="Ready to deploy";
+        Reboot="Restart now"; PowerOff="Shut down"; Shell="Command prompt";
+        Imaging="Imaging in progress...";
+        CatalogFetch="Loading Windows catalog...";
+        CatalogFail="Could not load catalog — using default edition.";
+        EditionTitle="Choose edition";
+        EditionLabel="Select the Windows edition to install:";
+        EditionBtn="Continue";
+        ConfigSubtitle="Configure your deployment";
+        ConfigLang="Language"; ConfigOsLang="OS Language";
+        ConfigArch="Architecture"; ConfigActivation="Activation";
+        ConfigEdition="Windows Edition";
+        ConfigBtn="Start deployment";
+        AuthSigning="Signing in with Microsoft 365...";
+        AuthPrompt="Sign in with your Microsoft 365 account to continue.";
+        AuthUrl="https://microsoft.com/devicelogin";
+        AuthWaiting="Waiting for sign-in...";
+        AuthSuccess="Identity verified";
+        AuthFailed="Authentication failed. Please try again.";
+        AuthSkipped="Authentication not required";
+        AuthEdgePrompt="Microsoft Edge has opened for sign-in.`nComplete the sign-in in the browser window, then this dialog will close automatically.";
+        AuthDeviceCodePrompt="To sign in, use a web browser on another device`nand enter this code:"
+    }
+}
+
 $script:S = $Strings[$script:Lang]
 #endregion
 
@@ -1281,12 +1261,11 @@ function Show-ConfigurationMenu {
         entries from the catalog.
     .OUTPUTS   A hashtable with Language (EN/FR/ES), OsLanguage (catalog code
                e.g. en-us), Architecture (x64/ARM64), Activation (Retail/Volume),
-               and Edition (string) keys.  When autopilotImport is enabled in
-               auth.json the dialog also shows GroupTag and UserEmail fields.
+               and Edition (string) keys.
     #>
     $defaultResult = @{ Language = 'EN'; OsLanguage = 'en-us';
                         Architecture = 'x64'; Activation = 'Retail';
-                        Edition = ''; GroupTag = ''; UserEmail = '' }
+                        Edition = '' }
 
     # ── Download products.xml ─────────────────────────────────────────────
     Write-Status $S.CatalogFetch 'Cyan'
@@ -1368,12 +1347,9 @@ function Show-ConfigurationMenu {
     $lblFont = New-Object System.Drawing.Font('Segoe UI', 9)
     $cmbFont = New-Object System.Drawing.Font('Segoe UI', 10)
 
-    $showAutopilot = $script:AuthConfig -and $script:AuthConfig.autopilotImport -and $script:GraphAccessToken
-    $extraHeight   = if ($showAutopilot) { 80 } else { 0 }
-
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text            = 'AmpCloud'
-    $dlg.Size            = New-Object System.Drawing.Size(580, (600 + $extraHeight))
+    $dlg.Size            = New-Object System.Drawing.Size(580, 600)
     $dlg.StartPosition   = 'CenterScreen'
     $dlg.FormBorderStyle = 'None'
     $dlg.BackColor       = $edGradTop
@@ -1402,7 +1378,7 @@ function Show-ConfigurationMenu {
     # ── Card panel ──────────────────────────────────────────────────────────
     $card = New-Object System.Windows.Forms.Panel
     $card.Location  = New-Object System.Drawing.Point(30, 30)
-    $card.Size      = New-Object System.Drawing.Size(520, (540 + $extraHeight))
+    $card.Size      = New-Object System.Drawing.Size(520, 540)
     $card.BackColor = $edCardBg
     $dlg.Controls.Add($card)
 
@@ -1534,47 +1510,7 @@ function Show-ConfigurationMenu {
     $edCombo.Font          = $cmbFont
     $card.Controls.Add($edCombo)
 
-    # ── Row 4 (conditional): Autopilot Group Tag (left) + User Email (right) ──
-    $groupTagBox = $null
-    $userEmailBox = $null
-    $groupTagLabel = $null
-    $userEmailLabel = $null
-    if ($showAutopilot) {
-        $groupTagLabel = New-Object System.Windows.Forms.Label
-        $groupTagLabel.Text      = $S.ConfigGroupTag
-        $groupTagLabel.Location  = New-Object System.Drawing.Point($lx, 328)
-        $groupTagLabel.Size      = New-Object System.Drawing.Size($cw, 20)
-        $groupTagLabel.ForeColor = $edFg
-        $groupTagLabel.Font      = $lblFont
-        $card.Controls.Add($groupTagLabel)
-
-        $groupTagBox = New-Object System.Windows.Forms.TextBox
-        $groupTagBox.Location  = New-Object System.Drawing.Point($lx, 350)
-        $groupTagBox.Width     = $cw
-        $groupTagBox.BackColor = $edInputBg
-        $groupTagBox.ForeColor = $edFg
-        $groupTagBox.Font      = $cmbFont
-        $groupTagBox.BorderStyle = 'FixedSingle'
-        $card.Controls.Add($groupTagBox)
-
-        $userEmailLabel = New-Object System.Windows.Forms.Label
-        $userEmailLabel.Text      = $S.ConfigUserEmail
-        $userEmailLabel.Location  = New-Object System.Drawing.Point($rx, 328)
-        $userEmailLabel.Size      = New-Object System.Drawing.Size($cw, 20)
-        $userEmailLabel.ForeColor = $edFg
-        $userEmailLabel.Font      = $lblFont
-        $card.Controls.Add($userEmailLabel)
-
-        $userEmailBox = New-Object System.Windows.Forms.TextBox
-        $userEmailBox.Location  = New-Object System.Drawing.Point($rx, 350)
-        $userEmailBox.Width     = $cw
-        $userEmailBox.BackColor = $edInputBg
-        $userEmailBox.ForeColor = $edFg
-        $userEmailBox.Font      = $cmbFont
-        $userEmailBox.BorderStyle = 'FixedSingle'
-        $card.Controls.Add($userEmailBox)
-    }
-
+    # ── Cascading population helpers ────────────────────────────────────────
     # Each helper repopulates its combo from the catalog, filtered by the
     # current upstream selections, then triggers the next downstream helper.
 
@@ -1696,7 +1632,7 @@ function Show-ConfigurationMenu {
     # ── Continue button ─────────────────────────────────────────────────────
     $btn = New-Object System.Windows.Forms.Button
     $btn.Text                      = "$($S.ConfigBtn)  $([char]0x2192)"
-    $btn.Location                  = New-Object System.Drawing.Point(160, (340 + $extraHeight))
+    $btn.Location                  = New-Object System.Drawing.Point(160, 340)
     $btn.Size                      = New-Object System.Drawing.Size(200, 46)
     $btn.BackColor                 = $accentBlue
     $btn.ForeColor                 = [System.Drawing.Color]::White
@@ -1718,8 +1654,6 @@ function Show-ConfigurationMenu {
         $archLabel.Text  = $tmpS.ConfigArch
         $actLabel.Text   = $tmpS.ConfigActivation
         $edLabel.Text    = $tmpS.ConfigEdition
-        if ($groupTagLabel)  { $groupTagLabel.Text  = $tmpS.ConfigGroupTag }
-        if ($userEmailLabel) { $userEmailLabel.Text  = $tmpS.ConfigUserEmail }
         $btn.Text        = "$($tmpS.ConfigBtn)  $([char]0x2192)"
         & $populateOsLanguages
     })
@@ -1727,7 +1661,7 @@ function Show-ConfigurationMenu {
     # ── Company logo (bottom-right of card) ─────────────────────────────────
     $cfgBrand = New-Object System.Windows.Forms.Label
     $cfgBrand.Text      = 'ampliosoft'
-    $cfgBrand.Location  = New-Object System.Drawing.Point(400, (505 + $extraHeight))
+    $cfgBrand.Location  = New-Object System.Drawing.Point(400, 505)
     $cfgBrand.Size      = New-Object System.Drawing.Size(110, 20)
     $cfgBrand.Font      = New-Object System.Drawing.Font('Segoe UI', 8)
     $cfgBrand.ForeColor = $edSubtle
@@ -1741,11 +1675,9 @@ function Show-ConfigurationMenu {
         $arch       = if ($null -ne $archCombo.SelectedItem)   { $archCombo.SelectedItem.ToString() } else { 'x64' }
         $activation = if ($null -ne $actCombo.SelectedItem)    { $actCombo.SelectedItem.ToString()  } else { 'Retail' }
         $edition    = if ($null -ne $edCombo.SelectedItem)     { $edCombo.SelectedItem.ToString()   } else { '' }
-        $tag        = if ($groupTagBox)  { $groupTagBox.Text.Trim() }  else { '' }
-        $email      = if ($userEmailBox) { $userEmailBox.Text.Trim() } else { '' }
         return @{ Language = $langCode; OsLanguage = $osLang;
                   Architecture = $arch; Activation = $activation;
-                  Edition = $edition; GroupTag = $tag; UserEmail = $email }
+                  Edition = $edition }
     }
     return $defaultResult
 }
@@ -2357,8 +2289,6 @@ function ProceedToEngine {
     $script:SelectedOsLang   = $config.OsLanguage
     $script:SelectedArch     = $config.Architecture
     $script:SelectedActivation = $config.Activation
-    $script:SelectedGroupTag   = $config.GroupTag
-    $script:SelectedUserEmail  = $config.UserEmail
 
     # Clean up any stale status file from a previous run.
     if (Test-Path $script:StatusFile) { Remove-Item $script:StatusFile -Force }
@@ -2405,8 +2335,6 @@ function ProceedToEngine {
         if ($script:SelectedEdition)  { $psArgs += @('-WindowsEdition',      $script:SelectedEdition)  }
         if ($script:SelectedOsLang)   { $psArgs += @('-WindowsLanguage',     $script:SelectedOsLang)   }
         if ($script:SelectedArch)     { $psArgs += @('-WindowsArchitecture', $script:SelectedArch)     }
-        if ($script:SelectedGroupTag)  { $psArgs += @('-AutopilotGroupTag',  $script:SelectedGroupTag)  }
-        if ($script:SelectedUserEmail) { $psArgs += @('-AutopilotUserEmail', $script:SelectedUserEmail) }
 
         # Pass the Graph access token to the engine via an environment variable
         # so the ImportAutopilot task sequence step can register the device in
