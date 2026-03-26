@@ -415,11 +415,64 @@ h3::before {
     padding: 1px 5px;
     border-radius: 3px;
 }
+
+/* ── XML editor toolbar ────────────────────────────────────────────── */
+.xml-editor-toolbar {
+    display: flex;
+    gap: 6px;
+    margin: 8px 0;
+}
+.xml-tb-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-family: inherit;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all var(--transition);
+}
+.xml-tb-btn:hover {
+    color: #fff;
+    background: var(--surface-alt);
+    border-color: var(--accent);
+}
+
+/* ── XML editor body (line numbers + textarea) ─────────────────────── */
+.xml-editor-body {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: #0d1520;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+.xml-editor-body:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.xml-line-numbers {
+    width: 40px;
+    min-width: 40px;
+    background: rgba(0,0,0,0.3);
+    color: var(--text-muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    padding: 12px 8px 12px 4px;
+    text-align: right;
+    user-select: none;
+    overflow: hidden;
+    border-right: 1px solid var(--border);
+    white-space: pre;
+}
 .param-field-xml textarea {
     width: 100%;
     background: #0d1520;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border: none;
+    border-radius: 0;
     color: #a8d8a8;
     font-family: var(--mono);
     font-size: 12px;
@@ -431,9 +484,19 @@ h3::before {
     tab-size: 2;
     white-space: pre;
     overflow-x: auto;
-    transition: border-color var(--transition), box-shadow var(--transition);
+    transition: none;
 }
-.param-field-xml textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.param-field-xml textarea:focus { border-color: transparent; box-shadow: none; }
+
+/* ── XML validation bar ────────────────────────────────────────────── */
+.xml-validation {
+    font-size: 11px;
+    margin-top: 6px;
+    min-height: 16px;
+    font-family: var(--mono);
+}
+.xml-validation.xml-valid { color: #4caf50; }
+.xml-validation.xml-invalid { color: #e03e3e; }
 
 /* ── Dialog ────────────────────────────────────────────────────────── */
 .dialog-overlay {

@@ -238,7 +238,16 @@ function renderParamFields(step) {
             const txt = Array.isArray(val) ? val.join('\n') : '';
             inputHtml = '<textarea data-param="' + f.key + '" data-kind="array" rows="3" placeholder="One entry per line">' + escapeHtml(txt) + '</textarea>';
         } else if (f.kind === 'xml') {
-            inputHtml = '<textarea data-param="' + f.key + '" data-kind="xml" rows="14" spellcheck="false">' + escapeHtml(String(val)) + '</textarea>';
+            inputHtml = '<div class="xml-editor-toolbar">' +
+                '<button type="button" class="xml-tb-btn" data-action="format" title="Format / indent XML">&#9998; Format</button>' +
+                '<button type="button" class="xml-tb-btn" data-action="validate" title="Check XML syntax">&#10003; Validate</button>' +
+                '<button type="button" class="xml-tb-btn" data-action="reset" title="Reset to default unattend.xml">&#8634; Reset</button>' +
+                '</div>' +
+                '<div class="xml-editor-body">' +
+                '<div class="xml-line-numbers" aria-hidden="true"></div>' +
+                '<textarea data-param="' + f.key + '" data-kind="xml" rows="14" spellcheck="false" wrap="off">' + escapeHtml(String(val)) + '</textarea>' +
+                '</div>' +
+                '<div class="xml-validation"></div>';
         } else {
             inputHtml = '<input type="text" data-param="' + f.key + '" value="' + escapeHtml(String(val)) + '">';
         }
@@ -260,6 +269,9 @@ function renderParamFields(step) {
             /* Re-evaluate showWhen visibility when a select changes */
             if (f.kind === 'select') applyShowWhen();
         });
+
+        /* Enhanced XML editor (toolbar, line numbers, tab-indent) */
+        if (f.kind === 'xml') setupXmlEditor(div, input);
 
         fieldWrappers.push({ div: div, field: f });
         $paramFields.appendChild(div);
@@ -736,6 +748,92 @@ function escapeHtml(str) {
     const d = document.createElement('div');
     d.appendChild(document.createTextNode(str));
     return d.innerHTML;
+}
+
+/* ── XML helpers ──────────────────────────────────────────────────── */
+
+/** Pretty-print XML with consistent 2-space indentation. */
+function formatXml(xml) {
+    try {
+        let formatted = '';
+        let indent = 0;
+        const tokens = xml.replace(/>\s*</g, '>\n<').split('\n');
+        tokens.forEach(line => {
+            line = line.trim();
+            if (!line) return;
+            if (line.match(/^<\//)) indent = Math.max(0, indent - 1);
+            formatted += '  '.repeat(indent) + line + '\n';
+            if (line.match(/^<[^\/!?]/) && !line.match(/\/>$/) && !line.match(/<\/[^>]+>$/)) indent++;
+        });
+        return formatted.trimEnd();
+    } catch (_) { return xml; }
+}
+
+/** Check well-formedness using DOMParser. Returns {valid, error}. */
+function validateXml(xml) {
+    if (!xml.trim()) return { valid: false, error: 'XML content is empty' };
+    var doc = new DOMParser().parseFromString(xml, 'application/xml');
+    var err = doc.querySelector('parsererror');
+    if (err) {
+        var msg = (err.textContent || 'Invalid XML').split('\n')[0];
+        return { valid: false, error: msg };
+    }
+    return { valid: true, error: '' };
+}
+
+/** Wire up toolbar, line numbers, tab-indent, and validation for an XML field. */
+function setupXmlEditor(container, textarea) {
+    var lineNums = container.querySelector('.xml-line-numbers');
+    var validBar = container.querySelector('.xml-validation');
+
+    function updateLineNumbers() {
+        var count = textarea.value.split('\n').length;
+        var html = '';
+        for (var i = 1; i <= count; i++) html += i + '\n';
+        lineNums.textContent = html;
+    }
+
+    textarea.addEventListener('input', updateLineNumbers);
+    textarea.addEventListener('scroll', function () { lineNums.scrollTop = textarea.scrollTop; });
+    updateLineNumbers();
+
+    /* Tab → insert 2 spaces instead of moving focus */
+    textarea.addEventListener('keydown', function (e) {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            var s = textarea.selectionStart, end = textarea.selectionEnd;
+            textarea.value = textarea.value.substring(0, s) + '  ' + textarea.value.substring(end);
+            textarea.selectionStart = textarea.selectionEnd = s + 2;
+            textarea.dispatchEvent(new Event('input'));
+        }
+    });
+
+    /* Toolbar actions */
+    container.querySelectorAll('.xml-tb-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var action = btn.getAttribute('data-action');
+            if (action === 'format') {
+                textarea.value = formatXml(textarea.value);
+                textarea.dispatchEvent(new Event('input'));
+            } else if (action === 'validate') {
+                var r = validateXml(textarea.value);
+                validBar.className = 'xml-validation ' + (r.valid ? 'xml-valid' : 'xml-invalid');
+                validBar.textContent = r.valid ? '\u2713 XML is well-formed' : '\u2717 ' + r.error;
+            } else if (action === 'reset') {
+                if (!defaultUnattendXml) {
+                    validBar.className = 'xml-validation xml-invalid';
+                    validBar.textContent = 'Default template not available';
+                    return;
+                }
+                if (confirm('Reset to the default unattend.xml content?')) {
+                    textarea.value = defaultUnattendXml;
+                    textarea.dispatchEvent(new Event('input'));
+                    validBar.className = 'xml-validation';
+                    validBar.textContent = '';
+                }
+            }
+        });
+    });
 }
 
 /* ── Keyboard shortcuts ───────────────────────────────────────────── */
