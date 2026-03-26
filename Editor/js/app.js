@@ -454,14 +454,48 @@ $fileInput.addEventListener('change', (e) => {
 
 /* ── Save to GitHub ────────────────────────────────────────────────── */
 function getGitHubToken() {
-    let token = sessionStorage.getItem('ampcloud_github_token');
-    if (token) return token;
-    token = prompt('Enter a GitHub Personal Access Token with repo contents write access:');
-    if (token) {
-        token = token.trim();
-        sessionStorage.setItem('ampcloud_github_token', token);
-    }
-    return token || null;
+    return new Promise(function (resolve) {
+        var existing = sessionStorage.getItem('ampcloud_github_token');
+        if (existing) { resolve(existing); return; }
+
+        /* Build a modal dialog with a password input */
+        var overlay = document.createElement('div');
+        overlay.className = 'dialog-overlay';
+        var dialog = document.createElement('div');
+        dialog.className = 'dialog';
+        dialog.innerHTML =
+            '<h2>GitHub Authentication</h2>' +
+            '<p>Enter a GitHub Personal Access Token with <strong>repo contents write</strong> permission to save changes to the repository.</p>' +
+            '<div class="prop-group"><label for="ghTokenInput">Personal Access Token</label>' +
+            '<input id="ghTokenInput" type="password" placeholder="ghp_\u2026" autocomplete="off"></div>' +
+            '<div class="dialog-actions">' +
+            '<button class="btn" id="ghTokenCancel">Cancel</button>' +
+            '<button class="btn btn-primary" id="ghTokenOk">Authenticate</button></div>';
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        var input = document.getElementById('ghTokenInput');
+        var btnOk = document.getElementById('ghTokenOk');
+        var btnCancel = document.getElementById('ghTokenCancel');
+        input.focus();
+
+        function cleanup(value) {
+            document.body.removeChild(overlay);
+            resolve(value);
+        }
+        btnOk.addEventListener('click', function () {
+            var v = input.value.trim();
+            if (v) {
+                sessionStorage.setItem('ampcloud_github_token', v);
+                cleanup(v);
+            }
+        });
+        btnCancel.addEventListener('click', function () { cleanup(null); });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') btnOk.click();
+            if (e.key === 'Escape') btnCancel.click();
+        });
+    });
 }
 
 function toBase64(str) {
@@ -477,7 +511,7 @@ document.getElementById('btnSave').addEventListener('click', async () => {
         return;
     }
 
-    const token = getGitHubToken();
+    const token = await getGitHubToken();
     if (!token) return;
 
     const btnSave = document.getElementById('btnSave');
@@ -489,7 +523,7 @@ document.getElementById('btnSave').addEventListener('click', async () => {
         const json = JSON.stringify(taskSequence, null, 2) + '\n';
         const path = 'TaskSequence/default.json';
         const apiBase = 'https://api.github.com/repos/' + encodeURIComponent(githubConfig.owner) + '/' + encodeURIComponent(githubConfig.repo) + '/contents/' + path;
-        const headers = { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' };
+        const headers = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github.v3+json' };
 
         /* Get current SHA */
         const getResp = await fetch(apiBase, { headers: headers });
