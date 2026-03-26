@@ -920,7 +920,9 @@ function Invoke-AutopilotImport {
 
     Write-Step 'Importing device into Windows Autopilot...'
 
-    # Set the token so Get-GraphToken (in Utils.ps1) can return it.
+    # Set the script-scoped token so Get-GraphToken (defined in Utils.ps1)
+    # can return it.  This is the same contract Utils.ps1 uses when sourced
+    # by Bootstrap.ps1 — see Autopilot/Utils.ps1 line 17.
     $script:GraphAccessToken = $token
 
     # Source the utility functions and the import script.

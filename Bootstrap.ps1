@@ -2355,7 +2355,9 @@ function ProceedToEngine {
 
         # Pass the Graph access token to the engine via an environment variable
         # so the ImportAutopilot task sequence step can register the device in
-        # Autopilot before downloading or applying Windows.
+        # Autopilot before downloading or applying Windows.  In WinPE only the
+        # SYSTEM account runs and no other user processes exist, so environment
+        # variable exposure is acceptable.
         if ($script:GraphAccessToken) {
             $env:AMPCLOUD_GRAPH_TOKEN = $script:GraphAccessToken
         }
