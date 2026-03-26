@@ -63,9 +63,10 @@ export default {
         let cors;
         try {
             cors = corsHeaders(request, env);
-        } catch (_) {
+        } catch (e) {
             /* Absolute last resort — if corsHeaders itself throws, build
                minimal CORS headers so the browser still gets a response. */
+            console.error('[AmpCloud-OAuth-Proxy] corsHeaders error:', e);
             cors = {
                 'Access-Control-Allow-Origin': '*',
                 'Access-Control-Allow-Methods': 'POST, OPTIONS',
