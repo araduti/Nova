@@ -19,6 +19,16 @@ const STEP_TYPES = [
         ]
     },
     {
+        type: 'ImportAutopilot',
+        label: 'Import Autopilot Device',
+        description: 'Register this device in Windows Autopilot via Microsoft Graph API before imaging',
+        defaults: { groupTag: '', userEmail: '' },
+        fields: [
+            { key: 'groupTag', label: 'Group Tag', kind: 'text', hint: 'Autopilot group tag (alphanumeric, hyphens, underscores; max 100 chars)' },
+            { key: 'userEmail', label: 'User Email', kind: 'text', hint: 'Optional user principal name to assign to the device' }
+        ]
+    },
+    {
         type: 'DownloadImage',
         label: 'Download Windows Image',
         description: 'Fetch the Windows ESD/WIM from Microsoft CDN or a custom URL',

@@ -2352,6 +2352,16 @@ function ProceedToEngine {
         if ($script:SelectedEdition)  { $psArgs += @('-WindowsEdition',      $script:SelectedEdition)  }
         if ($script:SelectedOsLang)   { $psArgs += @('-WindowsLanguage',     $script:SelectedOsLang)   }
         if ($script:SelectedArch)     { $psArgs += @('-WindowsArchitecture', $script:SelectedArch)     }
+
+        # Pass the Graph access token to the engine via an environment variable
+        # so the ImportAutopilot task sequence step can register the device in
+        # Autopilot before downloading or applying Windows.  In WinPE only the
+        # SYSTEM account runs and no other user processes exist, so environment
+        # variable exposure is acceptable.
+        if ($script:GraphAccessToken) {
+            $env:AMPCLOUD_GRAPH_TOKEN = $script:GraphAccessToken
+        }
+
         $engineProc = Start-Process -FilePath $script:PsBin -ArgumentList $psArgs -WindowStyle Hidden -PassThru
 
         # Start polling the status file so the UI shows real-time progress.
