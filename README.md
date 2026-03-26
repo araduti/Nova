@@ -275,7 +275,15 @@ Tenant restrictions are managed directly in the **Entra ID app registration** un
    - *(Optional — for Autopilot import)* Under **API permissions**, add **Microsoft Graph → Delegated permissions → DeviceManagementServiceConfig.ReadWrite.All** and grant admin consent
    - Note the **Application (client) ID**
 
-2. **Configure `Config/auth.json`:**
+2. **Register a GitHub OAuth App** *(optional — for saving task sequences to GitHub):*
+   - Go to [GitHub → Settings → Developer settings → OAuth Apps → New OAuth App](https://github.com/settings/developers)
+   - Application name: e.g. `AmpCloud`
+   - Homepage URL: your GitHub Pages URL (e.g. `https://yourusername.github.io/AmpCloud/Editor/`)
+   - Authorization callback URL: `https://yourusername.github.io/AmpCloud/Editor/`
+   - Check **Enable Device Flow**
+   - Note the **Client ID**
+
+3. **Configure `Config/auth.json`:**
 
    ```json
    {
@@ -283,7 +291,10 @@ Tenant restrictions are managed directly in the **Entra ID app registration** un
        "clientId": "YOUR-APPLICATION-CLIENT-ID",
        "redirectUri": "https://yourusername.github.io/AmpCloud/Editor/",
        "autopilotImport": true,
-       "graphScopes": "DeviceManagementServiceConfig.ReadWrite.All"
+       "graphScopes": "DeviceManagementServiceConfig.ReadWrite.All",
+       "githubOwner": "yourusername",
+       "githubRepo": "AmpCloud",
+       "githubClientId": "YOUR-GITHUB-OAUTH-CLIENT-ID"
    }
    ```
 
@@ -294,6 +305,9 @@ Tenant restrictions are managed directly in the **Entra ID app registration** un
    | `redirectUri` | The redirect URI registered in your app registration under **Single-page application** platform. Must match exactly. |
    | `autopilotImport` | Set to `true` to enable API-based Autopilot device import during WinPE deployment. The device is imported only if not already registered. |
    | `graphScopes` | Space-separated Microsoft Graph delegated permissions to request during sign-in (e.g. `DeviceManagementServiceConfig.ReadWrite.All` for Autopilot). No client secret is needed — uses delegated permissions from the interactive sign-in. |
+   | `githubOwner` | GitHub username or organization that owns the repository. Used for saving task sequences via the GitHub API. |
+   | `githubRepo` | GitHub repository name. Used with `githubOwner` to target the correct repo when saving task sequences. |
+   | `githubClientId` | Client ID from your GitHub OAuth App registration. When set, the editor uses OAuth Device Flow for authentication. When empty, falls back to a Personal Access Token prompt. |
 
 ---
 
