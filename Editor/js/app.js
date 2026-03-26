@@ -566,12 +566,8 @@ function showDeviceCodeDialog(deviceData, resolve) {
         if (!polling) return;
         fetch('https://github.com/login/oauth/access_token', {
             method: 'POST',
-            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                client_id: githubConfig.clientId,
-                device_code: deviceData.device_code,
-                grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
-            })
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ client_id: githubConfig.clientId, device_code: deviceData.device_code, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' })
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -619,8 +615,8 @@ function getGitHubToken() {
         if (githubConfig.clientId) {
             fetch('https://github.com/login/device/code', {
                 method: 'POST',
-                headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-                body: JSON.stringify({ client_id: githubConfig.clientId, scope: 'repo' })
+                headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ client_id: githubConfig.clientId, scope: 'repo' })
             })
             .then(function (r) {
                 if (!r.ok) throw new Error('HTTP ' + r.status);
