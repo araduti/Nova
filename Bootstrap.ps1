@@ -26,11 +26,8 @@ param(
 )
 
 # Import the AmpCloud module — try local development path first, then PSModulePath.
-$_modPath = $null
-if ($PSScriptRoot) {
-    $_modPath = Join-Path $PSScriptRoot 'src\AmpCloud\AmpCloud.psd1'
-}
-if ($_modPath -and (Test-Path $_modPath)) {
+$_modPath = Join-Path $PSScriptRoot 'src\AmpCloud\AmpCloud.psd1'
+if (Test-Path $_modPath) {
     Import-Module $_modPath -Force
 } else {
     Import-Module AmpCloud -Force
