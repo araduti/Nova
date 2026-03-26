@@ -30,16 +30,19 @@ wrangler init ampcloud-oauth-proxy
 Copy `worker.js` into the generated `src/` folder (or point `wrangler.toml`
 at it).
 
-### 3. Set the allowed origin
+### 3. (Optional) Lock down the allowed origin
 
 In the Cloudflare dashboard → your Worker → **Settings → Variables &
-Secrets**, add:
+Secrets**, you can add:
 
 | Variable         | Value                            |
 | ---------------- | -------------------------------- |
 | `ALLOWED_ORIGIN` | `https://<you>.github.io`        |
 
-This variable is **required**.  The proxy will return `500` if it is not set.
+This variable is **optional**.  When set, only requests from that exact
+origin are allowed.  When omitted, the proxy reflects the request's
+`Origin` header back, which is safe because Device Flow carries no
+secrets (only the public `client_id` and temporary `device_code`).
 
 ### 4. Deploy
 
