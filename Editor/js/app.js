@@ -772,10 +772,10 @@ function formatXml(xml) {
 /** Check well-formedness using DOMParser. Returns {valid, error}. */
 function validateXml(xml) {
     if (!xml.trim()) return { valid: false, error: 'XML content is empty' };
-    var doc = new DOMParser().parseFromString(xml, 'application/xml');
-    var err = doc.querySelector('parsererror');
+    const doc = new DOMParser().parseFromString(xml, 'application/xml');
+    const err = doc.querySelector('parsererror');
     if (err) {
-        var msg = (err.textContent || 'Invalid XML').split('\n')[0];
+        const msg = (err.textContent || 'Invalid XML').split('\n')[0];
         return { valid: false, error: msg };
     }
     return { valid: true, error: '' };
@@ -783,43 +783,45 @@ function validateXml(xml) {
 
 /** Wire up toolbar, line numbers, tab-indent, and validation for an XML field. */
 function setupXmlEditor(container, textarea) {
-    var lineNums = container.querySelector('.xml-line-numbers');
-    var validBar = container.querySelector('.xml-validation');
+    const lineNums = container.querySelector('.xml-line-numbers');
+    const validBar = container.querySelector('.xml-validation');
 
     function updateLineNumbers() {
-        var count = textarea.value.split('\n').length;
-        var html = '';
-        for (var i = 1; i <= count; i++) html += i + '\n';
-        lineNums.textContent = html;
+        const count = textarea.value.split('\n').length;
+        let nums = '';
+        for (let i = 1; i <= count; i++) nums += i + '\n';
+        lineNums.textContent = nums;
     }
 
     textarea.addEventListener('input', updateLineNumbers);
-    textarea.addEventListener('scroll', function () { lineNums.scrollTop = textarea.scrollTop; });
+    textarea.addEventListener('scroll', () => { lineNums.scrollTop = textarea.scrollTop; });
     updateLineNumbers();
 
     /* Tab → insert 2 spaces instead of moving focus */
-    textarea.addEventListener('keydown', function (e) {
+    textarea.addEventListener('keydown', (e) => {
         if (e.key === 'Tab') {
             e.preventDefault();
-            var s = textarea.selectionStart, end = textarea.selectionEnd;
-            textarea.value = textarea.value.substring(0, s) + '  ' + textarea.value.substring(end);
-            textarea.selectionStart = textarea.selectionEnd = s + 2;
+            const start = textarea.selectionStart;
+            const end = textarea.selectionEnd;
+            textarea.value = textarea.value.substring(0, start) + '  ' + textarea.value.substring(end);
+            textarea.selectionStart = textarea.selectionEnd = start + 2;
             textarea.dispatchEvent(new Event('input'));
         }
     });
 
     /* Toolbar actions */
-    container.querySelectorAll('.xml-tb-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var action = btn.getAttribute('data-action');
+    container.querySelectorAll('.xml-tb-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const action = btn.getAttribute('data-action');
             if (action === 'format') {
                 textarea.value = formatXml(textarea.value);
                 textarea.dispatchEvent(new Event('input'));
             } else if (action === 'validate') {
-                var r = validateXml(textarea.value);
+                const r = validateXml(textarea.value);
                 validBar.className = 'xml-validation ' + (r.valid ? 'xml-valid' : 'xml-invalid');
                 validBar.textContent = r.valid ? '\u2713 XML is well-formed' : '\u2717 ' + r.error;
             } else if (action === 'reset') {
+                /* defaultUnattendXml is populated by loadDefault() at startup */
                 if (!defaultUnattendXml) {
                     validBar.className = 'xml-validation xml-invalid';
                     validBar.textContent = 'Default template not available';
