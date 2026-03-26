@@ -12,9 +12,8 @@
  *   POST /login/oauth/access_token   → https://github.com/login/oauth/access_token
  *
  * Environment variable (set in Cloudflare dashboard → Settings → Variables):
- *   ALLOWED_ORIGIN  – The origin of your GitHub Pages site,
+ *   ALLOWED_ORIGIN  – (required) The origin of your GitHub Pages site,
  *                     e.g. "https://araduti.github.io"
- *                     If omitted the worker accepts any origin (*).
  */
 
 const ROUTE_MAP = {
@@ -24,7 +23,10 @@ const ROUTE_MAP = {
 
 export default {
     async fetch(request, env) {
-        const origin = env.ALLOWED_ORIGIN || '*';
+        const origin = env.ALLOWED_ORIGIN;
+        if (!origin) {
+            return new Response('ALLOWED_ORIGIN environment variable is not configured.', { status: 500 });
+        }
         const corsHeaders = {
             'Access-Control-Allow-Origin': origin,
             'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -54,7 +56,7 @@ export default {
             method: 'POST',
             headers: {
                 'Accept': 'application/json',
-                'Content-Type': request.headers.get('Content-Type') || 'application/x-www-form-urlencoded',
+                'Content-Type': 'application/x-www-form-urlencoded',
                 'User-Agent': 'AmpCloud-OAuth-Proxy'
             },
             body: body

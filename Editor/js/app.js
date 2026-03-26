@@ -821,8 +821,8 @@ function loadDefault() {
             if (config.githubClientId) {
                 githubConfig.clientId = config.githubClientId;
             }
-            if (config.githubOAuthProxy) {
-                githubConfig.oauthProxy = config.githubOAuthProxy.replace(/\/+$/, '');
+            if (config.githubOAuthProxy && typeof config.githubOAuthProxy === 'string' && config.githubOAuthProxy.trim()) {
+                githubConfig.oauthProxy = config.githubOAuthProxy.trim().replace(/\/+$/, '');
             }
 
             if (!config.requireAuth || !config.clientId) {

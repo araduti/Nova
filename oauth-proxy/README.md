@@ -24,7 +24,7 @@ wrangler login          # opens browser to authenticate
 
 ```bash
 cd oauth-proxy
-wrangler init ampcloud-oauth-proxy --type javascript --no-delegate-c3
+wrangler init ampcloud-oauth-proxy
 ```
 
 Copy `worker.js` into the generated `src/` folder (or point `wrangler.toml`
@@ -39,7 +39,7 @@ Secrets**, add:
 | ---------------- | -------------------------------- |
 | `ALLOWED_ORIGIN` | `https://<you>.github.io`        |
 
-If omitted the proxy accepts requests from any origin (`*`).
+This variable is **required**.  The proxy will return `500` if it is not set.
 
 ### 4. Deploy
 
