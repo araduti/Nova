@@ -125,7 +125,7 @@ let taskSequence = {
 };
 let selectedIndex = -1;
 let dragSrcIndex = -1;
-let githubConfig = { owner: '', repo: '', clientId: '' };
+let githubConfig = { owner: '', repo: '', clientId: '', oauthProxy: '' };
 
 /* ── DOM refs ─────────────────────────────────────────────────────── */
 const $stepList     = document.getElementById('stepList');
@@ -455,26 +455,17 @@ $fileInput.addEventListener('change', (e) => {
 /* ── Save to GitHub ────────────────────────────────────────────────── */
 
 /**
- * Prompt for a GitHub PAT via a modal dialog.
- * Used as a fallback when githubClientId is not configured in auth.json
- * or when Device Flow fails.
- * @param {string} [fallbackReason] - If provided, a warning banner explains why Device Flow failed.
+ * Prompt the user for a GitHub Personal Access Token via a modal dialog.
+ * Used only as a fallback when the OAuth proxy is not configured.
  */
-function getGitHubTokenViaPAT(fallbackReason) {
+function getGitHubTokenViaPAT() {
     return new Promise(function (resolve) {
         var overlay = document.createElement('div');
         overlay.className = 'dialog-overlay';
         var dialog = document.createElement('div');
         dialog.className = 'dialog';
-        var warning = '';
-        if (fallbackReason) {
-            warning = '<p class="device-code-error" style="margin-bottom:10px;">' +
-                '\u26A0\uFE0F Device Flow failed: ' + escapeHtml(fallbackReason) +
-                '</p>';
-        }
         dialog.innerHTML =
             '<h2>GitHub Authentication</h2>' +
-            warning +
             '<p>Enter a GitHub Personal Access Token with <strong>repo contents write</strong> permission to save changes to the repository.</p>' +
             '<div class="prop-group"><label for="ghTokenInput">Personal Access Token</label>' +
             '<input id="ghTokenInput" type="password" placeholder="ghp_\u2026" autocomplete="off"></div>' +
@@ -510,7 +501,7 @@ function getGitHubTokenViaPAT(fallbackReason) {
 
 /**
  * Show a Device Flow dialog: displays the user code, a link to GitHub,
- * and polls for the access token in the background.
+ * and polls for the access token in the background via the CORS proxy.
  */
 function showDeviceCodeDialog(deviceData, resolve) {
     var overlay = document.createElement('div');
@@ -570,10 +561,10 @@ function showDeviceCodeDialog(deviceData, resolve) {
         cleanup(null);
     });
 
-    /* Poll the token endpoint until the user completes authorization. */
+    /* Poll the token endpoint via the CORS proxy until the user completes authorization. */
     function poll() {
         if (!polling) return;
-        fetch('https://github.com/login/oauth/access_token', {
+        fetch(githubConfig.oauthProxy + '/login/oauth/access_token', {
             method: 'POST',
             headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
             body: new URLSearchParams({ client_id: githubConfig.clientId, device_code: deviceData.device_code, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' })
@@ -613,7 +604,7 @@ function showDeviceCodeDialog(deviceData, resolve) {
 
 /**
  * Obtain a GitHub token for saving.
- * Prefers OAuth Device Flow when githubClientId is configured in auth.json.
+ * Uses OAuth Device Flow via a CORS proxy when configured (proper consent).
  * Falls back to a Personal Access Token prompt otherwise.
  */
 function getGitHubToken() {
@@ -621,9 +612,10 @@ function getGitHubToken() {
         var existing = sessionStorage.getItem('ampcloud_github_token');
         if (existing) { resolve(existing); return; }
 
-        /* If a GitHub OAuth App client ID is configured, use Device Flow. */
-        if (githubConfig.clientId) {
-            fetch('https://github.com/login/device/code', {
+        /* If both a GitHub OAuth App client ID and CORS proxy are configured,
+           use Device Flow so the user sees a proper GitHub consent screen. */
+        if (githubConfig.clientId && githubConfig.oauthProxy) {
+            fetch(githubConfig.oauthProxy + '/login/device/code', {
                 method: 'POST',
                 headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: new URLSearchParams({ client_id: githubConfig.clientId, scope: 'repo' })
@@ -634,23 +626,19 @@ function getGitHubToken() {
             })
             .then(function (data) {
                 if (data.error) {
-                    throw new Error('GitHub Device Flow error: ' + data.error +
-                        (data.error_description ? ' — ' + data.error_description : ''));
+                    throw new Error(data.error + (data.error_description ? ' \u2014 ' + data.error_description : ''));
                 }
                 if (!data.device_code || !data.user_code) throw new Error('Invalid device code response');
                 showDeviceCodeDialog(data, resolve);
             })
             .catch(function (err) {
-                /* Device Flow unavailable — fall back to PAT. Log the reason so
-                   the user can diagnose (CORS block, invalid client ID, Device
-                   Flow not enabled on the OAuth App, network error, etc.). */
-                console.warn('[AmpCloud] GitHub Device Flow failed, falling back to Personal Access Token.', err);
-                getGitHubTokenViaPAT(err.message).then(resolve);
+                console.warn('[AmpCloud] GitHub Device Flow failed, falling back to PAT.', err);
+                getGitHubTokenViaPAT().then(resolve);
             });
             return;
         }
 
-        /* No GitHub OAuth App configured — prompt for a PAT. */
+        /* No OAuth proxy configured — prompt for a PAT. */
         getGitHubTokenViaPAT().then(resolve);
     });
 }
@@ -833,6 +821,9 @@ function loadDefault() {
             if (config.githubClientId) {
                 githubConfig.clientId = config.githubClientId;
             }
+            if (config.githubOAuthProxy && typeof config.githubOAuthProxy === 'string' && config.githubOAuthProxy.trim()) {
+                githubConfig.oauthProxy = config.githubOAuthProxy.trim().replace(/\/+$/, '');
+            }
 
             if (!config.requireAuth || !config.clientId) {
                 /* Auth disabled — show editor immediately. */
@@ -881,28 +872,17 @@ function loadDefault() {
             });
 
             /* Sign-in button — only openid + profile are needed; this is a
-               pure identity gate, not an API permission request. */
+               pure identity gate, not an API permission request.
+               Use redirect (not popup) to avoid Cross-Origin-Opener-Policy
+               errors from login.microsoftonline.com. */
             btnLogin.addEventListener('click', () => {
                 loginError.style.display = 'none';
-                msalApp.loginPopup({ scopes: ['openid', 'profile'] })
-                    .then(response => {
-                        msalApp.setActiveAccount(response.account);
-                        showEditor(response.account);
-                    })
-                    .catch(err => {
-                        loginError.textContent = err.message || 'Sign-in failed. Please try again.';
-                        loginError.style.display = '';
-                    });
+                msalApp.loginRedirect({ scopes: ['openid', 'profile'] });
             });
 
-            /* Sign-out — reload regardless of outcome to reset UI state. */
+            /* Sign-out — redirect flow avoids COOP popup issues. */
             btnLogout.addEventListener('click', () => {
-                msalApp.logoutPopup().then(() => {
-                    location.reload();
-                }).catch(() => {
-                    /* Popup may be blocked or closed; reload to clear session. */
-                    location.reload();
-                });
+                msalApp.logoutRedirect();
             });
         })
         .catch(() => {
