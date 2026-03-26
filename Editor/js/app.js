@@ -512,6 +512,7 @@ function showDeviceCodeDialog(deviceData, resolve) {
     var uri = deviceData.verification_uri;
     /* Only allow https URLs for the verification link. */
     if (!/^https:\/\//i.test(uri)) uri = 'https://github.com/login/device';
+    var safeUri = escapeHtml(uri);
     dialog.innerHTML =
         '<h2>Sign in with GitHub</h2>' +
         '<p>Copy the code below, then click <strong>Open GitHub</strong> to authorize.</p>' +
@@ -520,7 +521,7 @@ function showDeviceCodeDialog(deviceData, resolve) {
             '<button class="btn device-code-copy" id="ghCopyCode" title="Copy code">\uD83D\uDCCB Copy</button>' +
         '</div>' +
         '<div class="dialog-actions" style="justify-content:center;margin-top:14px;">' +
-            '<a href="' + encodeURI(uri) + '" target="_blank" rel="noopener" class="btn btn-primary" id="ghOpenLink">' +
+            '<a href="' + safeUri + '" target="_blank" rel="noopener" class="btn btn-primary" id="ghOpenLink">' +
             '\uD83D\uDD17 Open GitHub</a>' +
         '</div>' +
         '<p id="ghDeviceStatus" class="device-code-status">' +
@@ -533,11 +534,19 @@ function showDeviceCodeDialog(deviceData, resolve) {
 
     var polling = true;
     var interval = (deviceData.interval || 5) * 1000;
+    var networkErrors = 0;
+    var maxNetworkErrors = 12;
 
     function cleanup(token) {
         polling = false;
         document.body.removeChild(overlay);
         resolve(token);
+    }
+
+    function showStatusError(msg) {
+        var el = document.getElementById('ghDeviceStatus');
+        el.textContent = msg;
+        el.className = 'device-code-status device-code-error';
     }
 
     document.getElementById('ghCopyCode').addEventListener('click', function () {
@@ -567,27 +576,29 @@ function showDeviceCodeDialog(deviceData, resolve) {
         .then(function (r) { return r.json(); })
         .then(function (data) {
             if (!polling) return;
+            networkErrors = 0;
             if (data.access_token) {
                 sessionStorage.setItem('ampcloud_github_token', data.access_token);
                 cleanup(data.access_token);
             } else if (data.error === 'slow_down') {
+                /* GitHub asks us to increase the polling interval. */
                 interval += 5000;
                 setTimeout(poll, interval);
             } else if (data.error === 'authorization_pending') {
                 setTimeout(poll, interval);
             } else if (data.error === 'expired_token') {
-                var el = document.getElementById('ghDeviceStatus');
-                el.textContent = 'Code expired. Please close this dialog and try again.';
-                el.style.color = '#e03e3e';
+                showStatusError('Code expired. Please close this dialog and try again.');
             } else {
-                var el2 = document.getElementById('ghDeviceStatus');
-                el2.textContent = data.error_description || 'Authentication failed. Please try again.';
-                el2.style.color = '#e03e3e';
+                showStatusError(data.error_description || 'Authentication failed. Please try again.');
             }
         })
         .catch(function () {
-            /* Network hiccup — keep polling. */
-            if (polling) setTimeout(poll, interval);
+            networkErrors++;
+            if (polling && networkErrors < maxNetworkErrors) {
+                setTimeout(poll, interval);
+            } else if (polling) {
+                showStatusError('Network error. Please check your connection and try again.');
+            }
         });
     }
 
