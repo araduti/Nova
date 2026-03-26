@@ -457,26 +457,34 @@ $fileInput.addEventListener('change', (e) => {
 /**
  * Prompt the user for a GitHub Personal Access Token via a modal dialog.
  * Used only as a fallback when the OAuth proxy is not configured.
+ * @param {string} [fallbackReason] — Optional reason shown when Device Flow
+ *        failed and we fell back to the PAT prompt.
  */
-function getGitHubTokenViaPAT() {
+function getGitHubTokenViaPAT(fallbackReason) {
     return new Promise(function (resolve) {
         var overlay = document.createElement('div');
         overlay.className = 'dialog-overlay';
         var dialog = document.createElement('div');
         dialog.className = 'dialog';
+        var warningHtml = fallbackReason
+            ? '<p class="device-code-error" style="margin-bottom:12px;">\u26A0\uFE0F ' + escapeHtml(fallbackReason) + '</p>'
+            : '';
         dialog.innerHTML =
             '<h2>GitHub Authentication</h2>' +
+            warningHtml +
             '<p>Enter a GitHub Personal Access Token with <strong>repo contents write</strong> permission to save changes to the repository.</p>' +
+            '<form id="ghTokenForm" autocomplete="off">' +
             '<div class="prop-group"><label for="ghTokenInput">Personal Access Token</label>' +
             '<input id="ghTokenInput" type="password" placeholder="ghp_\u2026" autocomplete="off"></div>' +
             '<div class="dialog-actions">' +
-            '<button class="btn" id="ghTokenCancel">Cancel</button>' +
-            '<button class="btn btn-primary" id="ghTokenOk">Authenticate</button></div>';
+            '<button type="button" class="btn" id="ghTokenCancel">Cancel</button>' +
+            '<button type="submit" class="btn btn-primary" id="ghTokenOk">Authenticate</button></div>' +
+            '</form>';
         overlay.appendChild(dialog);
         document.body.appendChild(overlay);
 
         var input = document.getElementById('ghTokenInput');
-        var btnOk = document.getElementById('ghTokenOk');
+        var form = document.getElementById('ghTokenForm');
         var btnCancel = document.getElementById('ghTokenCancel');
         input.focus();
 
@@ -484,7 +492,8 @@ function getGitHubTokenViaPAT() {
             document.body.removeChild(overlay);
             resolve(value);
         }
-        btnOk.addEventListener('click', function () {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
             var v = input.value.trim();
             if (v) {
                 sessionStorage.setItem('ampcloud_github_token', v);
@@ -493,7 +502,6 @@ function getGitHubTokenViaPAT() {
         });
         btnCancel.addEventListener('click', function () { cleanup(null); });
         input.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter') btnOk.click();
             if (e.key === 'Escape') btnCancel.click();
         });
     });
@@ -633,7 +641,10 @@ function getGitHubToken() {
             })
             .catch(function (err) {
                 console.warn('[AmpCloud] GitHub Device Flow failed, falling back to PAT.', err);
-                getGitHubTokenViaPAT().then(resolve);
+                var reason = err && err.message === 'Failed to fetch'
+                    ? 'Could not reach the OAuth proxy (CORS or network error). Using Personal Access Token instead.'
+                    : 'GitHub Device Flow failed: ' + (err && err.message ? err.message : 'unknown error');
+                getGitHubTokenViaPAT(reason).then(resolve);
             });
             return;
         }
