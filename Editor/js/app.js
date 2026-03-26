@@ -125,7 +125,7 @@ let taskSequence = {
 };
 let selectedIndex = -1;
 let dragSrcIndex = -1;
-let githubConfig = { owner: '', repo: '' };
+let githubConfig = { owner: '', repo: '', clientId: '' };
 
 /* ── DOM refs ─────────────────────────────────────────────────────── */
 const $stepList     = document.getElementById('stepList');
@@ -453,12 +453,13 @@ $fileInput.addEventListener('change', (e) => {
 });
 
 /* ── Save to GitHub ────────────────────────────────────────────────── */
-function getGitHubToken() {
-    return new Promise(function (resolve) {
-        var existing = sessionStorage.getItem('ampcloud_github_token');
-        if (existing) { resolve(existing); return; }
 
-        /* Build a modal dialog with a password input */
+/**
+ * Prompt for a GitHub PAT via a modal dialog.
+ * Used as a fallback when githubClientId is not configured in auth.json.
+ */
+function getGitHubTokenViaPAT() {
+    return new Promise(function (resolve) {
         var overlay = document.createElement('div');
         overlay.className = 'dialog-overlay';
         var dialog = document.createElement('div');
@@ -495,6 +496,149 @@ function getGitHubToken() {
             if (e.key === 'Enter') btnOk.click();
             if (e.key === 'Escape') btnCancel.click();
         });
+    });
+}
+
+/**
+ * Show a Device Flow dialog: displays the user code, a link to GitHub,
+ * and polls for the access token in the background.
+ */
+function showDeviceCodeDialog(deviceData, resolve) {
+    var overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    var dialog = document.createElement('div');
+    dialog.className = 'dialog';
+    var safeCode = escapeHtml(deviceData.user_code);
+    var uri = deviceData.verification_uri;
+    /* Only allow https URLs for the verification link. */
+    if (!/^https:\/\//i.test(uri)) uri = 'https://github.com/login/device';
+    var safeUri = escapeHtml(uri);
+    dialog.innerHTML =
+        '<h2>Sign in with GitHub</h2>' +
+        '<p>Copy the code below, then click <strong>Open GitHub</strong> to authorize.</p>' +
+        '<div class="device-code-box">' +
+            '<code class="device-code-value">' + safeCode + '</code>' +
+            '<button class="btn device-code-copy" id="ghCopyCode" title="Copy code">\uD83D\uDCCB Copy</button>' +
+        '</div>' +
+        '<div class="dialog-actions" style="justify-content:center;margin-top:14px;">' +
+            '<a href="' + safeUri + '" target="_blank" rel="noopener" class="btn btn-primary" id="ghOpenLink">' +
+            '\uD83D\uDD17 Open GitHub</a>' +
+        '</div>' +
+        '<p id="ghDeviceStatus" class="device-code-status">' +
+            '<span class="login-spinner" aria-hidden="true"></span> Waiting for authorization\u2026</p>' +
+        '<div class="dialog-actions">' +
+            '<button class="btn" id="ghDeviceCancel">Cancel</button>' +
+        '</div>';
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    var polling = true;
+    var interval = (deviceData.interval || 5) * 1000;
+    var networkErrors = 0;
+    var maxNetworkErrors = 12;
+
+    function cleanup(token) {
+        polling = false;
+        document.body.removeChild(overlay);
+        resolve(token);
+    }
+
+    function showStatusError(msg) {
+        var el = document.getElementById('ghDeviceStatus');
+        el.textContent = msg;
+        el.className = 'device-code-status device-code-error';
+    }
+
+    document.getElementById('ghCopyCode').addEventListener('click', function () {
+        var btn = this;
+        navigator.clipboard.writeText(deviceData.user_code).then(function () {
+            btn.textContent = '\u2705 Copied';
+            setTimeout(function () { btn.textContent = '\uD83D\uDCCB Copy'; }, 2000);
+        });
+    });
+
+    document.getElementById('ghDeviceCancel').addEventListener('click', function () {
+        cleanup(null);
+    });
+
+    /* Poll the token endpoint until the user completes authorization. */
+    function poll() {
+        if (!polling) return;
+        fetch('https://github.com/login/oauth/access_token', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                client_id: githubConfig.clientId,
+                device_code: deviceData.device_code,
+                grant_type: 'urn:ietf:params:oauth:grant-type:device_code'
+            })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!polling) return;
+            networkErrors = 0;
+            if (data.access_token) {
+                sessionStorage.setItem('ampcloud_github_token', data.access_token);
+                cleanup(data.access_token);
+            } else if (data.error === 'slow_down') {
+                /* GitHub asks us to increase the polling interval. */
+                interval += 5000;
+                setTimeout(poll, interval);
+            } else if (data.error === 'authorization_pending') {
+                setTimeout(poll, interval);
+            } else if (data.error === 'expired_token') {
+                showStatusError('Code expired. Please close this dialog and try again.');
+            } else {
+                showStatusError(data.error_description || 'Authentication failed. Please try again.');
+            }
+        })
+        .catch(function () {
+            networkErrors++;
+            if (polling && networkErrors < maxNetworkErrors) {
+                setTimeout(poll, interval);
+            } else if (polling) {
+                showStatusError('Network error. Please check your connection and try again.');
+            }
+        });
+    }
+
+    setTimeout(poll, interval);
+}
+
+/**
+ * Obtain a GitHub token for saving.
+ * Prefers OAuth Device Flow when githubClientId is configured in auth.json.
+ * Falls back to a Personal Access Token prompt otherwise.
+ */
+function getGitHubToken() {
+    return new Promise(function (resolve) {
+        var existing = sessionStorage.getItem('ampcloud_github_token');
+        if (existing) { resolve(existing); return; }
+
+        /* If a GitHub OAuth App client ID is configured, use Device Flow. */
+        if (githubConfig.clientId) {
+            fetch('https://github.com/login/device/code', {
+                method: 'POST',
+                headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+                body: JSON.stringify({ client_id: githubConfig.clientId, scope: 'repo' })
+            })
+            .then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function (data) {
+                if (!data.device_code || !data.user_code) throw new Error('Invalid device code response');
+                showDeviceCodeDialog(data, resolve);
+            })
+            .catch(function () {
+                /* Device Flow unavailable (CORS, network, etc.) — fall back to PAT. */
+                getGitHubTokenViaPAT().then(resolve);
+            });
+            return;
+        }
+
+        /* No GitHub OAuth App configured — prompt for a PAT. */
+        getGitHubTokenViaPAT().then(resolve);
     });
 }
 
@@ -672,6 +816,9 @@ function loadDefault() {
             if (config.githubOwner && config.githubRepo) {
                 githubConfig.owner = config.githubOwner;
                 githubConfig.repo = config.githubRepo;
+            }
+            if (config.githubClientId) {
+                githubConfig.clientId = config.githubClientId;
             }
 
             if (!config.requireAuth || !config.clientId) {
