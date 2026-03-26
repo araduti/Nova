@@ -1096,13 +1096,16 @@ function Build-WinPE {
         # Utils.ps1) are staged into the WinPE image so that Bootstrap.ps1 can
         # register the device in Autopilot via the Microsoft Graph API using
         # delegated permissions from the M365 sign-in token (no client secret).
-        $autopilotSrc = Join-Path $PSScriptRoot 'Autopilot'
-        if (Test-Path $autopilotSrc) {
-            $customDest = Join-Path $paths.MountDir 'OSDCloud\Config\Scripts\Custom'
+        $autopilotFiles = @('oa3tool.exe', 'PCPKsp.dll', 'OA3.cfg',
+                            'Invoke-ImportAutopilot.ps1', 'Utils.ps1')
+        $customDest = Join-Path $paths.MountDir 'OSDCloud\Config\Scripts\Custom'
+        $staged = 0
+
+        # When running from a local clone, $PSScriptRoot points to the repo root
+        # and the Autopilot directory is available on disk.
+        $autopilotSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'Autopilot' } else { '' }
+        if ($autopilotSrc -and (Test-Path $autopilotSrc)) {
             $null = New-Item -Path $customDest -ItemType Directory -Force
-            $autopilotFiles = @('oa3tool.exe', 'PCPKsp.dll', 'OA3.cfg',
-                                'Invoke-ImportAutopilot.ps1', 'Utils.ps1')
-            $staged = 0
             foreach ($f in $autopilotFiles) {
                 $src = Join-Path $autopilotSrc $f
                 if (Test-Path $src) {
@@ -1110,11 +1113,27 @@ function Build-WinPE {
                     $staged++
                 }
             }
-            if ($staged -gt 0) {
-                Write-Success "Autopilot tools staged ($staged files) for API-based device import."
-            } else {
-                Write-Warn 'Autopilot directory found but no tool files present.'
+        } else {
+            # iex (irm ...) scenario — $PSScriptRoot is empty and local files are
+            # unavailable.  Download Autopilot tools directly from the GitHub repo,
+            # matching the pattern used for Bootstrap.ps1 and AmpCloud.ps1 above.
+            $null = New-Item -Path $customDest -ItemType Directory -Force
+            foreach ($f in $autopilotFiles) {
+                $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Autopilot/$f"
+                $dest = Join-Path $customDest $f
+                try {
+                    Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+                    $staged++
+                } catch {
+                    Write-Verbose "Autopilot file '$f' not available from GitHub: $_"
+                }
             }
+        }
+
+        if ($staged -gt 0) {
+            Write-Success "Autopilot tools staged ($staged files) for API-based device import."
+        } elseif ($autopilotSrc -and (Test-Path $autopilotSrc)) {
+            Write-Warn 'Autopilot directory found but no tool files present.'
         }
 
         # ── 5. Embed Bootstrap.ps1 ────────────────────────────────────────────
