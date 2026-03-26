@@ -489,34 +489,6 @@ h3::before {
 .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 0 12px var(--accent-glow); }
 .btn-primary:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
 
-/* ── Device Code Dialog ───────────────────────────────────────────── */
-.device-code-box {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    background: rgba(0,0,0,0.25);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 14px 18px;
-    margin-top: 4px;
-}
-.device-code-value {
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: 3px;
-    color: #fff;
-    user-select: all;
-}
-.device-code-copy { flex-shrink: 0; padding: 5px 12px; font-size: 12px; }
-.device-code-status {
-    text-align: center;
-    margin-top: 16px;
-    font-size: 12px;
-    color: var(--text-muted);
-}
-.device-code-error { color: #e03e3e; }
-
 /* ── Scrollbar ─────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
