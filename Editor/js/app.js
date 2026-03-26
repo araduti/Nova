@@ -125,6 +125,7 @@ let taskSequence = {
 };
 let selectedIndex = -1;
 let dragSrcIndex = -1;
+let githubConfig = { owner: '', repo: '' };
 
 /* ── DOM refs ─────────────────────────────────────────────────────── */
 const $stepList     = document.getElementById('stepList');
@@ -451,8 +452,119 @@ $fileInput.addEventListener('change', (e) => {
     $fileInput.value = '';
 });
 
-/* ── Save JSON ────────────────────────────────────────────────────── */
-document.getElementById('btnSave').addEventListener('click', () => {
+/* ── Save to GitHub ────────────────────────────────────────────────── */
+function getGitHubToken() {
+    return new Promise(function (resolve) {
+        var existing = sessionStorage.getItem('ampcloud_github_token');
+        if (existing) { resolve(existing); return; }
+
+        /* Build a modal dialog with a password input */
+        var overlay = document.createElement('div');
+        overlay.className = 'dialog-overlay';
+        var dialog = document.createElement('div');
+        dialog.className = 'dialog';
+        dialog.innerHTML =
+            '<h2>GitHub Authentication</h2>' +
+            '<p>Enter a GitHub Personal Access Token with <strong>repo contents write</strong> permission to save changes to the repository.</p>' +
+            '<div class="prop-group"><label for="ghTokenInput">Personal Access Token</label>' +
+            '<input id="ghTokenInput" type="password" placeholder="ghp_\u2026" autocomplete="off"></div>' +
+            '<div class="dialog-actions">' +
+            '<button class="btn" id="ghTokenCancel">Cancel</button>' +
+            '<button class="btn btn-primary" id="ghTokenOk">Authenticate</button></div>';
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        var input = document.getElementById('ghTokenInput');
+        var btnOk = document.getElementById('ghTokenOk');
+        var btnCancel = document.getElementById('ghTokenCancel');
+        input.focus();
+
+        function cleanup(value) {
+            document.body.removeChild(overlay);
+            resolve(value);
+        }
+        btnOk.addEventListener('click', function () {
+            var v = input.value.trim();
+            if (v) {
+                sessionStorage.setItem('ampcloud_github_token', v);
+                cleanup(v);
+            }
+        });
+        btnCancel.addEventListener('click', function () { cleanup(null); });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') btnOk.click();
+            if (e.key === 'Escape') btnCancel.click();
+        });
+    });
+}
+
+function toBase64(str) {
+    const bytes = new TextEncoder().encode(str);
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+}
+
+document.getElementById('btnSave').addEventListener('click', async () => {
+    if (!githubConfig.owner || !githubConfig.repo) {
+        alert('GitHub repository is not configured. Save to repo is unavailable.');
+        return;
+    }
+
+    const token = await getGitHubToken();
+    if (!token) return;
+
+    const btnSave = document.getElementById('btnSave');
+    const origLabel = btnSave.innerHTML;
+    btnSave.textContent = '\u23F3 Saving\u2026';
+    btnSave.disabled = true;
+
+    try {
+        const json = JSON.stringify(taskSequence, null, 2) + '\n';
+        const path = 'TaskSequence/default.json';
+        const apiBase = 'https://api.github.com/repos/' + encodeURIComponent(githubConfig.owner) + '/' + encodeURIComponent(githubConfig.repo) + '/contents/' + path;
+        const headers = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github.v3+json' };
+
+        /* Get current SHA */
+        const getResp = await fetch(apiBase, { headers: headers });
+        if (getResp.status === 401 || getResp.status === 403) {
+            sessionStorage.removeItem('ampcloud_github_token');
+            throw new Error('Invalid or expired GitHub token. Please try saving again.');
+        }
+        if (!getResp.ok) throw new Error('Failed to read file from GitHub (HTTP ' + getResp.status + ')');
+        const fileData = await getResp.json();
+
+        /* Update file */
+        const putResp = await fetch(apiBase, {
+            method: 'PUT',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+            body: JSON.stringify({
+                message: 'Update default.json via AmpCloud Editor',
+                content: toBase64(json),
+                sha: fileData.sha
+            })
+        });
+        if (putResp.status === 401 || putResp.status === 403) {
+            sessionStorage.removeItem('ampcloud_github_token');
+            throw new Error('GitHub token lacks write permission. Please try saving again with a valid token.');
+        }
+        if (!putResp.ok) {
+            const errBody = await putResp.json().catch(function () { return {}; });
+            throw new Error(errBody.message || 'GitHub API error (HTTP ' + putResp.status + ')');
+        }
+
+        btnSave.textContent = '\u2705 Saved';
+        setTimeout(function () { btnSave.innerHTML = origLabel; }, 2000);
+    } catch (err) {
+        alert('Save failed:\n' + err.message);
+        btnSave.innerHTML = origLabel;
+    } finally {
+        btnSave.disabled = false;
+    }
+});
+
+/* ── Download JSON ────────────────────────────────────────────────── */
+document.getElementById('btnDownload').addEventListener('click', () => {
     const json = JSON.stringify(taskSequence, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const a = document.createElement('a');
@@ -556,6 +668,12 @@ function loadDefault() {
     fetch('../Config/auth.json')
         .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
         .then(config => {
+            /* Store GitHub repo info for Save-to-repo feature */
+            if (config.githubOwner && config.githubRepo) {
+                githubConfig.owner = config.githubOwner;
+                githubConfig.repo = config.githubRepo;
+            }
+
             if (!config.requireAuth || !config.clientId) {
                 /* Auth disabled — show editor immediately. */
                 showEditor(null);

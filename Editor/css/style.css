@@ -101,6 +101,7 @@ html, body {
     gap: 4px;
 }
 .tb-btn:hover { background: var(--surface-alt); border-color: var(--border); color: #fff; }
+.tb-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* ── Main layout ──────────────────────────────────────────────────── */
 .main {
