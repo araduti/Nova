@@ -125,6 +125,7 @@ let taskSequence = {
 };
 let selectedIndex = -1;
 let dragSrcIndex = -1;
+let githubConfig = { owner: '', repo: '' };
 
 /* ── DOM refs ─────────────────────────────────────────────────────── */
 const $stepList     = document.getElementById('stepList');
@@ -451,8 +452,85 @@ $fileInput.addEventListener('change', (e) => {
     $fileInput.value = '';
 });
 
-/* ── Save JSON ────────────────────────────────────────────────────── */
-document.getElementById('btnSave').addEventListener('click', () => {
+/* ── Save to GitHub ────────────────────────────────────────────────── */
+function getGitHubToken() {
+    let token = sessionStorage.getItem('ampcloud_github_token');
+    if (token) return token;
+    token = prompt('Enter a GitHub Personal Access Token with repo contents write access:');
+    if (token) {
+        token = token.trim();
+        sessionStorage.setItem('ampcloud_github_token', token);
+    }
+    return token || null;
+}
+
+function toBase64(str) {
+    const bytes = new TextEncoder().encode(str);
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+}
+
+document.getElementById('btnSave').addEventListener('click', async () => {
+    if (!githubConfig.owner || !githubConfig.repo) {
+        alert('GitHub repository is not configured. Save to repo is unavailable.');
+        return;
+    }
+
+    const token = getGitHubToken();
+    if (!token) return;
+
+    const btnSave = document.getElementById('btnSave');
+    const origLabel = btnSave.innerHTML;
+    btnSave.textContent = '\u23F3 Saving\u2026';
+    btnSave.disabled = true;
+
+    try {
+        const json = JSON.stringify(taskSequence, null, 2) + '\n';
+        const path = 'TaskSequence/default.json';
+        const apiBase = 'https://api.github.com/repos/' + encodeURIComponent(githubConfig.owner) + '/' + encodeURIComponent(githubConfig.repo) + '/contents/' + path;
+        const headers = { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' };
+
+        /* Get current SHA */
+        const getResp = await fetch(apiBase, { headers: headers });
+        if (getResp.status === 401 || getResp.status === 403) {
+            sessionStorage.removeItem('ampcloud_github_token');
+            throw new Error('Invalid or expired GitHub token. Please try saving again.');
+        }
+        if (!getResp.ok) throw new Error('Failed to read file from GitHub (HTTP ' + getResp.status + ')');
+        const fileData = await getResp.json();
+
+        /* Update file */
+        const putResp = await fetch(apiBase, {
+            method: 'PUT',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+            body: JSON.stringify({
+                message: 'Update default.json via AmpCloud Editor',
+                content: toBase64(json),
+                sha: fileData.sha
+            })
+        });
+        if (putResp.status === 401 || putResp.status === 403) {
+            sessionStorage.removeItem('ampcloud_github_token');
+            throw new Error('GitHub token lacks write permission. Please try saving again with a valid token.');
+        }
+        if (!putResp.ok) {
+            const errBody = await putResp.json().catch(function () { return {}; });
+            throw new Error(errBody.message || 'GitHub API error (HTTP ' + putResp.status + ')');
+        }
+
+        btnSave.textContent = '\u2705 Saved';
+        setTimeout(function () { btnSave.innerHTML = origLabel; }, 2000);
+    } catch (err) {
+        alert('Save failed:\n' + err.message);
+        btnSave.innerHTML = origLabel;
+    } finally {
+        btnSave.disabled = false;
+    }
+});
+
+/* ── Download JSON ────────────────────────────────────────────────── */
+document.getElementById('btnDownload').addEventListener('click', () => {
     const json = JSON.stringify(taskSequence, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const a = document.createElement('a');
@@ -556,6 +634,12 @@ function loadDefault() {
     fetch('../Config/auth.json')
         .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
         .then(config => {
+            /* Store GitHub repo info for Save-to-repo feature */
+            if (config.githubOwner && config.githubRepo) {
+                githubConfig.owner = config.githubOwner;
+                githubConfig.repo = config.githubRepo;
+            }
+
             if (!config.requireAuth || !config.clientId) {
                 /* Auth disabled — show editor immediately. */
                 showEditor(null);
