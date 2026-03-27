@@ -1177,7 +1177,7 @@ function Build-WinPE {
             Write-Warn "Background image generation failed (non-fatal): $_"
         }
 
-        # ── 5d. Embed HTML Progress Dashboard ────────────────────────────────
+        # ── 5d. Embed HTML Progress UI ─────────────────────────────────────────
         # Stage Progress/index.html into the WinPE image so the batch launcher
         # can open it in Edge kiosk mode before PowerShell starts.  This covers
         # the screen immediately and prevents any command-prompt flash.
@@ -1187,15 +1187,15 @@ function Build-WinPE {
         $progressSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'Progress' } else { '' }
         if ($progressSrc -and (Test-Path (Join-Path $progressSrc 'index.html'))) {
             Copy-Item -Path "$progressSrc\*" -Destination $progressDest -Recurse -Force
-            Write-Success 'HTML Progress Dashboard embedded from local repo.'
+            Write-Success 'HTML Progress UI embedded from local repo.'
         } else {
             $progressUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Progress/index.html"
             $progressFile = Join-Path $progressDest 'index.html'
             try {
                 Invoke-WebRequest -Uri $progressUrl -OutFile $progressFile -UseBasicParsing -ErrorAction Stop
-                Write-Success 'HTML Progress Dashboard downloaded and embedded.'
+                Write-Success 'HTML Progress UI downloaded and embedded.'
             } catch {
-                Write-Warn "HTML Progress Dashboard not available (non-fatal): $_"
+                Write-Warn "HTML Progress UI not available (non-fatal): $_"
             }
         }
 
@@ -1206,7 +1206,7 @@ function Build-WinPE {
         # winpeshl.ini always succeeds (cmd.exe is a guaranteed WinPE binary),
         # and the helper batch file handles the PowerShell invocation directly.
         #
-        # The batch file first launches the HTML Progress Dashboard in Edge
+        # The batch file first launches the HTML Progress UI in Edge
         # kiosk mode (if both Edge and the HTML file are present), covering the
         # screen immediately so no command-prompt window is visible at boot.
         #
@@ -1236,7 +1236,7 @@ function Build-WinPE {
         $launcherPath = Join-Path $paths.MountDir 'Windows\System32\ampcloud-start.cmd'
         @'
 @echo off
-REM ── Launch HTML Progress Dashboard immediately ──────────────────────
+REM ── Launch HTML Progress UI immediately ──────────────────────────────
 REM Covers the screen before any console window is visible at boot.
 if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\AmpCloud\Progress\index.html" (
     start "" "X:\WebView2\Edge\msedge.exe" ^

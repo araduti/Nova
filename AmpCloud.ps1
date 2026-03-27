@@ -75,7 +75,7 @@ param(
     [string]$OSDrive = 'C',
 
     # IPC status file — Bootstrap.ps1 polls this JSON file to show live progress
-    # in the WinForms UI.  Leave empty to disable status reporting.
+    # in the UI.  Leave empty to disable status reporting.
     [string]$StatusFile = '',
 
     # Task sequence JSON — when specified, the engine reads the step list from
@@ -145,7 +145,7 @@ function Update-BootstrapStatus {
     <#
     .SYNOPSIS  Writes live progress to a JSON file for Bootstrap.ps1 to display.
     .DESCRIPTION
-        Bootstrap.ps1 polls $StatusFile every ~650 ms and updates its WinForms UI
+        Bootstrap.ps1 polls $StatusFile every ~650 ms and updates its UI
         with the message, progress percentage, and step number.  When imaging is
         done, set -Done to signal the spinner to stop.
     #>
@@ -1431,7 +1431,7 @@ try {
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
     Write-Host ''
     Write-Host '[AmpCloud] Dropping to interactive shell for troubleshooting.' -ForegroundColor Yellow
-    # Re-throw so Bootstrap.ps1 can close the WinForms UI before the user
+    # Re-throw so Bootstrap.ps1 can close the UI before the user
     # needs the console.  The PowerShell host was started with -NoExit by
     # ampcloud-start.cmd, so an interactive prompt appears automatically
     # once the form is dismissed.
