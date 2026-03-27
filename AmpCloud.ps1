@@ -1027,12 +1027,6 @@ function Install-CCMSetup {
 
 #region ── OOBE Customization ───────────────────────────────────────────────────
 
-function New-XmlNsManager([xml]$doc, [hashtable]$namespaces) {
-    $mgr = New-Object System.Xml.XmlNamespaceManager($doc.NameTable)
-    foreach ($kv in $namespaces.GetEnumerator()) { [void]$mgr.AddNamespace($kv.Key, $kv.Value) }
-    return , $mgr
-}
-
 # Default unattend.xml used when the task sequence has no unattendContent yet.
 $script:DefaultUnattendXml = @"
 <?xml version="1.0" encoding="utf-8"?>
@@ -1058,146 +1052,15 @@ $script:DefaultUnattendXml = @"
 </unattend>
 "@
 
-function Update-StepUnattendContent {
-    <#
-    .SYNOPSIS  Updates the CustomizeOOBE step's unattendContent with ComputerName and/or locale values.
-    .DESCRIPTION
-        Connects the SetComputerName and SetRegionalSettings steps to the
-        unattend.xml stored in the task sequence.  When either step resolves
-        its values (at config time or at runtime), this function injects
-        them into the CustomizeOOBE step's unattendContent XML so that by
-        the time CustomizeOOBE executes, the XML is already correct — no
-        runtime injection needed.
-
-        ComputerName is placed in the specialize pass (required by Windows).
-        Locale settings are placed in the oobeSystem pass.
-    #>
-    param(
-        [Parameter(Mandatory)]
-        [psobject[]]$Steps,
-        [string]$ComputerName,
-        [string]$InputLocale,
-        [string]$SystemLocale,
-        [string]$UserLocale,
-        [string]$UILanguage
-    )
-
-    if (-not $ComputerName -and -not $InputLocale -and -not $SystemLocale -and -not $UserLocale -and -not $UILanguage) { return }
-
-    # Find the CustomizeOOBE step
-    $oobeStep = $Steps | Where-Object { $_.type -eq 'CustomizeOOBE' } | Select-Object -First 1
-    if (-not $oobeStep) { return }
-    if (-not $oobeStep.parameters) {
-        $oobeStep | Add-Member -NotePropertyName parameters -NotePropertyValue ([pscustomobject]@{}) -Force
-    }
-
-    # Only update content when unattendSource is 'default' (editor-managed XML)
-    $src = $oobeStep.parameters.unattendSource
-    if ($src -and $src -ne 'default') { return }
-
-    # Initialize unattendContent with the default XML if it is empty
-    $xml = $oobeStep.parameters.unattendContent
-    if (-not $xml) {
-        $xml = $script:DefaultUnattendXml
-    }
-
-    try {
-        [xml]$xd = $xml
-        $ns = @{ u = 'urn:schemas-microsoft-com:unattend' }
-
-        # ── ComputerName → specialize pass ────────────────────────────
-        if ($ComputerName) {
-            $specSetting = $xd.SelectSingleNode('//u:settings[@pass="specialize"]', (New-XmlNsManager $xd $ns))
-            if (-not $specSetting) {
-                $specSetting = $xd.CreateElement('settings', 'urn:schemas-microsoft-com:unattend')
-                $specSetting.SetAttribute('pass', 'specialize')
-                $xd.DocumentElement.AppendChild($specSetting) | Out-Null
-            }
-            $shellComp = $specSetting.SelectSingleNode(
-                'u:component[@name="Microsoft-Windows-Shell-Setup"]',
-                (New-XmlNsManager $xd $ns))
-            if (-not $shellComp) {
-                $shellComp = $xd.CreateElement('component', 'urn:schemas-microsoft-com:unattend')
-                $shellComp.SetAttribute('name', 'Microsoft-Windows-Shell-Setup')
-                $shellComp.SetAttribute('processorArchitecture', 'amd64')
-                $shellComp.SetAttribute('publicKeyToken', '31bf3856ad364e35')
-                $shellComp.SetAttribute('language', 'neutral')
-                $shellComp.SetAttribute('versionScope', 'nonSxS')
-                $specSetting.AppendChild($shellComp) | Out-Null
-            }
-            $cnNode = $shellComp.SelectSingleNode(
-                'u:ComputerName', (New-XmlNsManager $xd $ns))
-            if ($cnNode) {
-                $cnNode.InnerText = $ComputerName
-            } else {
-                $cnNode = $xd.CreateElement('ComputerName', 'urn:schemas-microsoft-com:unattend')
-                $cnNode.InnerText = $ComputerName
-                $shellComp.AppendChild($cnNode) | Out-Null
-            }
-        }
-
-        # ── Locale settings → oobeSystem pass ────────────────────────
-        if ($InputLocale -or $SystemLocale -or $UserLocale -or $UILanguage) {
-            $oobeSetting = $xd.SelectSingleNode('//u:settings[@pass="oobeSystem"]', (New-XmlNsManager $xd $ns))
-            if (-not $oobeSetting) {
-                $oobeSetting = $xd.CreateElement('settings', 'urn:schemas-microsoft-com:unattend')
-                $oobeSetting.SetAttribute('pass', 'oobeSystem')
-                $xd.DocumentElement.AppendChild($oobeSetting) | Out-Null
-            }
-            $intlComp = $oobeSetting.SelectSingleNode(
-                'u:component[@name="Microsoft-Windows-International-Core"]',
-                (New-XmlNsManager $xd $ns))
-            if (-not $intlComp) {
-                $intlComp = $xd.CreateElement('component', 'urn:schemas-microsoft-com:unattend')
-                $intlComp.SetAttribute('name', 'Microsoft-Windows-International-Core')
-                $intlComp.SetAttribute('processorArchitecture', 'amd64')
-                $intlComp.SetAttribute('publicKeyToken', '31bf3856ad364e35')
-                $intlComp.SetAttribute('language', 'neutral')
-                $intlComp.SetAttribute('versionScope', 'nonSxS')
-                $oobeSetting.AppendChild($intlComp) | Out-Null
-            }
-            foreach ($pair in @(
-                @('InputLocale',  $InputLocale),
-                @('SystemLocale', $SystemLocale),
-                @('UserLocale',   $UserLocale),
-                @('UILanguage',   $UILanguage)
-            )) {
-                if ($pair[1]) {
-                    $node = $intlComp.SelectSingleNode(
-                        "u:$($pair[0])", (New-XmlNsManager $xd $ns))
-                    if ($node) {
-                        $node.InnerText = $pair[1]
-                    } else {
-                        $node = $xd.CreateElement($pair[0], 'urn:schemas-microsoft-com:unattend')
-                        $node.InnerText = $pair[1]
-                        $intlComp.AppendChild($node) | Out-Null
-                    }
-                }
-            }
-        }
-
-        # Serialize back to string and update the step
-        $sw = New-Object System.IO.StringWriter
-        $xw = [System.Xml.XmlTextWriter]::new($sw)
-        $xw.Formatting = [System.Xml.Formatting]::Indented
-        $xw.Indentation = 2
-        $xd.WriteTo($xw)
-        $xw.Flush()
-        $oobeStep.parameters | Add-Member -NotePropertyName unattendContent -NotePropertyValue $sw.ToString() -Force
-    } catch {
-        Write-Warn "Could not update unattendContent in task sequence: $_"
-    }
-}
-
 function Set-OOBECustomization {
     <#
     .SYNOPSIS  Writes the unattend.xml to the target OS drive.
     .DESCRIPTION
         The unattendContent in the task sequence is the single source of
-        truth — ComputerName and locale settings are already injected by the
-        SetComputerName and SetRegionalSettings steps via
-        Update-StepUnattendContent.  This function simply writes the final
-        XML to disk (or downloads / copies from an external source).
+        truth — ComputerName and locale settings are already injected by
+        the Task Sequence Editor (or the Bootstrap config modal at runtime).
+        This function simply writes the final XML to disk (or downloads /
+        copies from an external source).
     #>
     param(
         [string]$UnattendUrl,
@@ -1343,12 +1206,7 @@ function Invoke-TaskSequenceStep {
         [string]$CurrentScratchDir,
         [string]$CurrentOSDrive,
         [string]$CurrentFirmwareType,
-        [int]$CurrentDiskNumber,
-        # All steps in the task sequence — allows steps like SetComputerName
-        # and SetRegionalSettings to update the CustomizeOOBE step's
-        # unattendContent directly, keeping the task sequence as the single
-        # source of truth.
-        [psobject[]]$AllSteps
+        [int]$CurrentDiskNumber
     )
 
     $pct = [math]::Min(100, [math]::Round(($Index / $TotalSteps) * 100))
@@ -1411,7 +1269,11 @@ function Invoke-TaskSequenceStep {
             Install-CCMSetup -CCMSetupUrl $url -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
         'SetComputerName' {
-            # Resolve computer name from naming rules or use the static value
+            # Resolve computer name from naming rules or use the static value.
+            # The Task Sequence Editor and Bootstrap config modal handle syncing
+            # static names into unattendContent.  This handler only resolves
+            # dynamic names (serial/random) and updates the XML via a simple
+            # regex replacement — no heavy XmlDocument manipulation needed.
             $cName = if ($p -and $p.computerName) { $p.computerName } else { '' }
             if (-not $cName -and $p) {
                 # Generate from naming rules (prefix + serial/random + suffix)
@@ -1430,8 +1292,6 @@ function Invoke-TaskSequenceStep {
             # Strip invalid characters (letters, digits, hyphens only; no leading/trailing hyphens)
             $cName = ($cName -replace '[^A-Za-z0-9\-]','').Trim('-')
             if ($cName) {
-                # Update the unattend.xml in the CustomizeOOBE step directly
-                Update-StepUnattendContent -Steps $AllSteps -ComputerName $cName
                 Update-BootstrapStatus -Message "Setting computer name..." -Detail "Name: $cName" -Step $uiStep -Progress $pct
                 Write-Success "Computer name resolved: $cName"
             } else {
@@ -1440,15 +1300,12 @@ function Invoke-TaskSequenceStep {
             }
         }
         'SetRegionalSettings' {
-            # Update the unattend.xml in the CustomizeOOBE step directly
+            # Log the regional settings.  The Editor and Bootstrap config
+            # modal already synced locale values into unattendContent — no
+            # engine-level XML update needed.
             $iLocale = if ($p -and $p.inputLocale)  { $p.inputLocale }  else { '' }
             $sLocale = if ($p -and $p.systemLocale) { $p.systemLocale } else { '' }
-            $uLocale = if ($p -and $p.userLocale)   { $p.userLocale }   else { '' }
             $uiLang  = if ($p -and $p.uiLanguage)   { $p.uiLanguage }   else { '' }
-            if ($iLocale -or $sLocale -or $uLocale -or $uiLang) {
-                Update-StepUnattendContent -Steps $AllSteps `
-                    -InputLocale $iLocale -SystemLocale $sLocale -UserLocale $uLocale -UILanguage $uiLang
-            }
             $detail = @()
             if ($iLocale) { $detail += "Keyboard: $iLocale" }
             if ($sLocale) { $detail += "Region: $sLocale" }
@@ -1458,9 +1315,9 @@ function Invoke-TaskSequenceStep {
             Write-Success "Regional settings applied: $detailStr"
         }
         'CustomizeOOBE' {
-            # The unattendContent has already been updated by SetComputerName
-            # and SetRegionalSettings via Update-StepUnattendContent — just
-            # pass it to Set-OOBECustomization to write to disk.
+            # The unattendContent is already the final XML — the Editor syncs
+            # step values at design time and Bootstrap syncs config-modal
+            # values at runtime.  Just write it to disk.
             $uUrl     = if ($p -and $p.unattendUrl)  { $p.unattendUrl }  else { '' }
             $uPath    = if ($p -and $p.unattendPath)  { $p.unattendPath }  else { '' }
             $uContent = if ($p -and $p.unattendSource -eq 'default' -and $p.unattendContent) { $p.unattendContent } else { '' }
@@ -1515,9 +1372,9 @@ try {
     Write-Step "Executing $($enabledSteps.Count) enabled steps"
 
     # Inter-step state: DownloadImage stores the resolved image path for
-    # ApplyImage to consume.  ComputerName and locale settings are connected
-    # to the unattend.xml in the task sequence via Update-StepUnattendContent
-    # — no additional script-scope variables needed.
+    # ApplyImage to consume.  ComputerName and locale settings are synced
+    # into unattendContent by the Editor and Bootstrap config modal — the
+    # engine just writes what's in the task sequence.
     $script:TsImagePath = ''
 
     for ($i = 0; $i -lt $enabledSteps.Count; $i++) {
@@ -1530,7 +1387,7 @@ try {
             Invoke-TaskSequenceStep -Step $s -Index ($i+1) -TotalSteps $enabledSteps.Count `
                 -CurrentScratchDir $ScratchDir `
                 -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
-                -CurrentDiskNumber $TargetDiskNumber -AllSteps $ts.steps
+                -CurrentDiskNumber $TargetDiskNumber
             $ScratchDir = Join-Path "${OSDrive}:" 'AmpCloud'
             New-ScratchDirectory -Path $ScratchDir
         } else {
@@ -1538,7 +1395,7 @@ try {
                 Invoke-TaskSequenceStep -Step $s -Index ($i+1) -TotalSteps $enabledSteps.Count `
                     -CurrentScratchDir $ScratchDir `
                     -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
-                    -CurrentDiskNumber $TargetDiskNumber -AllSteps $ts.steps
+                    -CurrentDiskNumber $TargetDiskNumber
             } catch {
                 if ($s.continueOnError) {
                     Write-Warn "Step '$($s.name)' failed but continueOnError is set — continuing: $_"

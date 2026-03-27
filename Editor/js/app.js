@@ -296,6 +296,12 @@ function renderParamFields(step) {
 
             /* Re-evaluate showWhen visibility when a select changes */
             if (f.kind === 'select') applyShowWhen();
+
+            /* Sync step values into unattend.xml when steps that touch it change */
+            const stepType = taskSequence.steps[selectedIndex].type;
+            if (stepType === 'SetComputerName' || stepType === 'SetRegionalSettings') {
+                syncUnattendContent();
+            }
         });
 
         /* Enhanced XML editor (toolbar, line numbers, tab-indent) */
@@ -345,6 +351,11 @@ $propEnabled.addEventListener('change', () => {
     if (selectedIndex < 0) return;
     taskSequence.steps[selectedIndex].enabled = $propEnabled.checked;
     renderStepList();
+    /* Re-sync unattend.xml when a step that touches it is toggled */
+    const t = taskSequence.steps[selectedIndex].type;
+    if (t === 'SetComputerName' || t === 'SetRegionalSettings' || t === 'CustomizeOOBE') {
+        syncUnattendContent();
+    }
 });
 $propContErr.addEventListener('change', () => {
     if (selectedIndex < 0) return;
@@ -407,10 +418,14 @@ document.getElementById('btnMoveDown').addEventListener('click', () => {
 /* ── Remove step ──────────────────────────────────────────────────── */
 document.getElementById('btnRemoveStep').addEventListener('click', () => {
     if (selectedIndex < 0) return;
+    const removedType = taskSequence.steps[selectedIndex].type;
     taskSequence.steps.splice(selectedIndex, 1);
     if (selectedIndex >= taskSequence.steps.length) selectedIndex = taskSequence.steps.length - 1;
     renderStepList();
     selectStep(selectedIndex);
+    if (removedType === 'SetComputerName' || removedType === 'SetRegionalSettings') {
+        syncUnattendContent();
+    }
 });
 
 /* ── Add step dialog ──────────────────────────────────────────────── */
@@ -453,6 +468,9 @@ $addOk.addEventListener('click', () => {
     selectedIndex = insertAt;
     renderStepList();
     selectStep(selectedIndex);
+    if (addDialogChoice === 'SetComputerName' || addDialogChoice === 'SetRegionalSettings') {
+        syncUnattendContent();
+    }
 });
 
 /* ── New ──────────────────────────────────────────────────────────── */
@@ -479,6 +497,9 @@ $fileInput.addEventListener('change', (e) => {
 
             /* Fill empty unattendContent from the repo file */
             populateDefaultUnattendContent(taskSequence.steps);
+
+            /* Sync step values (SetComputerName, SetRegionalSettings) into unattend.xml */
+            syncUnattendContent();
 
             $tsName.textContent = taskSequence.name || 'Untitled';
             selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
@@ -874,6 +895,202 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
+/* ── Sync step values into unattend.xml ───────────────────────────── */
+
+/**
+ * Whenever a step that touches unattend.xml (SetComputerName,
+ * SetRegionalSettings) is added, removed, enabled/disabled, or has its
+ * parameters edited, this function injects the current values into the
+ * CustomizeOOBE step's unattendContent XML.
+ *
+ * ComputerName → specialize pass (Microsoft-Windows-Shell-Setup)
+ * Locale settings → oobeSystem pass (Microsoft-Windows-International-Core)
+ *
+ * This keeps the task sequence as the single source of truth — the engine
+ * just writes unattendContent to disk without any XML manipulation.
+ */
+function syncUnattendContent() {
+    if (!taskSequence.steps || !taskSequence.steps.length) return;
+
+    /* Find the CustomizeOOBE step with unattendSource === 'default' */
+    var oobeStep = null;
+    for (var i = 0; i < taskSequence.steps.length; i++) {
+        var s = taskSequence.steps[i];
+        if (s.type === 'CustomizeOOBE' && s.enabled !== false) {
+            var src = s.parameters && s.parameters.unattendSource;
+            if (!src || src === 'default') { oobeStep = s; break; }
+        }
+    }
+    if (!oobeStep) return;
+    if (!oobeStep.parameters) oobeStep.parameters = {};
+
+    /* Collect values from enabled SetComputerName / SetRegionalSettings steps */
+    var computerName = '';
+    var inputLocale = '', systemLocale = '', userLocale = '', uiLanguage = '';
+
+    taskSequence.steps.forEach(function (s) {
+        if (s.enabled === false || !s.parameters) return;
+        if (s.type === 'SetComputerName') {
+            computerName = s.parameters.computerName || '';
+        } else if (s.type === 'SetRegionalSettings') {
+            inputLocale  = s.parameters.inputLocale  || '';
+            systemLocale = s.parameters.systemLocale || '';
+            userLocale   = s.parameters.userLocale   || '';
+            uiLanguage   = s.parameters.uiLanguage   || '';
+        }
+    });
+
+    /* Parse the existing unattendContent (or start from default) */
+    var xml = oobeStep.parameters.unattendContent || defaultUnattendXml;
+    if (!xml) return;
+
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(xml, 'application/xml');
+    if (doc.querySelector('parsererror')) return;   /* Don't touch invalid XML */
+
+    var NS = 'urn:schemas-microsoft-com:unattend';
+
+    /** Find or create an element within parent (unattend namespace). */
+    function ensureElement(parent, localName, attrs) {
+        var selector = localName;
+        var child = null;
+        /* Search children manually to handle namespaced elements */
+        for (var c = parent.firstElementChild; c; c = c.nextElementSibling) {
+            if (c.localName === localName) {
+                var match = true;
+                if (attrs) {
+                    for (var k in attrs) {
+                        if (c.getAttribute(k) !== attrs[k]) { match = false; break; }
+                    }
+                }
+                if (match) { child = c; break; }
+            }
+        }
+        if (!child) {
+            child = doc.createElementNS(NS, localName);
+            if (attrs) {
+                for (var k in attrs) child.setAttribute(k, attrs[k]);
+            }
+            parent.appendChild(child);
+        }
+        return child;
+    }
+
+    /** Remove an element if it exists. */
+    function removeElement(parent, localName) {
+        for (var c = parent.firstElementChild; c; c = c.nextElementSibling) {
+            if (c.localName === localName) { parent.removeChild(c); return; }
+        }
+    }
+
+    /* ── ComputerName → specialize pass ─────────────────────────────── */
+    var specPass = null;
+    for (var c = doc.documentElement.firstElementChild; c; c = c.nextElementSibling) {
+        if (c.localName === 'settings' && c.getAttribute('pass') === 'specialize') { specPass = c; break; }
+    }
+
+    if (computerName) {
+        if (!specPass) {
+            specPass = ensureElement(doc.documentElement, 'settings', { pass: 'specialize' });
+        }
+        var shellComp = ensureElement(specPass, 'component', { name: 'Microsoft-Windows-Shell-Setup' });
+        if (!shellComp.getAttribute('processorArchitecture')) {
+            shellComp.setAttribute('processorArchitecture', 'amd64');
+            shellComp.setAttribute('publicKeyToken', '31bf3856ad364e35');
+            shellComp.setAttribute('language', 'neutral');
+            shellComp.setAttribute('versionScope', 'nonSxS');
+        }
+        var cnNode = null;
+        for (var c = shellComp.firstElementChild; c; c = c.nextElementSibling) {
+            if (c.localName === 'ComputerName') { cnNode = c; break; }
+        }
+        if (cnNode) {
+            cnNode.textContent = computerName;
+        } else {
+            cnNode = doc.createElementNS(NS, 'ComputerName');
+            cnNode.textContent = computerName;
+            shellComp.appendChild(cnNode);
+        }
+    } else if (specPass) {
+        /* Remove ComputerName element if name was cleared */
+        for (var c = specPass.firstElementChild; c; c = c.nextElementSibling) {
+            if (c.localName === 'component' && c.getAttribute('name') === 'Microsoft-Windows-Shell-Setup') {
+                removeElement(c, 'ComputerName');
+                /* Remove the component if it's now empty */
+                if (!c.firstElementChild) { specPass.removeChild(c); }
+                break;
+            }
+        }
+        /* Remove the specialize pass if it's now empty */
+        if (!specPass.firstElementChild) { doc.documentElement.removeChild(specPass); }
+    }
+
+    /* ── Locale settings → oobeSystem pass ──────────────────────────── */
+    var hasLocale = inputLocale || systemLocale || userLocale || uiLanguage;
+    var oobePass = null;
+    for (var c = doc.documentElement.firstElementChild; c; c = c.nextElementSibling) {
+        if (c.localName === 'settings' && c.getAttribute('pass') === 'oobeSystem') { oobePass = c; break; }
+    }
+
+    if (hasLocale) {
+        if (!oobePass) {
+            oobePass = ensureElement(doc.documentElement, 'settings', { pass: 'oobeSystem' });
+        }
+        var intlComp = ensureElement(oobePass, 'component', { name: 'Microsoft-Windows-International-Core' });
+        if (!intlComp.getAttribute('processorArchitecture')) {
+            intlComp.setAttribute('processorArchitecture', 'amd64');
+            intlComp.setAttribute('publicKeyToken', '31bf3856ad364e35');
+            intlComp.setAttribute('language', 'neutral');
+            intlComp.setAttribute('versionScope', 'nonSxS');
+        }
+        var locales = [
+            ['InputLocale', inputLocale], ['SystemLocale', systemLocale],
+            ['UserLocale', userLocale], ['UILanguage', uiLanguage]
+        ];
+        locales.forEach(function (pair) {
+            var tag = pair[0], val = pair[1];
+            var existing = null;
+            for (var c = intlComp.firstElementChild; c; c = c.nextElementSibling) {
+                if (c.localName === tag) { existing = c; break; }
+            }
+            if (val) {
+                if (existing) { existing.textContent = val; }
+                else {
+                    var el = doc.createElementNS(NS, tag);
+                    el.textContent = val;
+                    intlComp.appendChild(el);
+                }
+            } else if (existing) {
+                intlComp.removeChild(existing);
+            }
+        });
+        /* Remove International-Core component if all locale fields are empty */
+        if (!intlComp.firstElementChild) { oobePass.removeChild(intlComp); }
+    } else if (oobePass) {
+        /* Remove International-Core component when all locale values are cleared */
+        for (var c = oobePass.firstElementChild; c; c = c.nextElementSibling) {
+            if (c.localName === 'component' && c.getAttribute('name') === 'Microsoft-Windows-International-Core') {
+                oobePass.removeChild(c);
+                break;
+            }
+        }
+    }
+
+    /* Serialize and update */
+    var serializer = new XMLSerializer();
+    var raw = serializer.serializeToString(doc);
+    oobeStep.parameters.unattendContent = formatXml(raw);
+
+    /* If the CustomizeOOBE step is currently selected, refresh its XML textarea */
+    if (selectedIndex >= 0 && taskSequence.steps[selectedIndex] === oobeStep) {
+        var ta = document.querySelector('[data-param="unattendContent"]');
+        if (ta) {
+            ta.value = oobeStep.parameters.unattendContent;
+            ta.dispatchEvent(new Event('input'));  /* Update line numbers */
+        }
+    }
+}
+
 /* ── Default unattend.xml content (loaded from repo) ──────────────── */
 let defaultUnattendXml = '';
 
@@ -907,6 +1124,9 @@ function loadDefault() {
 
         /* Fill empty unattendContent from the repo file */
         populateDefaultUnattendContent(taskSequence.steps);
+
+        /* Sync step values (SetComputerName, SetRegionalSettings) into unattend.xml */
+        syncUnattendContent();
 
         $tsName.textContent = taskSequence.name || 'Untitled';
         selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
