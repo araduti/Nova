@@ -98,18 +98,6 @@
       "parameters": {}
     },
     {
-      "id": "apply-autopilot",
-      "name": "Apply Autopilot Configuration",
-      "type": "ApplyAutopilot",
-      "enabled": true,
-      "description": "Embed the Autopilot/Intune provisioning profile",
-      "continueOnError": true,
-      "parameters": {
-        "jsonUrl": "",
-        "jsonPath": ""
-      }
-    },
-    {
       "id": "stage-ccmsetup",
       "name": "Stage ConfigMgr Setup",
       "type": "StageCCMSetup",
