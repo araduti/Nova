@@ -38,15 +38,15 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 - **Step dependency lines** — visual connectors showing which steps depend on others (e.g., ApplyImage depends on DownloadImage).
 - **Thumbnail previews** — hover over a step to see a summary tooltip of its key parameters without selecting it.
 - **Multi-select** — allow selecting multiple steps for bulk enable/disable, delete, or move operations.
-- **Copy/paste steps** — duplicate a step within the same sequence or across sequences.
+- **Copy/paste steps** ✅ — duplicate a step within the same sequence (Ctrl+D or toolbar button).
 - **Step templates** — save commonly-used step configurations as reusable templates.
 
 ### Properties Panel
 - **Tabbed layout** — split parameters into tabs: General, Advanced, Conditions.
 - **Inline validation** ✅ — real-time validation warnings shown per step (e.g., computer name length, missing required parameters). Warnings appear in both the step list and the properties panel.
 - **Help tooltips** — link to Microsoft documentation for each parameter.
-- **Undo/Redo** — support Ctrl+Z / Ctrl+Y for step changes.
-- **JSON raw view toggle** — switch between the form UI and raw JSON editing for power users.
+- **Undo/Redo** ✅ — Ctrl+Z / Ctrl+Y for step changes with a 50-level undo stack and toolbar buttons.
+- **JSON raw view toggle** ✅ — switch between the form UI and raw JSON editing for power users.
 
 ---
 
@@ -181,6 +181,9 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 | ✅ ~~P1~~ | ~~Step validation warnings~~ | Medium | High |
 | ✅ ~~P1~~ | ~~Dirty state / unsaved indicator~~ | Low | Medium |
 | ✅ ~~P1~~ | ~~Auto-save drafts to localStorage~~ | Low | Medium |
+| ✅ ~~P1~~ | ~~Undo / Redo~~ | Medium | Medium |
+| ✅ ~~P1~~ | ~~JSON raw view toggle~~ | Medium | Medium |
+| ✅ ~~P1~~ | ~~Duplicate step~~ | Low | Medium |
 | 🟢 P2 | Step groups / folders | High | High |
 | 🟢 P2 | Conditional logic (if/else) | High | High |
 | 🟢 P2 | Visual unattend builder | High | Medium |
