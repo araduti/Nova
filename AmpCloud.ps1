@@ -1220,8 +1220,8 @@ function Test-StepCondition {
             switch ($op) {
                 'equals'     { return ($actual -eq $expected) }
                 'notEquals'  { return ($actual -ne $expected) }
-                'contains'   { return ($null -ne $actual -and $actual.IndexOf($expected, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) }
-                'startsWith' { return ($null -ne $actual -and $actual.StartsWith($expected, [System.StringComparison]::OrdinalIgnoreCase)) }
+                'contains'   { return ($null -ne $actual -and "$actual".IndexOf($expected, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) }
+                'startsWith' { return ($null -ne $actual -and "$actual".StartsWith($expected, [System.StringComparison]::OrdinalIgnoreCase)) }
                 'exists'     { return ($null -ne $actual) }
                 'notExists'  { return ($null -eq $actual) }
                 default      { return $true }
