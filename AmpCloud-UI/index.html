@@ -235,6 +235,12 @@
             background: linear-gradient(90deg, var(--accent), #5c7cfa);
             border-radius: 3px;
             transition: width 0.4s ease;
+            background-size: 200% 100%;
+            animation: shimmer 2s linear infinite;
+        }
+        @keyframes shimmer {
+            0%   { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
         }
         .progress-text {
             font-size: 12px;
@@ -1141,6 +1147,23 @@
             xhr.onerror = function () {};
             try { xhr.send(); } catch (e) { /* ignore */ }
         }, 10000);
+
+        /* ── Renderer keep-alive: force continuous paint cycles to
+         *    prevent the SwiftShader renderer from being terminated
+         *    (Edge Error code 39) during long operations. ────────── */
+        (function keepAlive() {
+            var el = document.getElementById('spinner');
+            var tick = 0;
+            function frame() {
+                tick = (tick + 1) % 3600;
+                /* Micro-transform change forces a compositor repaint without
+                   any visible artefact — the value oscillates 0→0.01→0. */
+                el.style.willChange = 'transform';
+                el.style.transform  = 'translateZ(' + (tick % 2 === 0 ? '0' : '0.01') + 'px)';
+                requestAnimationFrame(frame);
+            }
+            requestAnimationFrame(frame);
+        })();
     </script>
 </body>
 </html>
