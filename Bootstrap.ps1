@@ -1,16 +1,16 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    AmpCloud Bootstrap - Graphical WinRE/WinPE loader with Fluent UI.
+    AmpCloud Bootstrap - WinRE/WinPE loader with HTML UI.
 .DESCRIPTION
     Runs inside the WinRE/WinPE boot environment via winpeshl.ini.
     - Calls wpeinit.exe to initialise the WinPE network stack and DHCP.
-    - Presents an animated Fluent-style WinForms interface.
+    - The main visible UI runs in Edge kiosk mode (AmpCloud-UI/index.html).
+    - Communicates with the HTML UI via a JSON status file and HTTP API.
     - Applies high-performance network tuning.
     - Offers an interactive graphical WiFi selector when wired internet is unavailable.
     - Shows a unified configuration dialog (language + Windows edition) once connected.
     - Downloads and executes AmpCloud.ps1 from GitHub once connected.
-    - Supports a customisable background image embedded in the boot image.
 #>
 
 [CmdletBinding()]
@@ -54,21 +54,11 @@ function Write-AuthLog {
 }
 
 # ── Assemblies ──────────────────────────────────────────────────────────────
+# WinForms and Drawing are still required for interactive dialogs
+# (WiFi selector, configuration menu, M365 auth) and for the timer-based
+# message pump.  The main visible UI is now the HTML page in Edge kiosk mode.
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
-
-# ── Hide console window ────────────────────────────────────────────────────
-# WinPE boots into cmd.exe → powershell.exe via winpeshl.ini.  The parent
-# console window is visible behind the UI and looks unprofessional,
-# so hide it immediately before any dialog is shown.
-$null = Add-Type -MemberDefinition @'
-[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
-[DllImport("user32.dll")]   public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-'@ -Name ConsoleWindow -Namespace Win32 -PassThru
-$consoleHandle = [Win32.ConsoleWindow]::GetConsoleWindow()
-if ($consoleHandle -ne [IntPtr]::Zero) {
-    $null = [Win32.ConsoleWindow]::ShowWindow($consoleHandle, 0)  # SW_HIDE
-}
 
 # ── TLS ─────────────────────────────────────────────────────────────────────
 # PowerShell 5.1 in WinPE defaults to SSL3/TLS 1.0.  Modern HTTPS endpoints
@@ -103,21 +93,31 @@ $script:HtmlUiActive = $true
 
 function Update-HtmlUi {
     <#
-    .SYNOPSIS  Write status to the JSON IPC file for the HTML Progress UI.
+    .SYNOPSIS  Write status to the JSON IPC file for the HTML UI.
     .DESCRIPTION
         Mirrors status updates to X:\AmpCloud-Status.json so the HTML UI
         (running in Edge kiosk mode) can display real-time progress during the
         bootstrap phase before AmpCloud.ps1 takes over.
     #>
     param(
-        [string]$Message = '',
-        [string]$Detail  = '',
-        [int]$Step       = 0,
-        [switch]$Done
+        [string]$Message  = '',
+        [string]$Detail   = '',
+        [int]$Step        = 0,
+        [switch]$Done,
+        [switch]$ShowWiFi,
+        [switch]$ShowRetry
     )
     if (-not $script:HtmlUiActive) { return }
     try {
-        $obj = @{ Message = $Message; Detail = $Detail; Progress = 0; Step = $Step; Done = [bool]$Done }
+        $obj = @{
+            Message   = $Message
+            Detail    = $Detail
+            Progress  = 0
+            Step      = $Step
+            Done      = [bool]$Done
+            ShowWiFi  = [bool]$ShowWiFi
+            ShowRetry = [bool]$ShowRetry
+        }
         $obj | ConvertTo-Json -Compress |
             Set-Content -Path $script:StatusFile -Force -ErrorAction SilentlyContinue
     } catch {}
@@ -205,20 +205,9 @@ function Invoke-Sound {
 }
 #endregion
 
-#region ── Customisable Background Image ─────────────────────────────────────
-# If a background image was embedded in the boot image during Build-WinPE,
-# load it once so the form Paint handler can render it instead of the default
-# procedural gradient.  This file is placed by Trigger.ps1 and can be
-# replaced by administrators with custom branding.
-$script:BackgroundImage = $null
-$bgPath = Join-Path $env:SystemRoot 'System32\AmpCloud-bg.png'
-if (Test-Path $bgPath) {
-    try   { $script:BackgroundImage = [System.Drawing.Image]::FromFile($bgPath) }
-    catch { Write-Verbose "Background image load failed — falling back to gradient: $_" }
-}
-#endregion
-
-#region ── Fluent Theme ──────────────────────────────────────────────────────
+#region ── Fluent Theme (dialog essentials) ──────────────────────────────────
+# Colours and fonts retained for interactive WinForms dialogs (WiFi selector,
+# configuration menu, M365 auth).  The main visible form is now in HTML.
 $LightBlue   = [System.Drawing.Color]::FromArgb(0, 120, 212)
 $DarkBg      = [System.Drawing.Color]::FromArgb(32, 32, 32)
 $LightCard   = [System.Drawing.Color]::White
@@ -230,150 +219,7 @@ $script:IsDarkMode  = $false
 $TitleFont   = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
 $BodyFont    = New-Object System.Drawing.Font("Segoe UI", 11)
 $SmallFont   = New-Object System.Drawing.Font("Segoe UI", 9.5)
-$HeroFont    = New-Object System.Drawing.Font("Segoe UI Light", 32)
 $InfoFont    = New-Object System.Drawing.Font("Segoe UI", 9)
-
-# ── Gradient & OOBE-style card constants ────────────────────────────────────
-$script:GradientTop        = [System.Drawing.Color]::FromArgb(218, 232, 252)
-$script:GradientBottom     = [System.Drawing.Color]::FromArgb(234, 240, 250)
-$script:DarkGradientTop    = [System.Drawing.Color]::FromArgb(25, 25, 30)
-$script:DarkGradientBottom = [System.Drawing.Color]::FromArgb(38, 38, 44)
-$script:CardRadius         = 16
-$script:CardShadowColor    = [System.Drawing.Color]::FromArgb(30, 0, 0, 0)
-$script:CardMaxW           = 820
-$script:CardPadTop         = 40
-$script:CardPadBottom      = 36
-$script:IllustH            = 110      # space reserved for the illustration
-
-# Illustration circle sizes (used by the card Paint handler)
-$script:IllustBig          = 58       # centre circle diameter
-$script:IllustSmall        = 46       # side circle diameter
-$script:IllustGap          = 10       # overlap offset between circles
-
-# Illustration circle colours (Azure · Teal · Violet — matching the OOBE palette)
-$script:IllustBlue   = [System.Drawing.Color]::FromArgb(0, 120, 212)
-$script:IllustGreen  = [System.Drawing.Color]::FromArgb(16, 137, 62)
-$script:IllustViolet = [System.Drawing.Color]::FromArgb(135, 100, 184)
-
-# ── Icon font + GDI+ fallback helpers ───────────────────────────────────────
-# Segoe MDL2 Assets provides Fluent icons when available (injected during
-# WinPE build via Build-WinPE).  If the font is missing, pure GDI+ shapes
-# are drawn instead — no garbage glyphs.
-$script:IconFont = $null
-try { $script:IconFont = New-Object System.Drawing.Font("Segoe MDL2 Assets", 18) }
-catch { Write-Verbose "Segoe MDL2 Assets font not available — using GDI+ shapes: $_" }
-
-function Invoke-GlobeIcon {
-    <# Draws a simple globe (circle + crosshairs + equator arc) inside a rect. #>
-    param($Graphics, $Rect, $Pen)
-    $g = $Graphics; $r = $Rect
-    $cx = $r.X + $r.Width / 2;  $cy = $r.Y + $r.Height / 2
-    $inset = [int]($r.Width * 0.22)
-    $ir = New-Object System.Drawing.Rectangle(
-        ($r.X + $inset), ($r.Y + $inset),
-        ($r.Width - $inset * 2), ($r.Height - $inset * 2))
-    $g.DrawEllipse($Pen, $ir)                                   # outer circle
-    $g.DrawLine($Pen, $cx, $ir.Top, $cx, $ir.Bottom)            # vertical line
-    $g.DrawLine($Pen, $ir.Left, $cy, $ir.Right, $cy)            # horizontal line
-    $g.DrawArc($Pen, ($cx - $ir.Width / 4), $ir.Top,
-        ($ir.Width / 2), $ir.Height, 0, 180)                    # longitude arc
-}
-
-function Invoke-CloudIcon {
-    <# Draws a simple cloud silhouette inside a rect. #>
-    param($Graphics, $Rect, $Pen)
-    $g = $Graphics; $r = $Rect
-    $inset = [int]($r.Width * 0.18)
-    $bx = $r.X + $inset;  $by = $r.Y + $r.Height * 0.40
-    $bw = $r.Width - $inset * 2;  $bh = $r.Height * 0.35
-    # Base rounded rect
-    $g.DrawArc($Pen, $bx, $by, $bh, $bh, 90, 180)
-    $g.DrawLine($Pen, ($bx + $bh / 2), ($by + $bh), ($bx + $bw - $bh / 2), ($by + $bh))
-    $g.DrawArc($Pen, ($bx + $bw - $bh), $by, $bh, $bh, 270, 180)
-    # Top bump
-    $topW = $bw * 0.50;  $topH = $bh * 1.1
-    $g.DrawArc($Pen, ($bx + $bw * 0.25), ($by - $topH * 0.50), $topW, $topH, 180, 180)
-}
-
-function Invoke-DownloadIcon {
-    <# Draws a downward arrow with a base-line inside a rect. #>
-    param($Graphics, $Rect, $Pen)
-    $g = $Graphics; $r = $Rect
-    $cx = $r.X + $r.Width / 2
-    $inset = [int]($r.Width * 0.28)
-    $top = $r.Y + $inset;  $bot = $r.Y + $r.Height - $inset
-    $aw = [int]($r.Width * 0.18)  # arrow-head half-width
-    $g.DrawLine($Pen, $cx, $top, $cx, $bot)                     # shaft
-    $g.DrawLine($Pen, ($cx - $aw), ($bot - $aw), $cx, $bot)     # left barb
-    $g.DrawLine($Pen, ($cx + $aw), ($bot - $aw), $cx, $bot)     # right barb
-    $basY = $r.Y + $r.Height - $inset + 3
-    $g.DrawLine($Pen, ($r.X + $inset), $basY,
-        ($r.X + $r.Width - $inset), $basY)                      # base line
-}
-
-function Invoke-CheckmarkIcon {
-    <# Draws a checkmark (tick) inside a rect. #>
-    param($Graphics, $Rect, $Pen)
-    $g = $Graphics; $r = $Rect
-    $ix = [int]($r.Width * 0.25);  $iy = [int]($r.Height * 0.25)
-    # Three points: left-mid, bottom-centre, top-right
-    $p1 = New-Object System.Drawing.PointF(($r.X + $ix),               ($r.Y + $r.Height * 0.52))
-    $p2 = New-Object System.Drawing.PointF(($r.X + $r.Width * 0.42),   ($r.Y + $r.Height - $iy))
-    $p3 = New-Object System.Drawing.PointF(($r.X + $r.Width - $ix),    ($r.Y + $iy))
-    $g.DrawLine($Pen, $p1, $p2)
-    $g.DrawLine($Pen, $p2, $p3)
-}
-
-# ── Helper: rounded-rectangle GraphicsPath ──────────────────────────────────
-# Returns a new GraphicsPath outlining a rounded rectangle.  Callers must
-# Dispose() the returned path when done.
-function New-RoundedRectPath {
-    param([int]$X, [int]$Y, [int]$W, [int]$H, [int]$Radius)
-    $p = New-Object System.Drawing.Drawing2D.GraphicsPath
-    $d = $Radius * 2
-    $p.AddArc($X,          $Y,          $d, $d, 180, 90)
-    $p.AddArc($X + $W - $d, $Y,          $d, $d, 270, 90)
-    $p.AddArc($X + $W - $d, $Y + $H - $d, $d, $d,   0, 90)
-    $p.AddArc($X,          $Y + $H - $d, $d, $d,  90, 90)
-    $p.CloseFigure()
-    return $p
-}
-
-# Reusable pen for ring (performance win — avoids per-frame GDI allocation).
-# Width is updated in-place by the breathing-pulse timer tick.
-$RingPen = New-Object System.Drawing.Pen($LightBlue, 6)
-$RingPen.StartCap = "Round"
-$RingPen.EndCap = "Round"
-
-# ── Layout spacing constants ────────────────────────────────────────────────
-# Named offsets keep Set-ControlLayout readable and easy to tweak.
-$Spacing = @{
-    IllustH      = 110; IllustGap    = 0      # illustration area + gap
-    LogoH        = 50;  LogoGap      = 4      # logo height + gap below
-    SubH         = 25;  SubGap       = 6      # subtitle height + gap
-    DeviceH      = 60;  DeviceGap    = 20     # device-info card height + gap
-    RingH        = 80;  RingGap      = 16     # ring panel height + gap
-    StatusH      = 55;  StatusGap    = 3      # status label height + gap
-    ProgressH    = 24;  ProgressGap  = 12     # progress text height + gap
-    StepH        = 28;  StepGap      = 18     # step panel height + gap
-    WiFiBtnH     = 48;  WiFiBtnGap   = 10     # WiFi button height + gap
-    RetryBtnH    = 42                          # Retry button height
-}
-# Total content block height (used to vertically centre the UI).
-$script:BlockH = $Spacing.IllustH   + $Spacing.IllustGap   +
-                 $Spacing.LogoH   + $Spacing.LogoGap    +
-                 $Spacing.SubH    + $Spacing.SubGap      +
-                 $Spacing.DeviceH + $Spacing.DeviceGap   +
-                 $Spacing.RingH   + $Spacing.RingGap     +
-                 $Spacing.StatusH + $Spacing.StatusGap   +
-                 $Spacing.ProgressH + $Spacing.ProgressGap +
-                 $Spacing.StepH   + $Spacing.StepGap     +
-                 $Spacing.WiFiBtnH + $Spacing.WiFiBtnGap +
-                 $Spacing.RetryBtnH
-
-# ── Animation state ─────────────────────────────────────────────────────────
-$script:fadeOpacity = 0.0          # fade-in: 0 → 1
-$script:ringPulse   = 0.0          # breathing ring: sine-wave pulse factor
 #endregion
 
 #region ── Network + WiFi Functions ─────────────────────────────────────────
@@ -591,689 +437,93 @@ function Show-WiFiSelector {
 }
 #endregion
 
-#region ── Main Form ── Fullscreen Autopilot-style UI ─────────────────────────
-$form = New-Object System.Windows.Forms.Form
-$form.Text = "AmpCloud - Cloud Imaging Engine"
-$form.FormBorderStyle = "None"
-$form.WindowState = "Maximized"
-$form.BackColor = $script:GradientTop   # gradient base colour; Paint handler overlays
-$form.Font = $BodyFont
-$form.Opacity = 0.0   # start transparent for fade-in animation
 
-# Enable double-buffering so the gradient + card paint are flicker-free.
-try {
-    $formType = $form.GetType()
-    $dbProp = $formType.GetProperty('DoubleBuffered',
-        [System.Reflection.BindingFlags]'Instance,NonPublic')
-    if ($dbProp) { $dbProp.SetValue($form, $true, $null) }
-} catch { Write-Verbose "Form double-buffering unavailable: $_" }
+#region ── HTTP API for HTML UI two-way communication ────────────────────────
+# The HTML UI (AmpCloud-UI/index.html running in Edge kiosk mode) sends user
+# actions via HTTP to this listener.  Bootstrap.ps1 processes them on the
+# WinForms message pump thread to safely interact with modal dialogs.
 
-# ── Card panel (centred white rounded-corner surface) ───────────────────────
-# All content controls live inside this panel so they inherit its white
-# BackColor.  The panel gets a rounded Region for OOBE-style rounded corners.
-$cardPanel = New-Object System.Windows.Forms.Panel
-$cardPanel.BackColor = $LightCard
-try {
-    $cpType  = $cardPanel.GetType()
-    $cpDbProp = $cpType.GetProperty('DoubleBuffered',
-        [System.Reflection.BindingFlags]'Instance,NonPublic')
-    if ($cpDbProp) { $cpDbProp.SetValue($cardPanel, $true, $null) }
-} catch { Write-Verbose "Card double-buffering unavailable: $_" }
-$form.Controls.Add($cardPanel)
+$script:HttpListener = New-Object System.Net.HttpListener
+$script:HttpListener.Prefixes.Add("http://localhost:8080/")
+try { $script:HttpListener.Start() }
+catch { Write-Verbose "HTTP listener failed to start: $_" }
 
-$script:_cardW = 0; $script:_cardH = 0
-$cardPanel.Add_SizeChanged({
-    if ($cardPanel.Width -le 0 -or $cardPanel.Height -le 0) { return }
-    if ($cardPanel.Width -eq $script:_cardW -and $cardPanel.Height -eq $script:_cardH) { return }
-    $script:_cardW = $cardPanel.Width
-    $script:_cardH = $cardPanel.Height
-    $path = New-RoundedRectPath -X 0 -Y 0 -W $script:_cardW -H $script:_cardH -Radius $script:CardRadius
-    if ($cardPanel.Region) { $cardPanel.Region.Dispose() }
-    $cardPanel.Region = New-Object System.Drawing.Region($path)
-    $path.Dispose()
-})
-
-# ── Form Paint — gradient background + card shadow ──────────────────────────
-$form.Add_Paint({
-    $g  = $_.Graphics
-    $cw = $form.ClientSize.Width
-    $ch = $form.ClientSize.Height
-    if ($cw -le 0 -or $ch -le 0) { return }
-
-    # Use embedded background image when available; fall back to gradient.
-    if ($null -ne $script:BackgroundImage -and -not $script:IsDarkMode) {
-        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-        $g.DrawImage($script:BackgroundImage, 0, 0, $cw, $ch)
-    } else {
-        $gTop = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
-        $gBot = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
-        $gRect  = New-Object System.Drawing.Rectangle(0, 0, $cw, $ch)
-        $gBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-                      $gRect, $gTop, $gBot,
-                      [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-        $g.FillRectangle($gBrush, $gRect)
-        $gBrush.Dispose()
-    }
-
-    # Soft shadow behind the card panel
-    if ($cardPanel.Width -gt 0 -and $cardPanel.Height -gt 0) {
-        $g.SmoothingMode = 'AntiAlias'
-        $sp = New-RoundedRectPath -X ($cardPanel.Left + 4) -Y ($cardPanel.Top + 4) `
-                                   -W $cardPanel.Width -H $cardPanel.Height -Radius $script:CardRadius
-        $sBrush = New-Object System.Drawing.SolidBrush($script:CardShadowColor)
-        $g.FillPath($sBrush, $sp)
-        $sBrush.Dispose();  $sp.Dispose()
-    }
-})
-
-# ── Card Paint — OOBE illustration (three overlapping icon circles) ─────────
-$cardPanel.Add_Paint({
-    $g = $_.Graphics
-    $g.SmoothingMode = 'AntiAlias'
-    $pw = $cardPanel.Width
-    if ($pw -le 0) { return }
-    $cx    = [int]($pw / 2)
-    $cy    = [int]($script:IllustH / 2)
-    $big   = $script:IllustBig
-    $small = $script:IllustSmall
-    $gap   = $script:IllustGap
-
-    # Left circle — blue (network / globe)
-    $b1 = New-Object System.Drawing.SolidBrush($script:IllustBlue)
-    $g.FillEllipse($b1,
-        ($cx - $big / 2 - $small + $gap), ($cy - $small / 2),
-        $small, $small)
-    $b1.Dispose()
-
-    # Centre circle — white with light-blue border (cloud)
-    $g.FillEllipse([System.Drawing.Brushes]::White,
-        ($cx - $big / 2), ($cy - $big / 2), $big, $big)
-    $borderPen = New-Object System.Drawing.Pen($script:IllustBlue, 2)
-    $g.DrawEllipse($borderPen,
-        ($cx - $big / 2), ($cy - $big / 2), $big, $big)
-    $borderPen.Dispose()
-
-    # Right circle — violet (deploy / download)
-    $b3 = New-Object System.Drawing.SolidBrush($script:IllustViolet)
-    $g.FillEllipse($b3,
-        ($cx + $big / 2 - $gap), ($cy - $small / 2),
-        $small, $small)
-    $b3.Dispose()
-
-    # Draw icons inside the circles
-    if ($null -ne $script:IconFont) {
-        # Segoe MDL2 Assets available — use crisp font glyphs
-        $sf = New-Object System.Drawing.StringFormat
-        $sf.Alignment     = 'Center'
-        $sf.LineAlignment = 'Center'
-
-        # Globe (E774) in blue circle
-        $r1 = New-Object System.Drawing.RectangleF(
-            ($cx - $big / 2 - $small + $gap), ($cy - $small / 2), $small, $small)
-        $g.DrawString([string][char]0xE774, $script:IconFont,
-            [System.Drawing.Brushes]::White, $r1, $sf)
-
-        # Cloud (E753) in centre circle
-        $r2 = New-Object System.Drawing.RectangleF(
-            ($cx - $big / 2), ($cy - $big / 2), $big, $big)
-        $cloudBr = New-Object System.Drawing.SolidBrush($script:IllustBlue)
-        $g.DrawString([string][char]0xE753, $script:IconFont, $cloudBr, $r2, $sf)
-        $cloudBr.Dispose()
-
-        # Download (E896) in violet circle
-        $r3 = New-Object System.Drawing.RectangleF(
-            ($cx + $big / 2 - $gap), ($cy - $small / 2), $small, $small)
-        $g.DrawString([string][char]0xE896, $script:IconFont,
-            [System.Drawing.Brushes]::White, $r3, $sf)
-
-        $sf.Dispose()
-    } else {
-        # Fallback — draw GDI+ shapes (no font dependency)
-        $iconPenW = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 2)
-        $iconPenB = New-Object System.Drawing.Pen($script:IllustBlue, 2)
-
-        $r1 = New-Object System.Drawing.Rectangle(
-            ($cx - $big / 2 - $small + $gap), ($cy - $small / 2), $small, $small)
-        Invoke-GlobeIcon -Graphics $g -Rect $r1 -Pen $iconPenW
-
-        $r2 = New-Object System.Drawing.Rectangle(
-            ($cx - $big / 2), ($cy - $big / 2), $big, $big)
-        Invoke-CloudIcon -Graphics $g -Rect $r2 -Pen $iconPenB
-
-        $r3 = New-Object System.Drawing.Rectangle(
-            ($cx + $big / 2 - $gap), ($cy - $small / 2), $small, $small)
-        Invoke-DownloadIcon -Graphics $g -Rect $r3 -Pen $iconPenW
-
-        $iconPenW.Dispose()
-        $iconPenB.Dispose()
-    }
-})
-
-# ── F8 command prompt shortcut ──────────────────────────────────────────────
-# Enable KeyPreview so the form sees key events before child controls.
-# F8 opens a new PowerShell console for diagnostics (similar to Shift+F10
-# in Windows Setup).  cmd.exe could be used, but PowerShell is more useful
-# in WinPE and is already the engine behind AmpCloud.
-$form.KeyPreview = $true
-$form.Add_KeyDown({
-    if ($_.KeyCode -eq [System.Windows.Forms.Keys]::F8) {
-        Start-Process $script:PsBin -ArgumentList '-NoProfile', '-NoExit'
-    }
-})
-
-# ── Dark mode toggle (top-right corner) ─────────────────────────────────────
-$btnDark = New-Object System.Windows.Forms.Button
-$btnDark.Size = New-Object System.Drawing.Size(44, 44)
-$btnDark.FlatStyle = "Flat"
-$btnDark.FlatAppearance.BorderSize = 0
-$btnDark.Font = New-Object System.Drawing.Font("Segoe UI", 14)
-$btnDark.Text = [char]0x263D          # crescent moon ☽
-$btnDark.ForeColor = [System.Drawing.Color]::Gray
-$btnDark.BackColor = $script:GradientTop
-$btnDark.Anchor = [System.Windows.Forms.AnchorStyles]::None
-$form.Controls.Add($btnDark)
-
-# ── Logo ────────────────────────────────────────────────────────────────────
-$logo = New-Object System.Windows.Forms.Label
-$logo.Text = $S.Header
-$logo.Font = $HeroFont
-$logo.ForeColor = $LightBlue
-$logo.TextAlign = "MiddleCenter"
-$logo.AutoSize = $false
-$cardPanel.Controls.Add($logo)
-
-# ── Subtitle ────────────────────────────────────────────────────────────────
-$subtitleLabel = New-Object System.Windows.Forms.Label
-$subtitleLabel.Text = $S.Subtitle
-$subtitleLabel.Font = $BodyFont
-$subtitleLabel.ForeColor = [System.Drawing.Color]::Gray
-$subtitleLabel.TextAlign = "MiddleCenter"
-$subtitleLabel.AutoSize = $false
-$cardPanel.Controls.Add($subtitleLabel)
-
-# ── Device info (enhanced — CPU, RAM, Disk alongside model & serial) ────────
-$deviceLabel = New-Object System.Windows.Forms.Label
-try {
-    $model  = (Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).Model
-    $serial = (Get-CimInstance Win32_Bios -ErrorAction SilentlyContinue).SerialNumber
-    $cpuRaw = (Get-CimInstance Win32_Processor -ErrorAction SilentlyContinue |
-                   Select-Object -First 1).Name
-    $cpu    = if ($cpuRaw) { ($cpuRaw -replace '\s+', ' ').Trim() } else { 'Unknown CPU' }
-    $ramObj = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
-    $ramGB  = if ($ramObj -and $ramObj.TotalPhysicalMemory) {
-                  [Math]::Round($ramObj.TotalPhysicalMemory / 1GB, 1)
-              } else { '?' }
-    $diskObj = Get-CimInstance Win32_DiskDrive -ErrorAction SilentlyContinue |
-                   Select-Object -First 1
-    $diskGB  = if ($diskObj -and $diskObj.Size) { [Math]::Round($diskObj.Size / 1GB) } else { '?' }
-    $dot     = "  $([char]0x2022)  "
-    $deviceLabel.Text = "$model${dot}S/N $serial`n$cpu${dot}${ramGB} GB RAM${dot}${diskGB} GB Disk"
-} catch {
-    $deviceLabel.Text = "Device: Unknown"
-}
-$deviceLabel.Font      = $InfoFont
-$deviceLabel.ForeColor = [System.Drawing.Color]::FromArgb(100, 100, 100)
-$deviceLabel.BackColor = [System.Drawing.Color]::FromArgb(245, 247, 250)
-$deviceLabel.TextAlign = "MiddleCenter"
-$deviceLabel.AutoSize  = $false
-$deviceLabel.Padding   = New-Object System.Windows.Forms.Padding(12, 4, 12, 4)
-$cardPanel.Controls.Add($deviceLabel)
-
-# ── Animated Progress Ring ──────────────────────────────────────────────────
-$ringPanel = New-Object System.Windows.Forms.Panel
-$ringPanel.Size = New-Object System.Drawing.Size(80, 80)
-$ringPanel.BackColor = [System.Drawing.Color]::Transparent
-$ringPanel.Visible = $false
-
-# DoubleBuffered and SetStyle are protected members; use reflection so WinPE
-# doesn't throw a PropertyAssignmentException that kills the script.
-try {
-    $panelType = $ringPanel.GetType()
-    $dbProp = $panelType.GetProperty('DoubleBuffered', [System.Reflection.BindingFlags]'Instance,NonPublic')
-    if ($dbProp) { $dbProp.SetValue($ringPanel, $true, $null) }
-    $setStyleMethod = $panelType.GetMethod('SetStyle', [System.Reflection.BindingFlags]'Instance,NonPublic')
-    if ($setStyleMethod) {
-        $styles = [System.Windows.Forms.ControlStyles]::OptimizedDoubleBuffer -bor
-                  [System.Windows.Forms.ControlStyles]::AllPaintingInWmPaint -bor
-                  [System.Windows.Forms.ControlStyles]::UserPaint
-        $setStyleMethod.Invoke($ringPanel, @($styles, $true))
-    }
-    $ringPanel.UpdateStyles()
-} catch {
-    Write-Verbose "Double-buffering unavailable: $_"
-}
-$cardPanel.Controls.Add($ringPanel)
-
-$script:ringAngle = 0
-$ringTimer = New-Object System.Windows.Forms.Timer
-$ringTimer.Interval = 48
-$ringTimer.Add_Tick({
-    $script:ringAngle = ($script:ringAngle + 8) % 360
-    # Breathing pulse: pen width oscillates between ~4.5 and ~7.5 via a sine wave.
-    $script:ringPulse = [Math]::Sin($script:ringAngle * [Math]::PI / 180)
-    $RingPen.Width    = 6 + $script:ringPulse * 1.5
-    $ringPanel.Invalidate()
-})
-$ringPanel.Add_Paint({
-    try {
-        $g = $_.Graphics
-        $g.SmoothingMode = "AntiAlias"
-        $g.DrawArc($RingPen, 6, 6, 66, 66, $script:ringAngle, 280)
-    } catch { Write-Verbose "Ring paint error: $_" }
-})
-
-# ── Status label ────────────────────────────────────────────────────────────
-$statusLabel = New-Object System.Windows.Forms.Label
-$statusLabel.Font = $TitleFont
-$statusLabel.ForeColor = $TextLight
-$statusLabel.TextAlign = "MiddleCenter"
-$statusLabel.AutoSize = $false
-$cardPanel.Controls.Add($statusLabel)
-
-# ── Progress / download text ────────────────────────────────────────────────
-$progressText = New-Object System.Windows.Forms.Label
-$progressText.Font = $SmallFont
-$progressText.ForeColor = [System.Drawing.Color]::Gray
-$progressText.TextAlign = "MiddleCenter"
-$progressText.AutoSize = $false
-$cardPanel.Controls.Add($progressText)
-
-# ── Step indicators ─────────────────────────────────────────────────────────
-$stepPanel = New-Object System.Windows.Forms.FlowLayoutPanel
-$stepPanel.FlowDirection = "LeftToRight"
-$stepPanel.AutoSize = $true
-$stepPanel.WrapContents = $false
-$stepPanel.BackColor = [System.Drawing.Color]::Transparent
-$cardPanel.Controls.Add($stepPanel)
-
-$stepLabels = [System.Collections.Generic.List[System.Windows.Forms.Label]]::new()
-$stepNum = 0
-foreach ($stepText in @($S.Step1, $S.Step2, $S.Step3, $S.Step4)) {
-    $stepNum++
-    $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = "$([char]0x25CF) $stepNum $stepText"
-    $lbl.Font = $SmallFont
-    $lbl.ForeColor = [System.Drawing.Color]::Gray
-    $lbl.AutoSize = $true
-    $lbl.Margin = New-Object System.Windows.Forms.Padding(20, 0, 20, 0)
-    $stepLabels.Add($lbl)
-    $stepPanel.Controls.Add($lbl)
+$script:PendingAction = $null
+$script:_httpAsync    = $null
+if ($script:HttpListener.IsListening) {
+    $script:_httpAsync = $script:HttpListener.BeginGetContext($null, $null)
 }
 
-# ── Buttons ─────────────────────────────────────────────────────────────────
-$btnWiFi = New-Object System.Windows.Forms.Button
-$btnWiFi.Text = "Connect via WiFi"
-$btnWiFi.Size = New-Object System.Drawing.Size(260, 48)
-$btnWiFi.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
-$btnWiFi.BackColor = $LightBlue
-$btnWiFi.ForeColor = [System.Drawing.Color]::White
-$btnWiFi.FlatStyle = "Flat"
-$btnWiFi.FlatAppearance.BorderSize = 0
-$btnWiFi.Visible = $false
-$cardPanel.Controls.Add($btnWiFi)
+# ── Status file path (shared with AmpCloud.ps1) ────────────────────────────
+$script:StatusFile = "X:\AmpCloud-Status.json"
 
-$btnRetry = New-Object System.Windows.Forms.Button
-$btnRetry.Text = "Retry"
-$btnRetry.Size = New-Object System.Drawing.Size(160, 42)
-$btnRetry.Font = $BodyFont
-$btnRetry.BackColor = [System.Drawing.Color]::FromArgb(230, 230, 230)
-$btnRetry.ForeColor = $TextLight
-$btnRetry.FlatStyle = "Flat"
-$btnRetry.FlatAppearance.BorderSize = 0
-$btnRetry.Visible = $false
-$cardPanel.Controls.Add($btnRetry)
-
-# ── F8 hint (bottom-left) ───────────────────────────────────────────────────
-$f8Hint = New-Object System.Windows.Forms.Label
-$f8Hint.Text = "Press F8 for command prompt"
-$f8Hint.Font = $SmallFont
-$f8Hint.ForeColor = [System.Drawing.Color]::FromArgb(120, 130, 150)
-$f8Hint.BackColor = $script:GradientBottom
-$f8Hint.AutoSize = $true
-$form.Controls.Add($f8Hint)
-
-# ── Company logo (bottom-right) ─────────────────────────────────────────────
-$brandLabel = New-Object System.Windows.Forms.Label
-$brandLabel.Text      = 'ampliosoft'
-$brandLabel.Font      = New-Object System.Drawing.Font('Segoe UI', 9)
-$brandLabel.ForeColor = [System.Drawing.Color]::FromArgb(120, 130, 150)
-$brandLabel.BackColor = $script:GradientBottom
-$brandLabel.AutoSize  = $true
-$form.Controls.Add($brandLabel)
-
-# ── Dynamic centering ───────────────────────────────────────────────────────
-# Positions the card panel centred on the form, then lays out all child
-# controls within the card.
-$contentW = 600
-function Set-ControlLayout {
-    $cw = $form.ClientSize.Width
-    $ch = $form.ClientSize.Height
-
-    # ── Card panel position + size ──────────────────────────────────────────
-    $cardW = [Math]::Min($script:CardMaxW, $cw - 100)
-    $cardH = [Math]::Min($ch - 80, $script:BlockH + $script:CardPadTop + $script:CardPadBottom)
-    $cardX = [int](($cw - $cardW) / 2)
-    $cardY = [int](($ch - $cardH) / 2)
-    $cardPanel.SetBounds($cardX, $cardY, $cardW, $cardH)
-
-    # ── Content within card ─────────────────────────────────────────────────
-    $cpw = $cardPanel.Width
-    $cx  = [int]($cpw / 2)
-    $cntW = [Math]::Min($contentW, $cpw - 60)
-
-    $y = $script:CardPadTop + $Spacing.IllustH + $Spacing.IllustGap
-
-    $logo.SetBounds(($cx - $cntW / 2), $y, $cntW, $Spacing.LogoH)
-    $y += $Spacing.LogoH + $Spacing.LogoGap
-
-    $subtitleLabel.SetBounds(($cx - $cntW / 2), $y, $cntW, $Spacing.SubH)
-    $y += $Spacing.SubH + $Spacing.SubGap
-
-    $deviceLabel.SetBounds(30, $y, ($cpw - 60), $Spacing.DeviceH)
-    $y += $Spacing.DeviceH + $Spacing.DeviceGap
-
-    $ringPanel.Location = New-Object System.Drawing.Point(($cx - 40), $y)
-    $y += $Spacing.RingH + $Spacing.RingGap
-
-    $statusLabel.SetBounds(($cx - $cntW / 2), $y, $cntW, $Spacing.StatusH)
-    $y += $Spacing.StatusH + $Spacing.StatusGap
-
-    $progressText.SetBounds(($cx - $cntW / 2), $y, $cntW, $Spacing.ProgressH)
-    $y += $Spacing.ProgressH + $Spacing.ProgressGap
-
-    $stepPanel.Location = New-Object System.Drawing.Point(
-        [int]($cx - $stepPanel.Width / 2), $y)
-    $y += $Spacing.StepH + $Spacing.StepGap
-
-    $btnWiFi.Location  = New-Object System.Drawing.Point(($cx - 130), $y)
-    $y += $Spacing.WiFiBtnH + $Spacing.WiFiBtnGap
-
-    $btnRetry.Location = New-Object System.Drawing.Point(($cx - 80), $y)
-
-    # Dark mode button stays top-right of form (outside card)
-    $btnDark.Location = New-Object System.Drawing.Point(($cw - 60), 16)
-
-    # F8 hint anchored to bottom-left of form
-    $f8Hint.Location = New-Object System.Drawing.Point(16, ($ch - 30))
-
-    # Company logo anchored to bottom-right of form
-    $brandLabel.Location = New-Object System.Drawing.Point(($cw - $brandLabel.Width - 16), ($ch - 30))
-}
-
-$form.Add_Resize({ Set-ControlLayout })
-
-# ── Helper functions ────────────────────────────────────────────────────────
+# ── Helper functions (route through HTML UI) ────────────────────────────────
 function Write-Status {
-    param([string]$Message, [string]$Color = 'Black')
-    $statusLabel.ForeColor = switch ($Color) {
-        'Green'  { [System.Drawing.Color]::DarkGreen; break }
-        'Red'    { [System.Drawing.Color]::Red; break }
-        'Yellow' { [System.Drawing.Color]::OrangeRed; break }
-        'Cyan'   { $LightBlue; break }
-        default  { if ($script:IsDarkMode) { $TextDark } else { $TextLight } }
-    }
-    $statusLabel.Text = $Message
-    $form.Refresh()
+    param([string]$Message, [string]$Color = 'Cyan')
+    Write-Verbose "Status: $Message ($Color)"
+    Update-HtmlUi -Message $Message
 }
 
 function Update-Step { param([int]$s)
-    for ($i = 0; $i -lt $stepLabels.Count; $i++) {
-        $stepLabels[$i].ForeColor = if ($i -lt $s) { $LightBlue } else { [System.Drawing.Color]::Gray }
+    Update-HtmlUi -Step $s
+}
+
+function Show-Failure {
+    Invoke-Sound 400 600
+    Update-HtmlUi -Message "Could not connect to the internet.`nPlease check your network." `
+                  -Step 2 -ShowWiFi -ShowRetry
+}
+
+# ── Action timer (polls HTTP requests + processes pending actions) ──────────
+# Replaces the old WinForms Timer-based approach with async HTTP polling.
+$script:actionTimer = New-Object System.Windows.Forms.Timer
+$script:actionTimer.Interval = 500
+$script:actionTimer.Add_Tick({
+    # ── Check for incoming HTTP requests ────────────────────────────────
+    if ($script:_httpAsync -and $script:_httpAsync.IsCompleted) {
+        try {
+            $context = $script:HttpListener.EndGetContext($script:_httpAsync)
+            $path = $context.Request.Url.LocalPath.ToLower()
+            $msg  = 'unknown'
+
+            switch ($path) {
+                '/wifi'     { $script:PendingAction = 'SHOW_WIFI'; $msg = 'ok' }
+                '/retry'    { $script:PendingAction = 'RETRY'; $msg = 'ok' }
+                '/reboot'   { Restart-Computer -Force; $msg = 'rebooting' }
+                '/shutdown' { Stop-Computer -Force; $msg = 'shutting down' }
+                '/shell'    { Start-Process $script:PsBin -ArgumentList '-NoProfile','-NoExit'; $msg = 'shell opened' }
+            }
+
+            $context.Response.StatusCode = 200
+            $buffer = [Text.Encoding]::UTF8.GetBytes($msg)
+            $context.Response.OutputStream.Write($buffer, 0, $buffer.Length)
+            $context.Response.Close()
+        } catch { Write-Verbose "HTTP handler error: $_" }
+
+        # Start waiting for next request
+        try { $script:_httpAsync = $script:HttpListener.BeginGetContext($null, $null) }
+        catch { Write-Verbose "HTTP listener restart error: $_" }
     }
-}
 
-function Switch-DarkMode {
-    $script:IsDarkMode = -not $script:IsDarkMode
-    $bg  = if ($script:IsDarkMode) { $script:DarkGradientTop } else { $script:GradientTop }
-    $fg  = if ($script:IsDarkMode) { $TextDark }  else { $TextLight }
-    $form.BackColor          = $bg
-    $cardPanel.BackColor     = if ($script:IsDarkMode) { $DarkCard } else { $LightCard }
-    $btnDark.BackColor       = $bg
-    $btnDark.ForeColor       = $fg
-    $statusLabel.ForeColor   = $fg
-    $logo.ForeColor          = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(100, 180, 255) } else { $LightBlue }
-    $subtitleLabel.ForeColor = if ($script:IsDarkMode) { [System.Drawing.Color]::Silver } else { [System.Drawing.Color]::Gray }
-    $deviceLabel.ForeColor   = if ($script:IsDarkMode) { [System.Drawing.Color]::Silver } else { [System.Drawing.Color]::FromArgb(100, 100, 100) }
-    $deviceLabel.BackColor   = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(50, 50, 55) } else { [System.Drawing.Color]::FromArgb(245, 247, 250) }
-    $f8Hint.BackColor        = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
-    $f8Hint.ForeColor        = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(120, 120, 130) } else { [System.Drawing.Color]::FromArgb(120, 130, 150) }
-    $brandLabel.BackColor    = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
-    $brandLabel.ForeColor    = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(120, 120, 130) } else { [System.Drawing.Color]::FromArgb(120, 130, 150) }
-    $btnDark.Text            = if ($script:IsDarkMode) { [char]0x2600 } else { [char]0x263D }
-    $form.Invalidate()
-    $form.Refresh()
-}
-$btnDark.Add_Click({ Switch-DarkMode })
+    # ── Process pending actions from the HTML UI ────────────────────────
+    if ($script:PendingAction) {
+        $a = $script:PendingAction
+        $script:PendingAction = $null
 
-# ── Fade-in timer ───────────────────────────────────────────────────────────
-# Smoothly ramps form opacity from 0 → 1 over ~1 second.  Started in the
-# Form.Shown handler, runs only once at startup.
-$script:fadeInTimer = New-Object System.Windows.Forms.Timer
-$script:fadeInTimer.Interval = 16          # ~60 fps
-$script:fadeInTimer.Add_Tick({
-    $script:fadeOpacity = [Math]::Min(1.0, $script:fadeOpacity + 0.06)
-    $form.Opacity = $script:fadeOpacity
-    if ($script:fadeOpacity -ge 1.0) { $script:fadeInTimer.Stop() }
-})
-
-# ── Live status IPC from AmpCloud.ps1 ──────────────────────────────────────
-# AmpCloud.ps1 writes progress to a JSON file; we poll it to update the UI
-# so the user sees real-time imaging status instead of a static spinner.
-$script:StatusFile = "X:\AmpCloud-Status.json"
-
-$script:uiUpdateTimer = New-Object System.Windows.Forms.Timer
-$script:uiUpdateTimer.Interval = 650
-$script:uiUpdateTimer.Add_Tick({
-    if (-not (Test-Path $script:StatusFile)) { return }
-    try {
-        $status = Get-Content $script:StatusFile -Raw -ErrorAction SilentlyContinue |
-                  ConvertFrom-Json
-        if ($status) {
-            if ($status.Message) {
-                Write-Status $status.Message 'Cyan'
+        switch ($a) {
+            'SHOW_WIFI' {
+                $wifiConnected = Show-WiFiSelector
+                if ($wifiConnected) { ProceedToEngine } else { Show-Failure }
             }
-            if ($status.Progress -gt 0) {
-                $detail = if ($status.Detail) { $status.Detail } else { $status.Message }
-                $progressText.Text = "$detail  $($script:BulletChar)  $($status.Progress)%"
-            }
-            if ($status.Step -gt 0) {
-                Update-Step $status.Step
-            }
-            if ($status.Done) {
-                $ringTimer.Stop()
+            'RETRY' {
+                if (Test-InternetConnectivity) { ProceedToEngine } else { Show-Failure }
             }
         }
-    } catch { Write-Verbose "Status JSON parse error: $_" }
+    }
 })
+$script:actionTimer.Start()
 #endregion
 
-#region ── Final Completion Screen (fullscreen) ─────────────────────────────
-function Show-CompletionScreen {
-    Invoke-Sound 1200 400
-    $finalForm = New-Object System.Windows.Forms.Form
-    $finalForm.Text = $S.Complete
-    $finalForm.FormBorderStyle = "None"
-    $finalForm.WindowState = "Maximized"
-    $fBg = if ($script:IsDarkMode) { $script:DarkGradientTop } else { $script:GradientTop }
-    $finalForm.BackColor = $fBg
-    $finalForm.Font = $BodyFont
-
-    # Double-buffer the final form for gradient painting
-    try {
-        $fType = $finalForm.GetType()
-        $fDb   = $fType.GetProperty('DoubleBuffered',
-            [System.Reflection.BindingFlags]'Instance,NonPublic')
-        if ($fDb) { $fDb.SetValue($finalForm, $true, $null) }
-    } catch { Write-Verbose "Final form double-buffering unavailable: $_" }
-
-    # F8 command prompt shortcut (same as main form)
-    $finalForm.KeyPreview = $true
-    $finalForm.Add_KeyDown({
-        if ($_.KeyCode -eq [System.Windows.Forms.Keys]::F8) {
-            Start-Process $script:PsBin -ArgumentList '-NoProfile', '-NoExit'
-        }
-    })
-
-    # ── Card panel for completion content ────────────────────────────────────
-    $fCard = New-Object System.Windows.Forms.Panel
-    $fCard.BackColor = if ($script:IsDarkMode) { $DarkCard } else { $LightCard }
-    try {
-        $fcType = $fCard.GetType()
-        $fcDb   = $fcType.GetProperty('DoubleBuffered',
-            [System.Reflection.BindingFlags]'Instance,NonPublic')
-        if ($fcDb) { $fcDb.SetValue($fCard, $true, $null) }
-    } catch { Write-Verbose "Card double-buffering unavailable: $_" }
-    $finalForm.Controls.Add($fCard)
-
-    # Rounded corners
-    $fCard.Add_SizeChanged({
-        if ($fCard.Width -le 0 -or $fCard.Height -le 0) { return }
-        $p = New-RoundedRectPath -X 0 -Y 0 -W $fCard.Width -H $fCard.Height -Radius $script:CardRadius
-        if ($fCard.Region) { $fCard.Region.Dispose() }
-        $fCard.Region = New-Object System.Drawing.Region($p)
-        $p.Dispose()
-    })
-
-    # Gradient / background-image + shadow Paint handler
-    $finalForm.Add_Paint({
-        $g  = $_.Graphics
-        $fw = $finalForm.ClientSize.Width
-        $fh = $finalForm.ClientSize.Height
-        if ($fw -le 0 -or $fh -le 0) { return }
-        if ($null -ne $script:BackgroundImage -and -not $script:IsDarkMode) {
-            $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-            $g.DrawImage($script:BackgroundImage, 0, 0, $fw, $fh)
-        } else {
-            $gt = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
-            $gb = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
-            $gr = New-Object System.Drawing.Rectangle(0, 0, $fw, $fh)
-            $gBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
-                       $gr, $gt, $gb,
-                       [System.Drawing.Drawing2D.LinearGradientMode]::Vertical)
-            $g.FillRectangle($gBrush, $gr)
-            $gBrush.Dispose()
-        }
-        if ($fCard.Width -gt 0 -and $fCard.Height -gt 0) {
-            $g.SmoothingMode = 'AntiAlias'
-            $sp = New-RoundedRectPath -X ($fCard.Left + 4) -Y ($fCard.Top + 4) `
-                                       -W $fCard.Width -H $fCard.Height -Radius $script:CardRadius
-            $sb = New-Object System.Drawing.SolidBrush($script:CardShadowColor)
-            $g.FillPath($sb, $sp)
-            $sb.Dispose(); $sp.Dispose()
-        }
-    })
-
-    # ── Checkmark illustration on card ──────────────────────────────────────
-    $fCard.Add_Paint({
-        $g = $_.Graphics
-        $g.SmoothingMode = 'AntiAlias'
-        $fcx = [int]($fCard.Width / 2)
-        $fcy = 50
-        $circBrush = New-Object System.Drawing.SolidBrush($script:IllustGreen)
-        $g.FillEllipse($circBrush, ($fcx - 30), ($fcy - 30), 60, 60)
-        $circBrush.Dispose()
-        if ($null -ne $script:IconFont) {
-            $isf = New-Object System.Drawing.StringFormat
-            $isf.Alignment     = 'Center'
-            $isf.LineAlignment = 'Center'
-            $ir = New-Object System.Drawing.RectangleF(($fcx - 30), ($fcy - 30), 60, 60)
-            $g.DrawString([string][char]0xE73E, $script:IconFont,
-                [System.Drawing.Brushes]::White, $ir, $isf)
-            $isf.Dispose()
-        } else {
-            $checkPen = New-Object System.Drawing.Pen([System.Drawing.Color]::White, 3)
-            $checkPen.StartCap = 'Round'; $checkPen.EndCap = 'Round'
-            $ir = New-Object System.Drawing.Rectangle(($fcx - 30), ($fcy - 30), 60, 60)
-            Invoke-CheckmarkIcon -Graphics $g -Rect $ir -Pen $checkPen
-            $checkPen.Dispose()
-        }
-    })
-
-    $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = "$($S.Complete)`n`nAmpCloud imaging engine is ready."
-    $lbl.Font = $HeroFont
-    $lbl.ForeColor = if ($script:IsDarkMode) { $TextDark } else { $TextLight }
-    $lbl.TextAlign = "MiddleCenter"
-    $lbl.AutoSize = $false
-    $fCard.Controls.Add($lbl)
-
-    $btnReboot = New-Object System.Windows.Forms.Button
-    $btnReboot.Text      = $S.Reboot
-    $btnReboot.Size      = New-Object System.Drawing.Size(200, 52)
-    $btnReboot.BackColor = [System.Drawing.Color]::FromArgb(16, 124, 16)
-    $btnReboot.ForeColor = [System.Drawing.Color]::White
-    $btnReboot.FlatStyle = "Flat"
-    $btnReboot.FlatAppearance.BorderSize = 0
-    $btnReboot.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
-    $fCard.Controls.Add($btnReboot)
-
-    $btnPower = New-Object System.Windows.Forms.Button
-    $btnPower.Text      = $S.PowerOff
-    $btnPower.Size      = New-Object System.Drawing.Size(200, 52)
-    $btnPower.BackColor = [System.Drawing.Color]::FromArgb(196, 43, 28)
-    $btnPower.ForeColor = [System.Drawing.Color]::White
-    $btnPower.FlatStyle = "Flat"
-    $btnPower.FlatAppearance.BorderSize = 0
-    $btnPower.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
-    $fCard.Controls.Add($btnPower)
-
-    $btnShell = New-Object System.Windows.Forms.Button
-    $btnShell.Text     = $S.Shell
-    $btnShell.Size     = New-Object System.Drawing.Size(200, 52)
-    $btnShell.BackColor = [System.Drawing.Color]::FromArgb(230, 230, 230)
-    $btnShell.ForeColor = $TextLight
-    $btnShell.FlatStyle = "Flat"
-    $btnShell.FlatAppearance.BorderSize = 0
-    $btnShell.Font = New-Object System.Drawing.Font("Segoe UI", 11)
-    $fCard.Controls.Add($btnShell)
-
-    $btnReboot.Add_Click({ Restart-Computer -Force })
-    $btnPower.Add_Click({ Stop-Computer -Force })
-    $btnShell.Add_Click({
-        $finalForm.Close()
-        & $script:PsBin -NoProfile -NoExit
-    })
-
-    $f8HintFinal = New-Object System.Windows.Forms.Label
-    $f8HintFinal.Text = "Press F8 for command prompt"
-    $f8HintFinal.Font = $SmallFont
-    $f8HintFinal.ForeColor = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(120, 120, 130) } else { [System.Drawing.Color]::FromArgb(120, 130, 150) }
-    $f8HintFinal.BackColor = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
-    $f8HintFinal.AutoSize = $true
-    $finalForm.Controls.Add($f8HintFinal)
-
-    # Company logo (bottom-right)
-    $brandFinal = New-Object System.Windows.Forms.Label
-    $brandFinal.Text      = 'ampliosoft'
-    $brandFinal.Font      = New-Object System.Drawing.Font('Segoe UI', 9)
-    $brandFinal.ForeColor = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(120, 120, 130) } else { [System.Drawing.Color]::FromArgb(120, 130, 150) }
-    $brandFinal.BackColor = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
-    $brandFinal.AutoSize  = $true
-    $finalForm.Controls.Add($brandFinal)
-
-    # Centre card + controls on resize
-    $finalForm.Add_Resize({
-        $fw = $finalForm.ClientSize.Width
-        $fh = $finalForm.ClientSize.Height
-        $cW = [Math]::Min(720, $fw - 100)
-        $cH = 320
-        $fCard.SetBounds([int](($fw - $cW) / 2), [int](($fh - $cH) / 2), $cW, $cH)
-        $ccx = [int]($fCard.Width / 2)
-        $lbl.SetBounds(($ccx - 300), 90, 600, 100)
-        $gap = 16
-        $totalBtnW = 200 * 3 + $gap * 2
-        $bx = [int]($ccx - $totalBtnW / 2)
-        $by = 220
-        $btnReboot.Location = New-Object System.Drawing.Point($bx, $by)
-        $btnPower.Location  = New-Object System.Drawing.Point(($bx + 200 + $gap), $by)
-        $btnShell.Location  = New-Object System.Drawing.Point(($bx + 400 + $gap * 2), $by)
-        $f8HintFinal.Location = New-Object System.Drawing.Point(16, ($fh - 30))
-        $brandFinal.Location  = New-Object System.Drawing.Point(($fw - $brandFinal.Width - 16), ($fh - 30))
-    })
-
-    $null = $finalForm.ShowDialog()
-}
-#endregion
 
 #region ── Main Flow ─────────────────────────────────────────────────────────
 $script:EngineStarted = $false
@@ -1363,8 +613,10 @@ function Show-ConfigurationMenu {
 
     # ── Build the unified dialog ─────────────────────────────────────────────
     $accentBlue = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $edGradTop  = if ($script:IsDarkMode) { $script:DarkGradientTop }    else { $script:GradientTop }
-    $edGradBot  = if ($script:IsDarkMode) { $script:DarkGradientBottom } else { $script:GradientBottom }
+    # Gradient colours (inlined — the script-level gradient variables were removed
+    # along with the main WinForms form; only dialog colours are kept).
+    $edGradTop  = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(25, 25, 30) }    else { [System.Drawing.Color]::FromArgb(218, 232, 252) }
+    $edGradBot  = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(38, 38, 44) } else { [System.Drawing.Color]::FromArgb(234, 240, 250) }
     $edCardBg   = if ($script:IsDarkMode) { $DarkCard }     else { $LightCard }
     $edFg       = if ($script:IsDarkMode) { $TextDark }     else { [System.Drawing.Color]::FromArgb(32, 32, 32) }
     $edSubtle   = if ($script:IsDarkMode) { [System.Drawing.Color]::Silver } else { [System.Drawing.Color]::FromArgb(100, 100, 100) }
@@ -2260,8 +1512,6 @@ function ProceedToEngine {
     Write-Status $S.Connected 'Green'
     Update-HtmlUi -Message $S.Connected -Step 3
     Invoke-Sound 900 300
-    $ringPanel.Visible = $true
-    $ringTimer.Start()
 
     # ── M365 authentication gate ────────────────────────────────────────────
     # When Config/auth.json has requireAuth = true, the operator must sign in
@@ -2273,8 +1523,6 @@ function ProceedToEngine {
     $authPassed = Invoke-M365Auth
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect
-        $ringTimer.Stop()
-        $ringPanel.Visible = $false
         return
     }
 
@@ -2383,9 +1631,6 @@ function ProceedToEngine {
 
         $engineProc = Start-Process -FilePath $script:PsBin -ArgumentList $psArgs -WindowStyle Hidden -PassThru
 
-        # Start polling the status file so the UI shows real-time progress.
-        $script:uiUpdateTimer.Start()
-
         Write-Status $S.Imaging 'Cyan'
         while (-not $engineProc.HasExited) {
             [System.Windows.Forms.Application]::DoEvents()
@@ -2393,37 +1638,17 @@ function ProceedToEngine {
         }
         if ($engineProc.ExitCode -ne 0) { $engineFailed = $true }
     } catch {
-        # Engine already printed diagnostics; close the UI so the console
-        # is usable.  The -NoExit PowerShell host from ampcloud-start.cmd
-        # provides the interactive prompt for troubleshooting.
+        # Engine already printed diagnostics.  The Bootstrap message pump
+        # keeps running so interactive troubleshooting is possible.
         $engineFailed = $true
     }
 
-    $script:uiUpdateTimer.Stop()
-    $ringTimer.Stop()
     Stop-Transcript -ErrorAction SilentlyContinue
-    $form.Close()
 
     if (-not $engineFailed) {
-        Show-CompletionScreen
+        Invoke-Sound 1200 400
+        Update-HtmlUi -Message $S.Complete -Step 4 -Done
     }
-}
-
-function Show-Failure {
-    Invoke-Sound 400 600
-    Write-Status "Could not connect to the internet.`nPlease check your network." 'Red'
-    $btnRetry.Visible = $true
-    $btnRetry.Add_Click({
-        $btnRetry.Visible = $false
-        $hasInternet = Test-InternetConnectivity
-        if ($hasInternet) {
-            ProceedToEngine
-        } else {
-            # Close the form; the -NoExit PowerShell host from
-            # ampcloud-start.cmd provides the interactive prompt.
-            $form.Close()
-        }
-    })
 }
 
 $script:connectCheckTimer = New-Object System.Windows.Forms.Timer
@@ -2543,21 +1768,8 @@ $script:initTimer.Add_Tick({
                 ProceedToEngine
             } else {
                 Update-Step 2
-                $ringTimer.Stop()
-                $ringPanel.Visible = $false
                 Write-Status $S.StatusNoNet 'Yellow'
-                Update-HtmlUi -Message $S.StatusNoNet -Step 2
-                $btnWiFi.Visible = $true
-                $btnWiFi.Add_Click({
-                    $script:connectCheckTimer.Stop()
-                    $btnWiFi.Visible = $false
-                    $ringPanel.Visible = $true
-                    $ringTimer.Start()
-                    $wifiConnected = Show-WiFiSelector
-                    $ringTimer.Stop()
-                    $ringPanel.Visible = $false
-                    if ($wifiConnected) { ProceedToEngine } else { Show-Failure }
-                })
+                Update-HtmlUi -Message $S.StatusNoNet -Step 2 -ShowWiFi -ShowRetry
 
                 # Periodically re-check wired connectivity so a late DHCP
                 # lease or cable plug-in proceeds without manual action.
@@ -2565,7 +1777,6 @@ $script:initTimer.Add_Tick({
                 $script:connectCheckTimer.Add_Tick({
                     if (Test-InternetConnectivity) {
                         $script:connectCheckTimer.Stop()
-                        $btnWiFi.Visible = $false
                         ProceedToEngine
                     }
                 })
@@ -2575,18 +1786,23 @@ $script:initTimer.Add_Tick({
     }
 })
 
-$form.Add_Shown({
-    Set-ControlLayout
-    Update-Step 1
-    Write-Status $S.StatusInit 'Cyan'
-    $ringPanel.Visible = $true
-    $ringTimer.Start()
-    $script:initTimer.Start()
-    $script:fadeInTimer.Start()
-})
+# ── Start the init state machine ────────────────────────────────────────────
+Update-Step 1
+Write-Status $S.StatusInit 'Cyan'
+Update-HtmlUi -Message $S.StatusInit -Step 1
+$script:initTimer.Start()
 
-# Launch
+# ── Main message pump ──────────────────────────────────────────────────────
+# Replaces the old $form.ShowDialog().  The DoEvents loop keeps WinForms
+# timers and modal dialogs functional without a visible form.
+# The loop exits when $script:ExitMainLoop is set (e.g. after imaging
+# completes or a fatal error occurs).
+$script:ExitMainLoop = $false
 [System.Windows.Forms.Application]::EnableVisualStyles()
-$null = $form.ShowDialog()
+while (-not $script:ExitMainLoop) {
+    [System.Windows.Forms.Application]::DoEvents()
+    Start-Sleep -Milliseconds 50
+}
+try { $script:HttpListener.Stop() } catch {}
 Stop-Transcript -ErrorAction SilentlyContinue
 #endregion

@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AmpCloud</title>
+    <style>
+        /* ── Reset & base ──────────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-top:       #dae8fc;
+            --bg-bottom:    #eaf0fa;
+            --bg-dark-top:  #1a1a2e;
+            --bg-dark-bot:  #16213e;
+            --card:         #ffffff;
+            --card-dark:    rgba(22, 33, 62, 0.92);
+            --card-shadow:  rgba(0, 0, 0, 0.08);
+            --accent:       #0f7ae5;
+            --accent-glow:  rgba(15, 122, 229, 0.25);
+            --text:         #1a1a2e;
+            --text-dark:    #e0e0e0;
+            --text-muted:   #7b8da6;
+            --border:       #2a3a5c;
+            --success:      #107c10;
+            --error:        #d13438;
+            --radius:       16px;
+            --font:         'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        html, body {
+            height: 100%;
+            font-family: var(--font);
+            overflow: hidden;
+            user-select: none;
+        }
+
+        /* ── Gradient backdrop ─────────────────────────────────────── */
+        .backdrop {
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.4s ease;
+        }
+        .backdrop.dark {
+            background: linear-gradient(180deg, var(--bg-dark-top) 0%, var(--bg-dark-bot) 100%);
+        }
+
+        /* ── Card ──────────────────────────────────────────────────── */
+        .card {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 48px 52px 40px;
+            width: 560px;
+            max-width: 92vw;
+            text-align: center;
+            box-shadow: 0 8px 40px var(--card-shadow), 0 0 0 1px rgba(0,0,0,0.04);
+            position: relative;
+            transition: background 0.4s ease, box-shadow 0.4s ease;
+        }
+        .dark .card {
+            background: var(--card-dark);
+            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
+        }
+
+        /* ── Dark-mode toggle ─────────────────────────────────────── */
+        .dark-toggle {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            width: 36px;
+            height: 36px;
+            border: none;
+            border-radius: 50%;
+            background: transparent;
+            color: rgba(0,0,0,0.35);
+            font-size: 18px;
+            cursor: pointer;
+            z-index: 10;
+            transition: color 0.3s ease;
+        }
+        .dark .dark-toggle { color: rgba(255,255,255,0.3); }
+        .dark-toggle:hover { color: var(--accent); }
+
+        /* ── Logo ──────────────────────────────────────────────────── */
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 1px;
+            margin-bottom: 32px;
+        }
+        .logo-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, var(--accent) 0%, #5c7cfa 100%);
+            border-radius: 8px;
+        }
+        .logo-icon svg { width: 20px; height: 20px; }
+
+        /* ── Hero illustration ─────────────────────────────────────── */
+        .hero {
+            margin: 0 auto 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .hero svg { width: 180px; height: 120px; }
+
+        /* ── Spinner ring ──────────────────────────────────────────── */
+        .spinner-wrap {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(15, 122, 229, 0.15);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        .spinner.done {
+            animation: none;
+            border-color: var(--success);
+            border-top-color: var(--success);
+        }
+        .spinner.error {
+            animation: none;
+            border-color: var(--error);
+            border-top-color: var(--error);
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Step indicators (Autopilot-style) ─────────────────────── */
+        .steps {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 0;
+            margin-bottom: 28px;
+        }
+        .step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            width: 80px;
+        }
+        .step-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            border: 2px solid #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.3s ease, background 0.3s ease;
+            background: transparent;
+        }
+        .step-icon svg { width: 14px; height: 14px; display: none; }
+        .dark .step-icon { border-color: #3a3a4e; }
+        .step.active .step-icon {
+            border-color: var(--accent);
+            background: rgba(15, 122, 229, 0.08);
+        }
+        .step.completed .step-icon {
+            border-color: var(--success);
+            background: var(--success);
+        }
+        .step.completed .step-icon svg { display: block; }
+        .step-label {
+            font-size: 11px;
+            color: #999;
+            font-weight: 500;
+            transition: color 0.3s ease;
+        }
+        .step.active .step-label { color: var(--accent); font-weight: 600; }
+        .step.completed .step-label { color: var(--success); }
+        .dark .step-label { color: var(--text-muted); }
+        .dark .step.active .step-label { color: var(--accent); }
+        .dark .step.completed .step-label { color: var(--success); }
+        .step-line {
+            width: 32px;
+            height: 2px;
+            background: #ddd;
+            margin: 0 4px;
+            margin-top: 13px;
+            flex-shrink: 0;
+            transition: background 0.3s ease;
+        }
+        .dark .step-line { background: #2a3a5c; }
+        .step-line.completed { background: var(--success); }
+
+        /* ── Status message ────────────────────────────────────────── */
+        .status {
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--text);
+            margin-bottom: 8px;
+            min-height: 24px;
+            transition: color 0.3s ease;
+        }
+        .dark .status { color: var(--text-dark); }
+        .status.error { color: var(--error); }
+
+        /* ── Progress bar ──────────────────────────────────────────── */
+        .progress-container {
+            margin-top: 16px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: rgba(0, 0, 0, 0.06);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .dark .progress-bar { background: rgba(255, 255, 255, 0.08); }
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--accent), #5c7cfa);
+            border-radius: 3px;
+            transition: width 0.4s ease;
+        }
+        .progress-text {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        /* ── Detail text ───────────────────────────────────────────── */
+        .detail {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 6px;
+            min-height: 18px;
+        }
+
+        /* ── Action buttons ────────────────────────────────────────── */
+        .actions {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .actions.hidden { display: none; }
+        .btn {
+            border: none;
+            border-radius: 6px;
+            padding: 12px 32px;
+            font-family: var(--font);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.1s ease, opacity 0.2s ease;
+            min-width: 200px;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+        .btn-primary:hover { background: #0a6abf; }
+        .btn-secondary {
+            background: rgba(0,0,0,0.06);
+            color: var(--text);
+        }
+        .dark .btn-secondary {
+            background: rgba(255,255,255,0.08);
+            color: var(--text-dark);
+        }
+        .btn-secondary:hover { background: rgba(0,0,0,0.10); }
+        .dark .btn-secondary:hover { background: rgba(255,255,255,0.12); }
+        .btn-danger {
+            background: var(--error);
+            color: #fff;
+        }
+        .btn-danger:hover { background: #b02a2d; }
+        .btn.hidden { display: none; }
+
+        /* ── Bottom labels ─────────────────────────────────────────── */
+        .brand, .hint {
+            position: fixed;
+            font-size: 11px;
+            color: rgba(0, 0, 0, 0.25);
+            transition: color 0.4s ease;
+        }
+        .dark .brand, .dark .hint { color: rgba(255, 255, 255, 0.15); }
+        .brand { bottom: 12px; right: 16px; }
+        .hint  { bottom: 12px; left: 16px; }
+
+        /* ── Footer action buttons (Reboot / Shutdown / Shell) ──── */
+        .footer-actions {
+            position: fixed;
+            bottom: 36px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 12px;
+        }
+        .footer-actions.hidden { display: none; }
+        .btn-small {
+            border: none;
+            border-radius: 4px;
+            padding: 6px 16px;
+            font-family: var(--font);
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            background: rgba(0,0,0,0.05);
+            color: var(--text-muted);
+            transition: background 0.2s ease;
+        }
+        .dark .btn-small {
+            background: rgba(255,255,255,0.06);
+            color: var(--text-muted);
+        }
+        .btn-small:hover { background: rgba(0,0,0,0.10); }
+        .dark .btn-small:hover { background: rgba(255,255,255,0.10); }
+
+        /* ── Fade-in ───────────────────────────────────────────────── */
+        body { opacity: 0; animation: fadeIn 0.8s ease forwards; }
+        @keyframes fadeIn { to { opacity: 1; } }
+    </style>
+</head>
+<body>
+    <!-- Shared SVG symbol for step checkmarks -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+        <symbol id="checkmark" viewBox="0 0 14 14"><path d="M3 7l2.8 2.8L11 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    </svg>
+
+    <!-- Dark-mode toggle -->
+    <button class="dark-toggle" id="darkToggle" title="Toggle dark mode">&#9789;</button>
+
+    <div class="backdrop dark" id="backdrop">
+        <div class="card">
+            <!-- Logo -->
+            <div class="logo">
+                <span class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M6.5 18.5C3.46 18.5 1 16.04 1 13c0-2.6 1.81-4.77 4.24-5.33A7.5 7.5 0 0 1 19.22 9.5 5.5 5.5 0 0 1 18 20.5H6.5Z" fill="#fff"/>
+                    </svg>
+                </span>
+                <span>AmpCloud</span>
+            </div>
+
+            <!-- Hero illustration — device setup scene -->
+            <div class="hero">
+                <svg viewBox="0 0 180 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Monitor -->
+                    <rect x="40" y="16" width="100" height="64" rx="6" fill="#0078d4" opacity="0.12" stroke="#0078d4" stroke-width="2"/>
+                    <rect x="48" y="24" width="84" height="48" rx="2" fill="#0078d4" opacity="0.06"/>
+                    <!-- Screen content: cloud + checkmark -->
+                    <path d="M78 44c0-5.52 4.48-10 10-10 4.25 0 7.88 2.66 9.33 6.4A7 7 0 0 1 96 54H80a6 6 0 0 1-2-11.66Z" fill="#0078d4" opacity="0.35"/>
+                    <circle cx="90" cy="48" r="5" fill="#107c10" opacity="0.9"/>
+                    <path d="M87.5 48l1.8 1.8 3.2-3.6" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <!-- Stand -->
+                    <rect x="82" y="80" width="16" height="4" rx="1" fill="#0078d4" opacity="0.3"/>
+                    <rect x="87" y="76" width="6" height="8" rx="1" fill="#0078d4" opacity="0.2"/>
+                    <!-- Globe -->
+                    <circle cx="30" cy="38" r="14" fill="#0078d4" opacity="0.10" stroke="#0078d4" stroke-width="1.5"/>
+                    <ellipse cx="30" cy="38" rx="6" ry="14" fill="none" stroke="#0078d4" stroke-width="1" opacity="0.4"/>
+                    <line x1="16" y1="38" x2="44" y2="38" stroke="#0078d4" stroke-width="1" opacity="0.3"/>
+                    <!-- Cloud -->
+                    <path d="M146 30c0-4.42 3.58-8 8-8a8 8 0 0 1 7.46 5.12A5.6 5.6 0 0 1 156 38h-8a6 6 0 0 1-2-11.66Z" fill="#7b2ff7" opacity="0.18" stroke="#7b2ff7" stroke-width="1.5"/>
+                    <!-- Connection arrows -->
+                    <path d="M44 40h8" stroke="#0078d4" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.4"/>
+                    <path d="M136 40h10" stroke="#7b2ff7" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.4"/>
+                    <!-- Wi-Fi waves above monitor -->
+                    <path d="M84 12a12 12 0 0 1 12 0" stroke="#0078d4" stroke-width="1.2" stroke-linecap="round" fill="none" opacity="0.3"/>
+                    <path d="M87 9a8 8 0 0 1 6 0" stroke="#0078d4" stroke-width="1.2" stroke-linecap="round" fill="none" opacity="0.2"/>
+                </svg>
+            </div>
+
+            <!-- Spinner -->
+            <div class="spinner-wrap">
+                <div class="spinner" id="spinner"></div>
+            </div>
+
+            <!-- Step indicators (Autopilot-style with checkmarks) -->
+            <div class="steps" id="steps">
+                <div class="step active" data-step="1">
+                    <span class="step-icon">
+                        <svg viewBox="0 0 14 14" fill="none"><use href="#checkmark"/></svg>
+                    </span>
+                    <span class="step-label">Network</span>
+                </div>
+                <div class="step-line" id="line1"></div>
+                <div class="step" data-step="2">
+                    <span class="step-icon">
+                        <svg viewBox="0 0 14 14" fill="none"><use href="#checkmark"/></svg>
+                    </span>
+                    <span class="step-label">Connect</span>
+                </div>
+                <div class="step-line" id="line2"></div>
+                <div class="step" data-step="3">
+                    <span class="step-icon">
+                        <svg viewBox="0 0 14 14" fill="none"><use href="#checkmark"/></svg>
+                    </span>
+                    <span class="step-label">Sign in</span>
+                </div>
+                <div class="step-line" id="line3"></div>
+                <div class="step" data-step="4">
+                    <span class="step-icon">
+                        <svg viewBox="0 0 14 14" fill="none"><use href="#checkmark"/></svg>
+                    </span>
+                    <span class="step-label">Deploy</span>
+                </div>
+            </div>
+
+            <!-- Status message -->
+            <div class="status" id="status">Initialising network stack&#8230;</div>
+
+            <!-- Progress bar (hidden until progress > 0) -->
+            <div class="progress-container" id="progressContainer" style="display:none">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-text" id="progressText"></div>
+            </div>
+
+            <!-- Detail text -->
+            <div class="detail" id="detail"></div>
+
+            <!-- Action buttons (shown contextually) -->
+            <div class="actions hidden" id="actions">
+                <button class="btn btn-primary hidden" id="btnWiFi" onclick="sendAction('wifi')">Connect via WiFi</button>
+                <button class="btn btn-secondary hidden" id="btnRetry" onclick="sendAction('retry')">Retry</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer action buttons (always available) -->
+    <div class="footer-actions hidden" id="footerActions">
+        <button class="btn-small" onclick="sendAction('shell')">&#9000; Shell</button>
+        <button class="btn-small" onclick="sendAction('reboot')">&#8635; Reboot</button>
+        <button class="btn-small" onclick="sendAction('shutdown')">&#9211; Shutdown</button>
+    </div>
+
+    <span class="brand">AmpCloud &bull; Cloud Imaging Engine</span>
+    <span class="hint">Press F8 for command prompt</span>
+
+    <script>
+        /* ── AmpCloud Interactive UI ─────────────────────────────────
+         *  Polls X:\AmpCloud-Status.json (written by Bootstrap.ps1 and
+         *  AmpCloud.ps1) and updates the on-screen progress display.
+         *  Sends user actions to Bootstrap.ps1 via HTTP on localhost:8080.
+         *  Runs inside Edge in kiosk mode on WinPE.
+         *
+         *  X: is the standard WinPE ramdisk drive letter.
+         *  650ms poll interval matches the existing Progress UI cadence.
+         * ──────────────────────────────────────────────────────────── */
+
+        var STATUS_PATH = 'file:///X:/AmpCloud-Status.json';
+        var API_BASE    = 'http://localhost:8080';
+        var POLL_MS     = 650;
+        var lastStep    = 0;
+        var isDark      = true;
+
+        var elBackdrop  = document.getElementById('backdrop');
+        var elStatus    = document.getElementById('status');
+        var elDetail    = document.getElementById('detail');
+        var elProgress  = document.getElementById('progressContainer');
+        var elFill      = document.getElementById('progressFill');
+        var elText      = document.getElementById('progressText');
+        var elSpinner   = document.getElementById('spinner');
+        var elActions   = document.getElementById('actions');
+        var elBtnWiFi   = document.getElementById('btnWiFi');
+        var elBtnRetry  = document.getElementById('btnRetry');
+        var elFooter    = document.getElementById('footerActions');
+        var elDarkToggle= document.getElementById('darkToggle');
+        var steps       = document.querySelectorAll('#steps .step');
+        var lines       = [document.getElementById('line1'),
+                           document.getElementById('line2'),
+                           document.getElementById('line3')];
+
+        /* ── Dark-mode toggle ────────────────────────────────────── */
+        elDarkToggle.addEventListener('click', function () {
+            isDark = !isDark;
+            elBackdrop.classList.toggle('dark', isDark);
+            elDarkToggle.textContent = isDark ? '\u263D' : '\u2600';
+        });
+
+        /* ── Send action to Bootstrap.ps1 via HTTP API ───────────── */
+        function sendAction(action) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', API_BASE + '/' + action, true);
+            xhr.onerror = function () {};
+            try { xhr.send(); } catch (e) { /* ignore */ }
+        }
+
+        /* ── Update UI from status JSON ──────────────────────────── */
+        function updateUI(data) {
+            if (!data) return;
+
+            /* Status message */
+            if (data.Message) {
+                elStatus.textContent = data.Message;
+                elStatus.classList.remove('error');
+            }
+
+            /* Step indicator (1-4) */
+            if (data.Step > 0 && data.Step !== lastStep) {
+                lastStep = data.Step;
+                steps.forEach(function (s, i) {
+                    var n = i + 1;
+                    s.classList.remove('active', 'completed');
+                    if (n < data.Step)       s.classList.add('completed');
+                    else if (n === data.Step) s.classList.add('active');
+                });
+                lines.forEach(function (l, i) {
+                    if (i < data.Step - 1) l.classList.add('completed');
+                    else                   l.classList.remove('completed');
+                });
+            }
+
+            /* Progress bar */
+            if (data.Progress > 0) {
+                elProgress.style.display = 'block';
+                elFill.style.width = Math.min(data.Progress, 100) + '%';
+                var detail = data.Detail || data.Message || '';
+                elText.textContent = detail + '  \u2022  ' + data.Progress + '%';
+            } else {
+                elProgress.style.display = 'none';
+            }
+
+            /* Detail line (shown below status when no progress bar) */
+            if (data.Detail && data.Progress <= 0) {
+                elDetail.textContent = data.Detail;
+            } else if (!data.Detail) {
+                elDetail.textContent = '';
+            }
+
+            /* Show/hide WiFi & Retry buttons */
+            if (data.ShowWiFi) {
+                elActions.classList.remove('hidden');
+                elBtnWiFi.classList.remove('hidden');
+                elFooter.classList.remove('hidden');
+                elSpinner.classList.add('error');
+            } else {
+                elBtnWiFi.classList.add('hidden');
+            }
+
+            if (data.ShowRetry) {
+                elActions.classList.remove('hidden');
+                elBtnRetry.classList.remove('hidden');
+                elFooter.classList.remove('hidden');
+                elSpinner.classList.add('error');
+            } else {
+                elBtnRetry.classList.add('hidden');
+            }
+
+            /* Hide actions container when no buttons are visible */
+            if (!data.ShowWiFi && !data.ShowRetry) {
+                elActions.classList.add('hidden');
+                elSpinner.classList.remove('error');
+            }
+
+            /* Done flag */
+            if (data.Done) {
+                elSpinner.classList.remove('error');
+                elSpinner.classList.add('done');
+                elActions.classList.add('hidden');
+                elFooter.classList.remove('hidden');
+            }
+        }
+
+        /* ── Poll the status JSON written by PowerShell scripts ──── */
+        function pollStatus() {
+            var xhr = new XMLHttpRequest();
+            xhr.onload = function () {
+                try {
+                    if (xhr.responseText && xhr.responseText.trim()) {
+                        var data = JSON.parse(xhr.responseText);
+                        updateUI(data);
+                    }
+                } catch (e) { /* parse error — ignore */ }
+            };
+            /* onerror is expected when the file does not yet exist */
+            xhr.onerror = function () {};
+            try {
+                xhr.open('GET', STATUS_PATH, true);
+                xhr.send();
+            } catch (e) { /* ignore */ }
+        }
+
+        setInterval(pollStatus, POLL_MS);
+    </script>
+</body>
+</html>
