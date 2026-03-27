@@ -351,6 +351,21 @@ h3::before {
     margin-bottom: 4px;
     font-weight: 500;
 }
+/* Section heading inside parameters */
+.param-field-heading {
+    margin-top: 18px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+}
+.param-field-heading:first-child { margin-top: 0; }
+.param-heading-text {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--accent);
+}
 .param-field input[type="text"],
 .param-field input[type="number"],
 .param-field select {
