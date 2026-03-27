@@ -4,6 +4,21 @@
   "description": "Standard cloud-native Windows deployment via AmpCloud",
   "steps": [
     {
+      "id": "set-computer-name",
+      "name": "Set Computer Name",
+      "type": "SetComputerName",
+      "enabled": true,
+      "description": "Configure the Windows computer name with naming rules",
+      "continueOnError": true,
+      "parameters": {
+        "computerName": "",
+        "prefix": "AMP-",
+        "suffix": "",
+        "maxLength": 15,
+        "useSerialNumber": true
+      }
+    },
+    {
       "id": "partition-disk",
       "name": "Partition Disk 1",
       "type": "PartitionDisk",
@@ -102,21 +117,6 @@
       "continueOnError": true,
       "parameters": {
         "ccmSetupUrl": ""
-      }
-    },
-    {
-      "id": "set-computer-name",
-      "name": "Set Computer Name",
-      "type": "SetComputerName",
-      "enabled": true,
-      "description": "Configure the Windows computer name with naming rules",
-      "continueOnError": true,
-      "parameters": {
-        "computerName": "",
-        "prefix": "",
-        "suffix": "",
-        "maxLength": 15,
-        "useSerialNumber": false
       }
     },
     {
