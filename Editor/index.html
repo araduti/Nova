@@ -195,6 +195,27 @@
                     <input id="propGroup" type="text" placeholder="e.g. Configuration, Imaging, Drivers" list="groupSuggestions">
                     <datalist id="groupSuggestions"></datalist>
                 </div>
+
+                <!-- Condition section -->
+                <div id="conditionSection" class="condition-section" style="display:none;">
+                    <div class="condition-header">
+                        <span class="condition-header-label">&#9889; Condition</span>
+                        <button id="btnRemoveCondition" class="condition-remove-btn" title="Remove condition">&#10005;</button>
+                    </div>
+                    <div class="condition-body">
+                        <div class="condition-field">
+                            <label for="condType">Condition type</label>
+                            <select id="condType">
+                                <option value="variable">Task Sequence Variable</option>
+                                <option value="wmiQuery">WMI Query</option>
+                                <option value="registry">Registry Value</option>
+                            </select>
+                        </div>
+                        <div id="condFields"></div>
+                    </div>
+                </div>
+                <button id="btnAddCondition" class="btn-add-condition" style="display:none;" title="Add a condition to control when this step runs">&#9889; Add Condition</button>
+
                 <hr>
                 <div id="validationWarnings" class="validation-warnings" style="display:none;"></div>
                 <div class="param-header">

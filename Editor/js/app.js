@@ -221,6 +221,51 @@ const $jsonRawEditor = document.getElementById('jsonRawEditor');
 const $jsonRawTextarea = document.getElementById('jsonRawTextarea');
 const $jsonRawError = document.getElementById('jsonRawError');
 const $stepSearch   = document.getElementById('stepSearch');
+const $conditionSection = document.getElementById('conditionSection');
+const $condType     = document.getElementById('condType');
+const $condFields   = document.getElementById('condFields');
+const $btnAddCondition = document.getElementById('btnAddCondition');
+const $btnRemoveCondition = document.getElementById('btnRemoveCondition');
+
+/* ── Condition type definitions ───────────────────────────────────── */
+const CONDITION_DEFS = {
+    variable: {
+        label: 'Task Sequence Variable',
+        fields: [
+            { key: 'variable', label: 'Variable name', kind: 'text', hint: 'Environment or task sequence variable (e.g. FIRMWARE_TYPE, OSDComputerName)' },
+            { key: 'operator', label: 'Operator', kind: 'select', options: [
+                    { value: 'equals', label: 'Equals' },
+                    { value: 'notEquals', label: 'Not equals' },
+                    { value: 'contains', label: 'Contains' },
+                    { value: 'startsWith', label: 'Starts with' },
+                    { value: 'exists', label: 'Exists (is set)' },
+                    { value: 'notExists', label: 'Does not exist' }
+                ]},
+            { key: 'value', label: 'Value', kind: 'text', hint: 'Comparison value', hideWhenOp: ['exists', 'notExists'] }
+        ]
+    },
+    wmiQuery: {
+        label: 'WMI Query',
+        fields: [
+            { key: 'query', label: 'WMI query', kind: 'text', hint: 'WMI query (e.g. SELECT * FROM Win32_ComputerSystem WHERE Model LIKE \'%Virtual%\')' },
+            { key: 'namespace', label: 'Namespace', kind: 'text', hint: 'WMI namespace (default: root\\cimv2)' }
+        ]
+    },
+    registry: {
+        label: 'Registry Value',
+        fields: [
+            { key: 'registryPath', label: 'Registry path', kind: 'text', hint: 'Full registry path (e.g. HKLM:\\SOFTWARE\\Microsoft\\Windows)' },
+            { key: 'registryValue', label: 'Value name', kind: 'text', hint: 'Registry value name (leave empty to check key existence)' },
+            { key: 'operator', label: 'Operator', kind: 'select', options: [
+                    { value: 'exists', label: 'Exists' },
+                    { value: 'notExists', label: 'Does not exist' },
+                    { value: 'equals', label: 'Equals' },
+                    { value: 'notEquals', label: 'Not equals' }
+                ]},
+            { key: 'value', label: 'Expected value', kind: 'text', hint: 'Value to compare against', hideWhenOp: ['exists', 'notExists'] }
+        ]
+    }
+};
 
 /* ── Populate type <select> ───────────────────────────────────────── */
 STEP_TYPES.forEach(t => {
@@ -351,6 +396,19 @@ function validateStep(step) {
             if (!p.scriptUrls || (Array.isArray(p.scriptUrls) && p.scriptUrls.length === 0)) warnings.push('No script URLs configured');
             break;
     }
+    /* Validate condition if present */
+    var cond = step.condition;
+    if (cond && cond.type) {
+        if (cond.type === 'variable' && !cond.variable) {
+            warnings.push('Condition: variable name is empty');
+        }
+        if (cond.type === 'wmiQuery' && !cond.query) {
+            warnings.push('Condition: WMI query is empty');
+        }
+        if (cond.type === 'registry' && !cond.registryPath) {
+            warnings.push('Condition: registry path is empty');
+        }
+    }
     return warnings;
 }
 
@@ -455,6 +513,8 @@ function renderStepList() {
         const badge = STEP_BADGE_LABELS[step.type] || '?';
         const stepWarnings = validateStep(step);
         const warnHtml = stepWarnings.length > 0 ? '<span class="step-warning" title="' + escapeHtml(stepWarnings.join('; ')) + '">\u26A0</span>' : '';
+        const condHtml = step.condition && step.condition.type
+            ? '<span class="step-condition-icon" title="' + escapeHtml(getConditionSummary(step.condition)) + '">\u26A1</span>' : '';
 
         li.innerHTML =
             '<span class="step-drag-handle" title="Drag to reorder">&#8942;&#8942;</span>' +
@@ -463,7 +523,7 @@ function renderStepList() {
             '<div class="step-info">' +
                 '<div class="step-title">' + escapeHtml(step.name) + '</div>' +
                 '<div class="step-type-label">' + escapeHtml(typeMap[step.type] ? typeMap[step.type].label : step.type) + '</div>' +
-            '</div>' + warnHtml;
+            '</div>' + condHtml + warnHtml;
 
         li.addEventListener('click', (e) => handleStepClick(i, e));
 
@@ -518,6 +578,9 @@ function showPropertiesForIndex(index) {
         $propsEmpty.style.display = '';
         $propsEditor.style.display = 'none';
         if (jsonRawMode) hideJsonRawView();
+        /* Hide condition UI when nothing is selected */
+        if ($conditionSection) $conditionSection.style.display = 'none';
+        if ($btnAddCondition) $btnAddCondition.style.display = 'none';
         return;
     }
     $propsEmpty.style.display = 'none';
@@ -530,6 +593,7 @@ function showPropertiesForIndex(index) {
     $propContErr.checked = step.continueOnError === true;
     $propGroup.value = step.group || '';
     updateGroupSuggestions();
+    renderConditionUI(step);
     renderValidationWarnings();
     if (jsonRawMode) {
         showJsonRawView();
@@ -548,6 +612,151 @@ function updateGroupSuggestions() {
         const opt = document.createElement('option');
         opt.value = g;
         $groupSuggestions.appendChild(opt);
+    });
+}
+
+/* ── Condition UI ─────────────────────────────────────────────────── */
+
+/** Render the condition UI section for the currently selected step. */
+function renderConditionUI(step) {
+    if (!$conditionSection || !$btnAddCondition) return;
+    if (step.condition && step.condition.type) {
+        /* Show condition editor */
+        $conditionSection.style.display = '';
+        $btnAddCondition.style.display = 'none';
+        $condType.value = step.condition.type;
+        renderConditionFields(step.condition);
+    } else {
+        /* Show "Add Condition" button */
+        $conditionSection.style.display = 'none';
+        $btnAddCondition.style.display = '';
+    }
+}
+
+/** Render type-specific fields inside the condition body. */
+function renderConditionFields(condition) {
+    $condFields.innerHTML = '';
+    const def = CONDITION_DEFS[condition.type];
+    if (!def) return;
+
+    def.fields.forEach(f => {
+        const div = document.createElement('div');
+        div.className = 'condition-field';
+        div.dataset.condKey = f.key;
+
+        let inputHtml = '';
+        const val = condition[f.key] !== undefined ? condition[f.key] : '';
+
+        if (f.kind === 'select') {
+            const opts = f.options.map(o => {
+                const optVal = typeof o === 'object' ? o.value : o;
+                const optLabel = typeof o === 'object' ? o.label : o;
+                return '<option value="' + escapeHtml(optVal) + '"' + (optVal === val ? ' selected' : '') + '>' + escapeHtml(optLabel) + '</option>';
+            }).join('');
+            inputHtml = '<select data-cond-key="' + f.key + '">' + opts + '</select>';
+        } else {
+            inputHtml = '<input type="text" data-cond-key="' + f.key + '" value="' + escapeHtml(String(val)) + '"' +
+                (f.hint ? ' placeholder="' + escapeHtml(f.hint) + '"' : '') + '>';
+        }
+
+        div.innerHTML = '<label>' + escapeHtml(f.label) + '</label>' + inputHtml +
+            (f.hint ? '<div class="cond-hint">' + escapeHtml(f.hint) + '</div>' : '');
+
+        const input = div.querySelector('[data-cond-key]');
+        const evtType = f.kind === 'select' ? 'change' : 'input';
+        input.addEventListener(evtType, () => {
+            if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) return;
+            const step = taskSequence.steps[selectedIndex];
+            if (!step.condition) return;
+            step.condition[f.key] = input.value;
+            markDirty();
+            renderStepList();
+            /* Re-evaluate hideWhenOp visibility when operator changes */
+            if (f.key === 'operator') applyConditionVisibility(condition);
+        });
+
+        $condFields.appendChild(div);
+    });
+
+    applyConditionVisibility(condition);
+}
+
+/** Hide/show condition fields based on the current operator (hideWhenOp). */
+function applyConditionVisibility(condition) {
+    const def = CONDITION_DEFS[condition.type];
+    if (!def) return;
+    const operatorVal = condition.operator || '';
+    def.fields.forEach(f => {
+        if (!f.hideWhenOp) return;
+        const fieldDiv = $condFields.querySelector('[data-cond-key="' + f.key + '"]');
+        if (!fieldDiv) return;
+        const wrapper = fieldDiv.closest('.condition-field');
+        if (wrapper) wrapper.style.display = f.hideWhenOp.indexOf(operatorVal) >= 0 ? 'none' : '';
+    });
+}
+
+/** Build a human-readable summary of a condition for tooltips. */
+function getConditionSummary(condition) {
+    if (!condition || !condition.type) return '';
+    switch (condition.type) {
+        case 'variable': {
+            const v = condition.variable || '?';
+            const op = condition.operator || 'equals';
+            if (op === 'exists') return 'If $' + v + ' exists';
+            if (op === 'notExists') return 'If $' + v + ' does not exist';
+            return 'If $' + v + ' ' + op + ' "' + (condition.value || '') + '"';
+        }
+        case 'wmiQuery':
+            return 'If WMI query returns results';
+        case 'registry': {
+            const path = condition.registryPath || '?';
+            const op = condition.operator || 'exists';
+            if (op === 'exists') return 'If ' + path + ' exists';
+            if (op === 'notExists') return 'If ' + path + ' does not exist';
+            return 'If ' + path + ' ' + op + ' "' + (condition.value || '') + '"';
+        }
+        default:
+            return 'Conditional step';
+    }
+}
+
+/* Condition button event handlers */
+if ($btnAddCondition) {
+    $btnAddCondition.addEventListener('click', () => {
+        if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) return;
+        const step = taskSequence.steps[selectedIndex];
+        step.condition = { type: 'variable', variable: '', operator: 'equals', value: '' };
+        markDirty();
+        renderConditionUI(step);
+        renderStepList();
+    });
+}
+
+if ($btnRemoveCondition) {
+    $btnRemoveCondition.addEventListener('click', () => {
+        if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) return;
+        delete taskSequence.steps[selectedIndex].condition;
+        markDirty();
+        renderConditionUI(taskSequence.steps[selectedIndex]);
+        renderStepList();
+    });
+}
+
+if ($condType) {
+    $condType.addEventListener('change', () => {
+        if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) return;
+        const step = taskSequence.steps[selectedIndex];
+        const newType = $condType.value;
+        /* Reset condition fields when type changes */
+        const defaults = {
+            variable: { type: 'variable', variable: '', operator: 'equals', value: '' },
+            wmiQuery: { type: 'wmiQuery', query: '', namespace: '' },
+            registry: { type: 'registry', registryPath: '', registryValue: '', operator: 'exists', value: '' }
+        };
+        step.condition = defaults[newType] || { type: newType };
+        markDirty();
+        renderConditionFields(step.condition);
+        renderStepList();
     });
 }
 

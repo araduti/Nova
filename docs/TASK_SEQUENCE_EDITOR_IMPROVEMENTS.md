@@ -103,7 +103,7 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 |---------|-----|------|-----------------|
 | Task sequence overview | ✅ | ✅ | ✅ Dashboard page |
 | Step groups / folders | ✅ | ✅ | ✅ Collapsible groups |
-| Conditional logic (if/else) | ✅ | ✅ | 🔲 Future |
+| Conditional logic (if/else) | ✅ | ✅ | ✅ Condition UI + engine |
 | Variable substitution | ✅ | ✅ | 🔲 Partial (config modal) |
 | Error handling per step | ✅ | ✅ | ✅ continueOnError |
 | Restart / retry logic | ❌ | ✅ | 🔲 Future |
@@ -125,9 +125,15 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 ## 6. Future Feature Ideas
 
 ### Conditional Logic
-- **If/Else steps** — execute steps conditionally based on hardware, OS, or environment variables.
-- **WMI queries** — query hardware properties at runtime to make decisions.
-- **Registry checks** — check for existing software before installing drivers or agents.
+
+**Status:** ✅ Implemented
+
+- **Step conditions** — each step has an optional `condition` object that is evaluated at runtime. If the condition is not met, the step is skipped.
+- **Variable conditions** — check environment or task sequence variables with operators: equals, notEquals, contains, startsWith, exists, notExists.
+- **WMI queries** — query hardware properties at runtime (e.g., `SELECT * FROM Win32_ComputerSystem WHERE Model LIKE '%Virtual%'`).
+- **Registry checks** — check if a registry key/value exists or matches an expected value.
+- **Editor UI** — condition section in the properties panel with type picker, dynamic fields, and validation. Steps with conditions show a ⚡ indicator in the step list.
+- **Engine support** — `Test-StepCondition` function evaluates conditions before each step runs.
 
 ### Step Groups
 
@@ -194,7 +200,7 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 | ✅ ~~P1~~ | ~~Keyboard navigation~~ | Low | Medium |
 | ✅ ~~P1~~ | ~~Multi-select~~ | Medium | Medium |
 | ✅ ~~P2~~ | ~~Step groups / folders~~ | High | High |
-| 🟢 P2 | Conditional logic (if/else) | High | High |
+| ✅ ~~P2~~ | ~~Conditional logic (if/else)~~ | High | High |
 | 🟢 P2 | Visual unattend builder | High | Medium |
 | 🔵 P3 | Deployment simulation | High | Medium |
 | 🔵 P3 | TypeScript migration | High | Medium |
