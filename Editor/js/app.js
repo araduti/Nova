@@ -35,7 +35,7 @@ const STEP_TYPES = [
         defaults: { imageUrl: '', edition: 'Professional', language: 'en-us', architecture: 'x64' },
         fields: [
             { key: 'imageUrl', label: 'Image URL', kind: 'text', hint: 'Direct URL to .wim/.esd — leave empty to use products.xml' },
-            { key: 'edition', label: 'Edition', kind: 'select', options: ['Professional', 'Core', 'Education', 'Enterprise', 'ProfessionalWorkstation', 'ProfessionalEducation'] },
+            { key: 'edition', label: 'Edition', kind: 'text', hint: 'Edition name from products.xml (e.g. Professional, Core, Education, Enterprise)' },
             { key: 'language', label: 'Language', kind: 'text', hint: 'BCP-47 language tag (e.g. en-us, fr-fr)' },
             { key: 'architecture', label: 'Architecture', kind: 'select', options: ['x64', 'ARM64'] }
         ]
@@ -46,7 +46,7 @@ const STEP_TYPES = [
         description: 'Expand the Windows image onto the target partition',
         defaults: { edition: 'Professional' },
         fields: [
-            { key: 'edition', label: 'Edition', kind: 'select', options: ['Professional', 'Core', 'Education', 'Enterprise', 'ProfessionalWorkstation', 'ProfessionalEducation'] }
+            { key: 'edition', label: 'Edition', kind: 'text', hint: 'Edition name from products.xml (e.g. Professional, Core, Education, Enterprise)' }
         ]
     },
     {
@@ -95,12 +95,17 @@ const STEP_TYPES = [
         type: 'CustomizeOOBE',
         label: 'Customize OOBE',
         description: 'Apply unattend.xml for out-of-box experience customization',
-        defaults: { unattendSource: 'default', unattendContent: '', unattendUrl: '', unattendPath: '' },
+        defaults: { unattendSource: 'default', unattendContent: '', unattendUrl: '', unattendPath: '', inputLocale: '', systemLocale: '', userLocale: '', uiLanguage: '', computerName: '' },
         fields: [
             { key: 'unattendSource', label: 'Unattend source', kind: 'select', options: ['default', 'cloud'], hint: 'Use the built-in default editor or provide a cloud URL / local path' },
             { key: 'unattendContent', label: 'Unattend XML', kind: 'xml', hint: 'Edit the default unattend.xml content applied during OOBE', showWhen: { key: 'unattendSource', value: 'default' } },
             { key: 'unattendUrl', label: 'Unattend URL', kind: 'text', hint: 'URL to unattend.xml', showWhen: { key: 'unattendSource', value: 'cloud' } },
-            { key: 'unattendPath', label: 'Unattend path', kind: 'text', hint: 'Or local path inside WinPE (takes precedence)', showWhen: { key: 'unattendSource', value: 'cloud' } }
+            { key: 'unattendPath', label: 'Unattend path', kind: 'text', hint: 'Or local path inside WinPE (takes precedence)', showWhen: { key: 'unattendSource', value: 'cloud' } },
+            { key: 'inputLocale', label: 'Keyboard layout', kind: 'text', hint: 'Keyboard input locale (e.g. en-US, fr-FR, 0409:00000409). Applied to unattend.xml and shown in config menu.' },
+            { key: 'systemLocale', label: 'System locale', kind: 'text', hint: 'System/region locale (e.g. en-US, fr-FR). Applied to unattend.xml and shown in config menu.' },
+            { key: 'userLocale', label: 'User locale', kind: 'text', hint: 'User/format locale (e.g. en-US, fr-FR). Applied to unattend.xml and shown in config menu.' },
+            { key: 'uiLanguage', label: 'UI Language', kind: 'text', hint: 'Windows display language (e.g. en-US, fr-FR). Applied to unattend.xml and shown in config menu.' },
+            { key: 'computerName', label: 'Device name', kind: 'text', hint: 'Computer name for Windows (e.g. PC-001). Shown in config menu. Max 15 characters.' }
         ]
     },
     {

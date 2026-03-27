@@ -597,16 +597,18 @@ function Show-ConfigurationMenu {
         Downloads the Microsoft ESD catalog and shows a configuration modal
         in the HTML UI where the user configures all deployment options
         before imaging begins: UI language, OS language, architecture,
-        activation channel (Retail / Volume), and Windows edition.
+        activation channel (Retail / Volume), Windows edition, region,
+        keyboard layout, and device name.
         The modal communicates the user's choices back via the HTTP API
         (/configsubmit) instead of using a blocking WinForms dialog.
-    .OUTPUTS   A hashtable with Language (EN/FR/ES), OsLanguage (catalog code
-               e.g. en-us), Architecture (x64/ARM64), Activation (Retail/Volume),
-               and Edition (string) keys.
+    .OUTPUTS   A hashtable with Language, OsLanguage, Architecture, Activation,
+               Edition, InputLocale, SystemLocale, UserLocale, UILanguage,
+               and ComputerName keys.
     #>
     $defaultResult = @{ Language = 'EN'; OsLanguage = 'en-us';
                         Architecture = 'x64'; Activation = 'Retail';
-                        Edition = '' }
+                        Edition = ''; InputLocale = ''; SystemLocale = '';
+                        UserLocale = ''; UILanguage = ''; ComputerName = '' }
 
     # ── Download products.xml ─────────────────────────────────────────────
     Write-Status $S.CatalogFetch 'Cyan'
@@ -652,32 +654,93 @@ function Show-ConfigurationMenu {
         return $defaultResult
     }
 
+    # Map Windows build numbers to friendly version names.
+    # The first segment of the ESD FileName (e.g. "26100") is the build number.
+    $buildVersionMap = @{
+        '17763' = 'Windows 10 1809'
+        '18362' = 'Windows 10 1903'
+        '18363' = 'Windows 10 1909'
+        '19041' = 'Windows 10 2004'
+        '19042' = 'Windows 10 20H2'
+        '19043' = 'Windows 10 21H1'
+        '19044' = 'Windows 10 21H2'
+        '19045' = 'Windows 10 22H2'
+        '22000' = 'Windows 11 21H2'
+        '22621' = 'Windows 11 22H2'
+        '22631' = 'Windows 11 23H2'
+        '26100' = 'Windows 11 24H2'
+        '26200' = 'Windows 11 25H1'
+    }
+
     # Pre-process every catalog file once into a flat list with a derived
-    # Activation field (Retail or Volume) parsed from the ESD FileName.
+    # Activation field (Retail or Volume) parsed from the ESD FileName,
+    # and a WindowsVersion derived from the build number prefix.
     $allFiles = @(
         $catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File | ForEach-Object {
             $activation = if ($_.FileName -match 'CLIENTBUSINESS_VOL') { 'Volume' } else { 'Retail' }
+            $buildNum = if ($_.FileName -match '^(\d+)\.') { $Matches[1] } else { '' }
+            $winVer = if ($buildNum -and $buildVersionMap.ContainsKey($buildNum)) {
+                $buildVersionMap[$buildNum]
+            } else {
+                'Windows'
+            }
             [PSCustomObject]@{
-                LanguageCode = $_.LanguageCode
-                Language     = $_.Language
-                Architecture = $_.Architecture
-                Activation   = $activation
-                Edition      = $_.Edition
+                LanguageCode   = $_.LanguageCode
+                Language       = $_.Language
+                Architecture   = $_.Architecture
+                Activation     = $activation
+                Edition        = $_.Edition
+                WindowsVersion = $winVer
             }
         }
     )
 
+    # ── Read task sequence defaults for config modal pre-population ───────
+    $tsDefaults = @{}
+    try {
+        $tsPath = Join-Path $scratchPath 'tasksequence.json'
+        if (-not (Test-Path $tsPath)) {
+            $tsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/TaskSequence/default.json"
+            $wc2 = New-Object System.Net.WebClient
+            $wc2.DownloadFile($tsUrl, $tsPath)
+        }
+        if (Test-Path $tsPath) {
+            $tsJson = Get-Content $tsPath -Raw | ConvertFrom-Json
+            foreach ($step in $tsJson.steps) {
+                if ($step.type -eq 'CustomizeOOBE' -and $step.enabled -ne $false -and $step.parameters) {
+                    $sp = $step.parameters
+                    if ($sp.inputLocale)  { $tsDefaults.InputLocale  = $sp.inputLocale }
+                    if ($sp.systemLocale) { $tsDefaults.SystemLocale = $sp.systemLocale }
+                    if ($sp.userLocale)   { $tsDefaults.UserLocale   = $sp.userLocale }
+                    if ($sp.uiLanguage)   { $tsDefaults.UILanguage   = $sp.uiLanguage }
+                    if ($sp.computerName) { $tsDefaults.ComputerName = $sp.computerName }
+                }
+                if ($step.type -eq 'ImportAutopilot' -and $step.enabled -ne $false -and $step.parameters) {
+                    $sp = $step.parameters
+                    if ($sp.groupTag)  { $tsDefaults.AutopilotGroupTag = $sp.groupTag }
+                    if ($sp.userEmail) { $tsDefaults.AutopilotUserEmail = $sp.userEmail }
+                }
+            }
+        }
+    } catch {
+        Write-Verbose "Could not load task sequence defaults: $_"
+    }
+
     # ── Send catalog data to HTML UI ─────────────────────────────────────
     $configData = @{
         CatalogEntries = $allFiles
+        Defaults       = $tsDefaults
         Labels         = @{
-            ConfigSubtitle = $S.ConfigSubtitle
-            ConfigLang     = $S.ConfigLang
-            ConfigOsLang   = $S.ConfigOsLang
-            ConfigArch     = $S.ConfigArch
+            ConfigSubtitle   = $S.ConfigSubtitle
+            ConfigLang       = $S.ConfigLang
+            ConfigOsLang     = $S.ConfigOsLang
+            ConfigArch       = $S.ConfigArch
             ConfigActivation = $S.ConfigActivation
-            ConfigEdition  = $S.ConfigEdition
-            ConfigBtn      = $S.ConfigBtn
+            ConfigEdition    = $S.ConfigEdition
+            ConfigRegion     = $S.ConfigRegion
+            ConfigKeyboard   = $S.ConfigKeyboard
+            ConfigDeviceName = $S.ConfigDeviceName
+            ConfigBtn        = $S.ConfigBtn
         }
     }
 
@@ -703,6 +766,11 @@ function Show-ConfigurationMenu {
         Architecture = if ($r.Architecture) { $r.Architecture } else { 'x64' }
         Activation   = if ($r.Activation)   { $r.Activation }   else { 'Retail' }
         Edition      = if ($r.Edition)      { $r.Edition }      else { '' }
+        InputLocale  = if ($r.InputLocale)  { $r.InputLocale }  else { '' }
+        SystemLocale = if ($r.SystemLocale) { $r.SystemLocale } else { '' }
+        UserLocale   = if ($r.UserLocale)   { $r.UserLocale }   else { '' }
+        UILanguage   = if ($r.UILanguage)   { $r.UILanguage }   else { '' }
+        ComputerName = if ($r.ComputerName) { $r.ComputerName } else { '' }
     }
 }
 
@@ -1145,10 +1213,15 @@ function ProceedToEngine {
     $config = Show-ConfigurationMenu
     $script:Lang = $config.Language
     $script:S    = $Strings[$script:Lang]
-    $script:SelectedEdition  = $config.Edition
-    $script:SelectedOsLang   = $config.OsLanguage
-    $script:SelectedArch     = $config.Architecture
+    $script:SelectedEdition    = $config.Edition
+    $script:SelectedOsLang     = $config.OsLanguage
+    $script:SelectedArch       = $config.Architecture
     $script:SelectedActivation = $config.Activation
+    $script:SelectedInputLocale  = $config.InputLocale
+    $script:SelectedSystemLocale = $config.SystemLocale
+    $script:SelectedUserLocale   = $config.UserLocale
+    $script:SelectedUILanguage   = $config.UILanguage
+    $script:SelectedComputerName = $config.ComputerName
 
     # Clean up any stale status file from a previous run.
     if (Test-Path $script:StatusFile) { Remove-Item $script:StatusFile -Force }
@@ -1195,6 +1268,11 @@ function ProceedToEngine {
         if ($script:SelectedEdition)  { $psArgs += @('-WindowsEdition',      $script:SelectedEdition)  }
         if ($script:SelectedOsLang)   { $psArgs += @('-WindowsLanguage',     $script:SelectedOsLang)   }
         if ($script:SelectedArch)     { $psArgs += @('-WindowsArchitecture', $script:SelectedArch)     }
+        if ($script:SelectedInputLocale)  { $psArgs += @('-InputLocale',     $script:SelectedInputLocale)  }
+        if ($script:SelectedSystemLocale) { $psArgs += @('-SystemLocale',    $script:SelectedSystemLocale) }
+        if ($script:SelectedUserLocale)   { $psArgs += @('-UserLocale',      $script:SelectedUserLocale)   }
+        if ($script:SelectedUILanguage)   { $psArgs += @('-UILanguage',      $script:SelectedUILanguage)   }
+        if ($script:SelectedComputerName) { $psArgs += @('-ComputerName',    $script:SelectedComputerName) }
 
         # Pass the Graph access token to the engine via an environment variable
         # so the ImportAutopilot task sequence step can register the device in

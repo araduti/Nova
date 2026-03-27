@@ -62,6 +62,11 @@ param(
     [string]$UnattendUrl     = '',       # URL to unattend.xml
     [string]$UnattendPath    = '',       # OR local path
     [string]$UnattendContent = '',       # OR inline XML content from the editor
+    [string]$InputLocale     = '',       # Keyboard layout (e.g. en-US, 0409:00000409)
+    [string]$SystemLocale    = '',       # System/region locale (e.g. en-US)
+    [string]$UserLocale      = '',       # User/format locale (e.g. en-US)
+    [string]$UILanguage      = '',       # Windows display language (e.g. en-US)
+    [string]$ComputerName    = '',       # Device name (max 15 chars)
 
     # Post-provisioning scripts
     [string[]]$PostScriptUrls = @(),  # URLs to PS1 scripts to run after imaging
@@ -991,7 +996,12 @@ function Set-OOBECustomization {
         [string]$UnattendUrl,
         [string]$UnattendPath,
         [string]$UnattendContent,
-        [string]$OSDriveLetter
+        [string]$OSDriveLetter,
+        [string]$InputLocale,
+        [string]$SystemLocale,
+        [string]$UserLocale,
+        [string]$UILanguage,
+        [string]$ComputerName
     )
 
     Write-Step 'Applying OOBE customization...'
@@ -1024,11 +1034,36 @@ function Set-OOBECustomization {
             return
         }
 
-        # Generate a minimal default unattend.xml
+        # Generate a default unattend.xml with locale and device name settings
         $stepName = 'Generate default unattend.xml'
-        Write-Warn 'No unattend.xml source provided. Generating minimal default...'
 
-    $defaultUnattend = @'
+        # Build the International-Core component for locale/keyboard settings
+        $intlComponent = ''
+        if ($InputLocale -or $SystemLocale -or $UserLocale -or $UILanguage) {
+            $intlParts = @()
+            if ($InputLocale)  { $intlParts += "        <InputLocale>$InputLocale</InputLocale>" }
+            if ($SystemLocale) { $intlParts += "        <SystemLocale>$SystemLocale</SystemLocale>" }
+            if ($UserLocale)   { $intlParts += "        <UserLocale>$UserLocale</UserLocale>" }
+            if ($UILanguage)   { $intlParts += "        <UILanguage>$UILanguage</UILanguage>" }
+            $intlComponent = @"
+    <component name="Microsoft-Windows-International-Core"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+$($intlParts -join "`n")
+    </component>
+"@
+        }
+
+        # Build ComputerName element if specified
+        $computerNameElement = ''
+        if ($ComputerName) {
+            $computerNameElement = "      <ComputerName>$ComputerName</ComputerName>"
+        }
+
+    $defaultUnattend = @"
 <?xml version="1.0" encoding="utf-8"?>
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
   <settings pass="oobeSystem">
@@ -1047,12 +1082,18 @@ function Set-OOBECustomization {
         <SkipMachineOOBE>false</SkipMachineOOBE>
         <SkipUserOOBE>false</SkipUserOOBE>
       </OOBE>
+$(if ($computerNameElement) { $computerNameElement })
     </component>
+$(if ($intlComponent) { $intlComponent })
   </settings>
 </unattend>
-'@
+"@
     Set-Content -Path $unattendDest -Value $defaultUnattend -Encoding UTF8
-    Write-Success 'Default unattend.xml applied.'
+    if ($InputLocale -or $SystemLocale -or $UserLocale -or $UILanguage -or $ComputerName) {
+        Write-Success 'Default unattend.xml applied with locale and device name settings.'
+    } else {
+        Write-Success 'Default unattend.xml applied.'
+    }
     } catch {
         throw "Set-OOBECustomization failed at step '$stepName': $_"
     }
@@ -1222,8 +1263,14 @@ function Invoke-TaskSequenceStep {
             $uUrl     = if ($p -and $p.unattendUrl)  { $p.unattendUrl }  else { $UnattendUrl }
             $uPath    = if ($p -and $p.unattendPath)  { $p.unattendPath }  else { $UnattendPath }
             $uContent = if ($p -and $p.unattendSource -eq 'default' -and $p.unattendContent) { $p.unattendContent } elseif (-not $p -or $p.unattendSource -ne 'cloud') { $UnattendContent } else { '' }
+            $iLocale  = if ($p -and $p.inputLocale)   { $p.inputLocale }   else { $InputLocale }
+            $sLocale  = if ($p -and $p.systemLocale)   { $p.systemLocale }  else { $SystemLocale }
+            $uLocale  = if ($p -and $p.userLocale)     { $p.userLocale }    else { $UserLocale }
+            $uiLang   = if ($p -and $p.uiLanguage)     { $p.uiLanguage }   else { $UILanguage }
+            $cName    = if ($p -and $p.computerName)    { $p.computerName }  else { $ComputerName }
             Update-BootstrapStatus -Message "Customizing OOBE..." -Detail "Applying unattend.xml" -Step $uiStep -Progress $pct
-            Set-OOBECustomization -UnattendUrl $uUrl -UnattendPath $uPath -UnattendContent $uContent -OSDriveLetter $CurrentOSDrive
+            Set-OOBECustomization -UnattendUrl $uUrl -UnattendPath $uPath -UnattendContent $uContent -OSDriveLetter $CurrentOSDrive `
+                -InputLocale $iLocale -SystemLocale $sLocale -UserLocale $uLocale -UILanguage $uiLang -ComputerName $cName
         }
         'RunPostScripts' {
             $urls = if ($p -and $p.scriptUrls) { @($p.scriptUrls) } else { $PostScriptUrls }
@@ -1394,7 +1441,12 @@ try {
         -UnattendUrl     $UnattendUrl `
         -UnattendPath    $UnattendPath `
         -UnattendContent $UnattendContent `
-        -OSDriveLetter   $OSDrive
+        -OSDriveLetter   $OSDrive `
+        -InputLocale     $InputLocale `
+        -SystemLocale    $SystemLocale `
+        -UserLocale      $UserLocale `
+        -UILanguage      $UILanguage `
+        -ComputerName    $ComputerName
 
     # Step 9: Stage post-provisioning scripts
     $stepName = 'Stage post-provisioning scripts'
