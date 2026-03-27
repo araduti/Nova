@@ -159,7 +159,7 @@ function Save-DeploymentReport {
     try {
         $duration = [math]::Round(((Get-Date) - $StartTime).TotalMilliseconds)
         $report = @{
-            id             = 'dep_' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+            id             = 'dep_' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + '_' + [guid]::NewGuid().ToString('N').Substring(0, 8)
             deviceName     = $DeviceName
             taskSequence   = $TaskSequence
             status         = $Status
@@ -237,7 +237,7 @@ function Send-DeploymentAlert {
         try {
             $teamsBody = @{
                 '@type'      = 'MessageCard'
-                '@context'   = 'http://schema.org/extensions'
+                '@context'   = 'https://schema.org/extensions'
                 themeColor   = $color
                 summary      = $title
                 sections     = @(@{
@@ -278,6 +278,9 @@ function Send-DeploymentAlert {
             $subject = $title
             $body    = $details.Replace('**', '').Replace("`n", "`r`n")
             $port    = if ($cfg.email.port) { $cfg.email.port } else { 587 }
+            # Note: Send-MailMessage is considered obsolete in newer PowerShell
+            # versions.  For production use, consider MailKit or a direct
+            # System.Net.Mail.SmtpClient implementation instead.
             Send-MailMessage -From $cfg.email.from -To $toList -Subject $subject -Body $body `
                 -SmtpServer $cfg.email.smtp -Port $port -UseSsl -ErrorAction Stop
             Write-Success "Email notification sent"

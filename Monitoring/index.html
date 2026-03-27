@@ -1223,7 +1223,7 @@
 
         history.forEach(function (r) {
             if (r.status === 'failed' && r.error) {
-                var key = r.error.length > 80 ? r.error.substring(0, 80) : r.error;
+                var key = r.error.length > 80 ? r.error.substring(0, 80) + '…' : r.error;
                 errorMap[key] = (errorMap[key] || 0) + 1;
             }
         });
@@ -1464,7 +1464,7 @@
                 alert('Please enter a webhook URL first.');
                 return;
             }
-            alert('Test notification would be sent to ' + channel.charAt(0).toUpperCase() + channel.slice(1) + '.\n\nIn production, the AmpCloud engine (AmpCloud.ps1) sends the notification via the webhook URL:\n' + c.webhook);
+            alert('Test notification would be sent to ' + channel.charAt(0).toUpperCase() + channel.slice(1) + '.\n\nIn production, the AmpCloud deployment engine sends the notification via the webhook URL:\n' + c.webhook);
         } else if (channel === 'email') {
             if (!c.smtp || !c.from || !c.to) {
                 alert('Please fill in SMTP server, From address, and To address first.');
@@ -1487,9 +1487,9 @@
             document.body.removeChild(ta);
         }
         var btn = document.querySelector('.config-snippet-copy');
-        var orig = btn.textContent;
-        btn.textContent = '✓ Copied';
-        setTimeout(function () { btn.innerHTML = '&#128203; Copy'; }, 1500);
+        var orig = btn.innerHTML;
+        btn.textContent = '\u2713 Copied';
+        setTimeout(function () { btn.innerHTML = orig; }, 1500);
     }
 
     /* ── Sample data generator ─────────────────────────────────────── */
