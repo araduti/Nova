@@ -105,18 +105,26 @@ function Update-HtmlUi {
         [int]$Step        = 0,
         [switch]$Done,
         [switch]$ShowWiFi,
-        [switch]$ShowRetry
+        [switch]$ShowRetry,
+        [string]$AuthUrl  = '',
+        [switch]$ShowDeviceCode,
+        [string]$DeviceCode = '',
+        [string]$DeviceCodeUrl = ''
     )
     if (-not $script:HtmlUiActive) { return }
     try {
         $obj = @{
-            Message   = $Message
-            Detail    = $Detail
-            Progress  = 0
-            Step      = $Step
-            Done      = [bool]$Done
-            ShowWiFi  = [bool]$ShowWiFi
-            ShowRetry = [bool]$ShowRetry
+            Message        = $Message
+            Detail         = $Detail
+            Progress       = 0
+            Step           = $Step
+            Done           = [bool]$Done
+            ShowWiFi       = [bool]$ShowWiFi
+            ShowRetry      = [bool]$ShowRetry
+            AuthUrl        = $AuthUrl
+            ShowDeviceCode = [bool]$ShowDeviceCode
+            DeviceCode     = $DeviceCode
+            DeviceCodeUrl  = $DeviceCodeUrl
         }
         $obj | ConvertTo-Json -Compress |
             Set-Content -Path $script:StatusFile -Force -ErrorAction SilentlyContinue
@@ -487,11 +495,12 @@ $script:actionTimer.Add_Tick({
             $msg  = 'unknown'
 
             switch ($path) {
-                '/wifi'     { $script:PendingAction = 'SHOW_WIFI'; $msg = 'ok' }
-                '/retry'    { $script:PendingAction = 'RETRY'; $msg = 'ok' }
-                '/reboot'   { Restart-Computer -Force; $msg = 'rebooting' }
-                '/shutdown' { Stop-Computer -Force; $msg = 'shutting down' }
-                '/shell'    { Start-Process $script:PsBin -ArgumentList '-NoProfile','-NoExit'; $msg = 'shell opened' }
+                '/wifi'       { $script:PendingAction = 'SHOW_WIFI'; $msg = 'ok' }
+                '/retry'      { $script:PendingAction = 'RETRY'; $msg = 'ok' }
+                '/cancelauth' { $script:_authCancelled = $true; $msg = 'ok' }
+                '/reboot'     { Restart-Computer -Force; $msg = 'rebooting' }
+                '/shutdown'   { Stop-Computer -Force; $msg = 'shutting down' }
+                '/shell'      { Start-Process $script:PsBin -ArgumentList '-NoProfile','-NoExit'; $msg = 'shell opened' }
             }
 
             $context.Response.StatusCode = 200
@@ -967,17 +976,15 @@ function Show-ConfigurationMenu {
 
 function Invoke-M365EdgeAuth {
     <#
-    .SYNOPSIS  Authenticate the operator via a standalone Edge browser (Auth Code + PKCE).
+    .SYNOPSIS  Authenticate the operator via the kiosk Edge browser (Auth Code + PKCE).
     .DESCRIPTION
-        Launches msedge.exe directly in WinPE with GPU-disabled flags and
-        navigates to the Azure AD authorization endpoint.  The user signs in
-        inside the standalone Edge browser window.  A temporary localhost
-        HTTP listener captures the redirect carrying the authorization code,
-        then exchanges it for tokens using PKCE.
-        Requires the Edge browser to be pre-staged in the WinPE image at
-        X:\WebView2\Edge (done by Trigger.ps1 Build-WinPE step 4e).
-        WinPE-safe Chromium flags (--disable-gpu, SwiftShader, etc.) are
-        used to ensure rendering works without GPU hardware.
+        Navigates the existing Edge kiosk browser to the Azure AD authorization
+        endpoint.  The user signs in directly in the kiosk browser window.
+        A temporary localhost HTTP listener captures the redirect carrying the
+        authorization code, then exchanges it for tokens using PKCE.
+        After authentication completes (or fails), the listener redirects the
+        browser back to the AmpCloud-UI page.
+        WinPE-safe — no separate Edge process or WinForms dialog is created.
     .PARAMETER ClientId
         Azure AD application (client) ID.
     .OUTPUTS
@@ -988,17 +995,14 @@ function Invoke-M365EdgeAuth {
         [string] $Scope = 'openid profile'
     )
 
-    $edgePath = 'X:\WebView2\Edge\msedge.exe'
-
-    # ── Log environment diagnostics ─────────────────────────────────────────
-    Write-AuthLog "Edge auth starting — checking prerequisites"
-    Write-AuthLog "  msedge.exe exists : $(Test-Path $edgePath)  ($edgePath)"
-
-    # ── Verify Edge browser prerequisite ────────────────────────────────────
-    if (-not (Test-Path $edgePath)) {
-        Write-AuthLog "msedge.exe not found at $edgePath — skipping Edge auth."
+    # ── Verify the HTML UI is active (kiosk Edge must be running) ───────────
+    if (-not $script:HtmlUiActive) {
+        Write-AuthLog "HTML UI not active — cannot use in-kiosk auth."
         return $false
     }
+
+    # ── Log environment diagnostics ─────────────────────────────────────────
+    Write-AuthLog "Kiosk auth starting"
 
     # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────
     $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -1045,105 +1049,30 @@ function Invoke-M365EdgeAuth {
         '&code_challenge_method=S256' +
         '&prompt=select_account'
 
-    # ── Launch Edge with WinPE-safe Chromium flags ──────────────────────────
-    # WinPE has no GPU hardware or driver stack.  These flags force Chromium
-    # to use SwiftShader (software OpenGL ES implementation) for rendering.
-    # --allow-run-as-system permits Chromium to run under the SYSTEM account
-    # (WinPE always runs as SYSTEM).
-    # --user-data-dir avoids writing to the default profile path, which may
-    # not be writable in WinPE.
-    # --no-first-run / --disable-fre suppress Edge first-run experience
-    # screens (welcome wizard, default-browser prompt, etc.).
-    # --disable-features=msWebOOBE suppresses the Edge out-of-box setup.
-    # WebAuthentication is left enabled so that the cross-device / hybrid
-    # (caBLE v2) flow works — the user can scan a QR code with a phone
-    # (e.g. iPhone or Android) to complete FIDO2 / passkey authentication.
-    # Platform authenticators (TPM, Windows Hello, biometrics) are
-    # unavailable in WinPE, but Edge automatically skips them when the
-    # hardware is absent and offers the QR-code option instead.
-    # --enable-features=WebAuthenticationCableSecondFactor explicitly
-    # enables the cross-device QR code authenticator flow.
-    $userDataDir = 'X:\Temp\EdgeAuthData'
-    if (-not (Test-Path $userDataDir)) {
-        $null = New-Item -Path $userDataDir -ItemType Directory -Force
-    }
+    # ── Signal the HTML UI to navigate to the login page ────────────────────
+    # The kiosk Edge browser will navigate to the Azure AD login page.
+    # After the user signs in, Azure AD redirects to the localhost listener
+    # which captures the auth code and redirects back to the AmpCloud UI.
+    Write-AuthLog "Navigating kiosk UI to auth URL"
+    Update-HtmlUi -Message $S.AuthSigning -Step 3 -AuthUrl $authorizeUrl
 
-    $edgeArgs = @(
-        '--allow-run-as-system'
-        "--user-data-dir=`"$userDataDir`""
-        '--disable-gpu'
-        '--disable-gpu-compositing'
-        '--disable-direct-composition'
-        '--use-angle=swiftshader'
-        '--enable-unsafe-swiftshader'
-        '--in-process-gpu'
-        '--no-first-run'
-        '--disable-fre'
-        '--disable-features=msWebOOBE'
-        '--enable-features=WebAuthenticationCableSecondFactor'
-        $authorizeUrl
-    )
+    # ── Wait for the redirect callback ──────────────────────────────────────
+    $script:_edgeAuthCode   = $null
+    $script:_edgeAuthError  = $null
+    $script:_authCancelled  = $false
+    $asyncResult = $listener.BeginGetContext($null, $null)
 
-    Write-AuthLog "Launching Edge: $edgePath $($edgeArgs -join ' ')"
-    $edgeProcess = $null
-    try {
-        $edgeProcess = Start-Process -FilePath $edgePath -ArgumentList $edgeArgs -PassThru
-        Write-AuthLog "Edge launched (PID $($edgeProcess.Id))"
-    } catch {
-        Write-AuthLog "Failed to launch Edge: $_"
-        return $false
-    }
+    $uiPath = 'file:///X:/AmpCloud-UI/index.html'
+    # 5-minute timeout — Azure AD sessions are valid for 10 minutes,
+    # 5 minutes gives enough time without leaving the kiosk unattended.
+    $timeout = [datetime]::UtcNow.AddMinutes(5)
 
-    # ── Show a WinForms status dialog while waiting for sign-in ─────────────
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text            = 'AmpCloud — Sign In'
-    $dlg.Size            = New-Object System.Drawing.Size(480, 220)
-    $dlg.StartPosition   = 'CenterScreen'
-    $dlg.FormBorderStyle = 'FixedDialog'
-    $dlg.MaximizeBox     = $false
-    $dlg.MinimizeBox     = $false
-    $dlg.BackColor       = [System.Drawing.Color]::White
-    $dlg.Font            = New-Object System.Drawing.Font('Segoe UI', 10)
-    $dlg.TopMost         = $false
+    while (-not $script:_edgeAuthCode -and -not $script:_edgeAuthError `
+           -and -not $script:_authCancelled -and [datetime]::UtcNow -lt $timeout) {
 
-    $msLabel = New-Object System.Windows.Forms.Label
-    $msLabel.Text      = 'Microsoft 365'
-    $msLabel.Font      = New-Object System.Drawing.Font('Segoe UI Semibold', 14)
-    $msLabel.ForeColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $msLabel.Location  = New-Object System.Drawing.Point(30, 20)
-    $msLabel.AutoSize  = $true
-    $dlg.Controls.Add($msLabel)
-
-    $promptLabel = New-Object System.Windows.Forms.Label
-    $promptLabel.Text     = $S.AuthEdgePrompt
-    $promptLabel.Location = New-Object System.Drawing.Point(30, 65)
-    $promptLabel.Size     = New-Object System.Drawing.Size(410, 50)
-    $promptLabel.Font     = New-Object System.Drawing.Font('Segoe UI', 10)
-    $dlg.Controls.Add($promptLabel)
-
-    $cancelBtn = New-Object System.Windows.Forms.Button
-    $cancelBtn.Text         = 'Cancel'
-    $cancelBtn.Size         = New-Object System.Drawing.Size(120, 36)
-    $cancelBtn.Location     = New-Object System.Drawing.Point(330, 135)
-    $cancelBtn.DialogResult = 'Cancel'
-    $cancelBtn.FlatStyle    = 'Flat'
-    $dlg.Controls.Add($cancelBtn)
-    $dlg.CancelButton = $cancelBtn
-
-    # ── Poll the HTTP listener for the redirect in a timer ──────────────────
-    $script:_edgeAuthCode  = $null
-    $script:_edgeAuthError = $null
-    $script:_edgeListener  = $listener
-    $script:_edgeDlg       = $dlg
-    $script:_edgeAsyncResult = $listener.BeginGetContext($null, $null)
-
-    $pollTimer = New-Object System.Windows.Forms.Timer
-    $pollTimer.Interval = 500
-    $pollTimer.Add_Tick({
-        if ($script:_edgeAsyncResult.IsCompleted -or $script:_edgeAsyncResult.AsyncWaitHandle.WaitOne(0)) {
-            $pollTimer.Stop()
+        if ($asyncResult.IsCompleted -or $asyncResult.AsyncWaitHandle.WaitOne(0)) {
             try {
-                $context = $script:_edgeListener.EndGetContext($script:_edgeAsyncResult)
+                $context = $listener.EndGetContext($asyncResult)
 
                 # Parse authorization code (or error) from the query string.
                 foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
@@ -1154,16 +1083,22 @@ function Invoke-M365EdgeAuth {
                     }
                 }
 
-                # Send a friendly response page to the browser.
+                # Clear the auth navigation signal before the page reloads.
+                Update-HtmlUi -Message $S.AuthSigning -Step 3
+
+                # Send a response page that redirects back to the AmpCloud UI.
                 $html = if ($script:_edgeAuthCode) {
-                    '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
-                    '<h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
-                    '<p>You can close this window and return to AmpCloud.</p>' +
-                    '<script>setTimeout(function(){window.close()},2000)</script></body></html>'
+                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
+                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
+                    '<div style="text-align:center"><h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
+                    '<p>Returning to AmpCloud...</p></div>' +
+                    "<script>setTimeout(function(){window.location.href='$uiPath'},1500)</script></body></html>"
                 } else {
-                    '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
-                    '<h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
-                    '<p>Please close this window and try again.</p></body></html>'
+                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
+                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
+                    '<div style="text-align:center"><h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
+                    '<p>Returning to AmpCloud...</p></div>' +
+                    "<script>setTimeout(function(){window.location.href='$uiPath'},2500)</script></body></html>"
                 }
                 $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
                 $context.Response.ContentType     = 'text/html; charset=utf-8'
@@ -1173,47 +1108,26 @@ function Invoke-M365EdgeAuth {
             } catch {
                 Write-AuthLog "Listener callback error: $_"
             }
-
-            if ($script:_edgeAuthCode) {
-                $script:_edgeDlg.DialogResult = 'OK'
-            } else {
-                $script:_edgeDlg.DialogResult = 'Abort'
-            }
-            $script:_edgeDlg.Close()
         }
-    })
-    $pollTimer.Start()
-    $dialogResult = $dlg.ShowDialog()
-    $pollTimer.Stop()
-    $pollTimer.Dispose()
-    try { $dlg.Dispose() } catch {}
 
-    # ── Stop the Edge process ───────────────────────────────────────────────
-    if ($edgeProcess -and -not $edgeProcess.HasExited) {
-        try {
-            $edgeProcess.CloseMainWindow() | Out-Null
-            if (-not $edgeProcess.WaitForExit(3000)) {
-                $edgeProcess.Kill()
-                $edgeProcess.WaitForExit(2000)
-            }
-            Write-AuthLog "Edge process stopped."
-        } catch { Write-AuthLog "Edge process cleanup: $_" }
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 200
     }
 
-    # Clean up Edge user data (cookies, cache) to prevent credential leakage.
-    if (Test-Path $userDataDir) {
-        try { Remove-Item $userDataDir -Recurse -Force } catch {}
-    }
+    # ── Always clear auth navigation signal ─────────────────────────────────
+    # Prevents the page from re-navigating to the auth URL on reload
+    # (e.g. if auth timed out or was cancelled before the listener fired).
+    Update-HtmlUi -Message $S.AuthSigning -Step 3
 
     } finally {
         try { $listener.Stop(); $listener.Close() } catch {}
     }
 
-    if ($dialogResult -ne 'OK' -or -not $script:_edgeAuthCode) {
+    if ($script:_authCancelled -or -not $script:_edgeAuthCode) {
         $codeStatus = if ($script:_edgeAuthCode) { 'present' } else { 'missing' }
-        Write-AuthLog "Edge auth dialog closed without auth code. DialogResult=$dialogResult, AuthCode=$codeStatus"
+        Write-AuthLog "Kiosk auth ended without auth code. Cancelled=$($script:_authCancelled), AuthCode=$codeStatus"
         if ($script:_edgeAuthError) {
-            Write-AuthLog "Edge auth error: $($script:_edgeAuthError)"
+            Write-AuthLog "Auth error: $($script:_edgeAuthError)"
         }
         return $false
     }
@@ -1235,7 +1149,7 @@ function Invoke-M365EdgeAuth {
             if ($tokenResponse.access_token) {
                 $script:GraphAccessToken = $tokenResponse.access_token
             }
-            Write-AuthLog "Edge auth succeeded — token obtained."
+            Write-AuthLog "Kiosk auth succeeded — token obtained."
             return $true
         }
     } catch {
@@ -1249,9 +1163,9 @@ function Invoke-M365DeviceCodeAuth {
     <#
     .SYNOPSIS  Authenticate the operator via Device Code Flow (fallback).
     .DESCRIPTION
-        Fallback authentication path used when the Edge browser is not
-        available in the WinPE image.  Initiates the Device Code Flow and
-        shows a WinForms dialog with the one-time code and verification URL.
+        Fallback authentication path used when the kiosk Edge auth is not
+        available.  Initiates the Device Code Flow and shows the one-time
+        code and verification URL in the HTML UI as a modal overlay.
     .PARAMETER ClientId
         Azure AD application (client) ID.
     .PARAMETER Scope
@@ -1285,132 +1199,67 @@ function Invoke-M365DeviceCodeAuth {
     $expiresIn  = if ($deviceResponse.expires_in) { [int]$deviceResponse.expires_in } else { 900 }
     $interval   = if ($deviceResponse.interval)   { [int]$deviceResponse.interval   } else { 5   }
 
-    # ── Device Code dialog ──────────────────────────────────────────────────
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text            = 'AmpCloud — Sign In'
-    $dlg.Size            = New-Object System.Drawing.Size(520, 380)
-    $dlg.StartPosition   = 'CenterScreen'
-    $dlg.FormBorderStyle = 'FixedDialog'
-    $dlg.MaximizeBox     = $false
-    $dlg.MinimizeBox     = $false
-    $dlg.BackColor       = [System.Drawing.Color]::White
-    $dlg.Font            = New-Object System.Drawing.Font('Segoe UI', 10)
+    # ── Show device code in the HTML UI modal ───────────────────────────────
+    $script:_authCancelled = $false
+    Update-HtmlUi -Message $S.AuthDeviceCodePrompt -Step 3 `
+                  -ShowDeviceCode -DeviceCode $userCode -DeviceCodeUrl $S.AuthUrl
 
-    $msLabel = New-Object System.Windows.Forms.Label
-    $msLabel.Text      = 'Microsoft 365'
-    $msLabel.Font      = New-Object System.Drawing.Font('Segoe UI Semibold', 14)
-    $msLabel.ForeColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $msLabel.Location  = New-Object System.Drawing.Point(30, 25)
-    $msLabel.AutoSize  = $true
-    $dlg.Controls.Add($msLabel)
+    # ── Poll for token ──────────────────────────────────────────────────────
+    $expiry   = [datetime]::UtcNow.AddSeconds($expiresIn)
+    $nextPoll = [datetime]::UtcNow.AddSeconds($interval)
+    $tokenResponse = $null
 
-    $promptLabel = New-Object System.Windows.Forms.Label
-    $promptLabel.Text     = $S.AuthDeviceCodePrompt
-    $promptLabel.Location = New-Object System.Drawing.Point(30, 75)
-    $promptLabel.Size     = New-Object System.Drawing.Size(450, 50)
-    $promptLabel.Font     = New-Object System.Drawing.Font('Segoe UI', 10)
-    $dlg.Controls.Add($promptLabel)
-
-    $codeBox = New-Object System.Windows.Forms.TextBox
-    $codeBox.Text      = $userCode
-    $codeBox.Font      = New-Object System.Drawing.Font('Segoe UI Semibold', 26)
-    $codeBox.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
-    $codeBox.TextAlign = 'Center'
-    $codeBox.ReadOnly  = $true
-    $codeBox.BorderStyle = 'None'
-    $codeBox.BackColor = [System.Drawing.Color]::FromArgb(243, 243, 243)
-    $codeBox.Location  = New-Object System.Drawing.Point(60, 135)
-    $codeBox.Size      = New-Object System.Drawing.Size(380, 55)
-    $dlg.Controls.Add($codeBox)
-
-    $urlLabel = New-Object System.Windows.Forms.Label
-    $urlLabel.Text      = $S.AuthUrl
-    $urlLabel.Font      = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Underline)
-    $urlLabel.ForeColor = [System.Drawing.Color]::FromArgb(0, 120, 212)
-    $urlLabel.Location  = New-Object System.Drawing.Point(30, 210)
-    $urlLabel.AutoSize  = $true
-    $dlg.Controls.Add($urlLabel)
-
-    $authStatusLabel = New-Object System.Windows.Forms.Label
-    $authStatusLabel.Text      = $S.AuthWaiting
-    $authStatusLabel.Font      = New-Object System.Drawing.Font('Segoe UI', 9)
-    $authStatusLabel.ForeColor = [System.Drawing.Color]::Gray
-    $authStatusLabel.Location  = New-Object System.Drawing.Point(30, 250)
-    $authStatusLabel.Size      = New-Object System.Drawing.Size(450, 25)
-    $dlg.Controls.Add($authStatusLabel)
-
-    $cancelBtn = New-Object System.Windows.Forms.Button
-    $cancelBtn.Text         = 'Cancel'
-    $cancelBtn.Size         = New-Object System.Drawing.Size(120, 40)
-    $cancelBtn.Location     = New-Object System.Drawing.Point(370, 290)
-    $cancelBtn.DialogResult = 'Cancel'
-    $cancelBtn.FlatStyle    = 'Flat'
-    $dlg.Controls.Add($cancelBtn)
-    $dlg.CancelButton = $cancelBtn
-
-    # ── Poll for token in a timer ───────────────────────────────────────────
-    $pollTimer = New-Object System.Windows.Forms.Timer
-    $pollTimer.Interval = $interval * 1000
-    $script:_authExpiry   = [datetime]::UtcNow.AddSeconds($expiresIn)
-    $script:_authResult   = $null
-    $script:_deviceCode   = $deviceCode
-    $script:_clientId     = $ClientId
-    $script:_tokenUrl     = $tokenUrl
-    $script:_grantType    = $grantType
-
-    $pollTimer.Add_Tick({
-        if ([datetime]::UtcNow -ge $script:_authExpiry) {
-            $pollTimer.Stop()
-            $authStatusLabel.Text = $S.AuthFailed
-            $authStatusLabel.ForeColor = [System.Drawing.Color]::Red
-            return
-        }
-        try {
-            $body = "grant_type=$([uri]::EscapeDataString($script:_grantType))" +
-                    "&client_id=$([uri]::EscapeDataString($script:_clientId))" +
-                    "&device_code=$([uri]::EscapeDataString($script:_deviceCode))"
-            $wc = New-Object System.Net.WebClient
-            $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-            $raw = $wc.UploadString($script:_tokenUrl, 'POST', $body)
-            $tokenResponse = $raw | ConvertFrom-Json
-            if ($tokenResponse.id_token) {
-                $script:_authResult = $tokenResponse
-                if ($tokenResponse.access_token) {
-                    $script:GraphAccessToken = $tokenResponse.access_token
+    while (-not $script:_authCancelled -and [datetime]::UtcNow -lt $expiry) {
+        if ([datetime]::UtcNow -ge $nextPoll) {
+            try {
+                $body = "grant_type=$([uri]::EscapeDataString($grantType))" +
+                        "&client_id=$([uri]::EscapeDataString($ClientId))" +
+                        "&device_code=$([uri]::EscapeDataString($deviceCode))"
+                $wc = New-Object System.Net.WebClient
+                $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+                $raw = $wc.UploadString($tokenUrl, 'POST', $body)
+                $tr = $raw | ConvertFrom-Json
+                if ($tr.id_token) {
+                    $tokenResponse = $tr
+                    if ($tr.access_token) {
+                        $script:GraphAccessToken = $tr.access_token
+                    }
+                    break
                 }
-                $pollTimer.Stop()
-                $dlg.DialogResult = 'OK'
-                $dlg.Close()
+            } catch {
+                $msg = $_.ToString()
+                if ($msg -notmatch 'authorization_pending' -and $msg -notmatch 'slow_down') {
+                    Write-AuthLog "Token poll error: $msg"
+                }
             }
-        } catch {
-            $msg = $_.ToString()
-            if ($msg -notmatch 'authorization_pending' -and $msg -notmatch 'slow_down') {
-                Write-AuthLog "Token poll error: $msg"
-            }
+            $nextPoll = [datetime]::UtcNow.AddSeconds($interval)
         }
-    })
-    $pollTimer.Start()
-    $dialogResult = $dlg.ShowDialog()
-    $pollTimer.Stop()
-    $pollTimer.Dispose()
 
-    if ($dialogResult -ne 'OK' -or -not $script:_authResult) {
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 200
+    }
+
+    # ── Clear the device code modal ─────────────────────────────────────────
+    Update-HtmlUi -Message $S.AuthSigning -Step 3
+
+    if (-not $tokenResponse) {
         return $false
     }
 
+    Write-AuthLog "Device code auth succeeded — token obtained."
     return $true
 }
 
 function Invoke-M365Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via M365 (Edge browser, Device Code fallback).
+    .SYNOPSIS  Authenticate the operator via M365 (kiosk browser, Device Code fallback).
     .DESCRIPTION
         Downloads Config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
-        first attempts interactive sign-in by launching a standalone
-        Edge browser (Authorization Code Flow with PKCE).  If the Edge
-        browser is not present or fails, it falls back to Device Code
-        Flow.
+        first attempts interactive sign-in by navigating the existing
+        kiosk Edge browser to Azure AD (Authorization Code Flow with
+        PKCE).  If the kiosk UI is not active or fails, it falls back
+        to Device Code Flow, showing the code in an HTML modal.
         Tenant restrictions are enforced at the Entra ID app registration
         level — only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
@@ -1461,16 +1310,16 @@ function Invoke-M365Auth {
     Write-Status $S.AuthSigning 'Cyan'
     [System.Windows.Forms.Application]::DoEvents()
 
-    # ── Try standalone Edge browser first ───────────────────────────────────
-    # Edge is launched directly with WinPE-safe Chromium flags.  A localhost
-    # HTTP listener captures the OAuth redirect.  Requires the Edge browser
-    # to be embedded during Build-WinPE (step 4e).  If Edge is not present
-    # or fails, fall back to Device Code Flow transparently.
+    # ── Try kiosk Edge browser auth first ──────────────────────────────────
+    # Navigates the existing kiosk Edge to Azure AD for interactive sign-in.
+    # A localhost HTTP listener captures the OAuth redirect.  If the kiosk
+    # UI is not active or auth fails, fall back to Device Code Flow, which
+    # shows the one-time code in an HTML modal overlay.
     $browserOk = $false
     try {
         $browserOk = Invoke-M365EdgeAuth -ClientId $clientId -Scope $scope
     } catch {
-        Write-AuthLog "Edge auth failed, will fall back to Device Code Flow: $_"
+        Write-AuthLog "Kiosk auth failed, will fall back to Device Code Flow: $_"
     }
 
     if ($browserOk) {
@@ -1517,9 +1366,9 @@ function ProceedToEngine {
     # When Config/auth.json has requireAuth = true, the operator must sign in
     # with a Microsoft 365 account from an allowed Entra ID tenant.
     # Tenant restrictions are enforced at the app registration level.
-    # Uses a standalone Edge browser with Auth Code + PKCE as
-    # the primary method; falls back to Device Code Flow if the Edge
-    # browser is not present in the WinPE image.
+    # Navigates the kiosk Edge to Azure AD (Auth Code + PKCE) as
+    # the primary method; falls back to Device Code Flow shown in
+    # an HTML modal overlay if the kiosk auth is unavailable.
     $authPassed = Invoke-M365Auth
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect

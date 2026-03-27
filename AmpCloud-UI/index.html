@@ -29,7 +29,9 @@
         }
 
         html, body {
+            width: 100%;
             height: 100%;
+            margin: 0;
             font-family: var(--font);
             overflow: hidden;
             user-select: none;
@@ -331,6 +333,70 @@
         .btn-small:hover { background: rgba(0,0,0,0.10); }
         .dark .btn-small:hover { background: rgba(255,255,255,0.10); }
 
+        /* ── Auth modal overlay (Device Code Flow) ─────────────────── */
+        .auth-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+        .auth-overlay.visible { display: flex; }
+        .auth-modal {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 40px 48px;
+            width: 480px;
+            max-width: 90vw;
+            text-align: center;
+            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.3);
+            transition: background 0.4s ease, box-shadow 0.4s ease;
+        }
+        .dark .auth-modal {
+            background: var(--card-dark);
+            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.6),
+                        0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+        }
+        .auth-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--accent);
+            margin-bottom: 16px;
+        }
+        .auth-prompt {
+            font-size: 14px;
+            color: var(--text);
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+        .dark .auth-prompt { color: var(--text-dark); }
+        .auth-code {
+            font-size: 32px;
+            font-weight: 700;
+            letter-spacing: 4px;
+            color: var(--text);
+            background: rgba(0, 0, 0, 0.04);
+            border-radius: 8px;
+            padding: 16px 24px;
+            margin-bottom: 16px;
+        }
+        .dark .auth-code {
+            color: var(--text-dark);
+            background: rgba(255, 255, 255, 0.06);
+        }
+        .auth-url {
+            font-size: 13px;
+            color: var(--accent);
+            margin-bottom: 20px;
+        }
+        .auth-status {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 20px;
+        }
+
         /* ── Fade-in ───────────────────────────────────────────────── */
         body { opacity: 0; animation: fadeIn 0.8s ease forwards; }
         @keyframes fadeIn { to { opacity: 1; } }
@@ -453,6 +519,18 @@
     <span class="brand">AmpCloud &bull; Cloud Imaging Engine</span>
     <span class="hint">Press F8 for command prompt</span>
 
+    <!-- Device Code auth modal overlay -->
+    <div class="auth-overlay" id="authOverlay">
+        <div class="auth-modal">
+            <div class="auth-title">Microsoft 365</div>
+            <div class="auth-prompt" id="authPrompt"></div>
+            <div class="auth-code" id="authCode"></div>
+            <div class="auth-url" id="authUrlLabel"></div>
+            <div class="auth-status" id="authStatus">Waiting for sign-in...</div>
+            <button class="btn btn-secondary" onclick="sendAction('cancelauth')">Cancel</button>
+        </div>
+    </div>
+
     <script>
         /* ── AmpCloud Interactive UI ─────────────────────────────────
          *  Polls X:\AmpCloud-Status.json (written by Bootstrap.ps1 and
@@ -469,6 +547,7 @@
         var POLL_MS     = 650;
         var lastStep    = 0;
         var isDark      = true;
+        var authNavigating = false;
 
         var elBackdrop  = document.getElementById('backdrop');
         var elStatus    = document.getElementById('status');
@@ -505,6 +584,28 @@
         /* ── Update UI from status JSON ──────────────────────────── */
         function updateUI(data) {
             if (!data) return;
+
+            /* Auth URL — navigate the kiosk browser to the login page.
+             * authNavigating prevents duplicate navigation; it resets
+             * naturally when the page reloads after auth completes.
+             * Bootstrap.ps1 clears AuthUrl from the status JSON before
+             * the redirect back, so the reload won't re-trigger. */
+            if (data.AuthUrl && !authNavigating) {
+                authNavigating = true;
+                window.location.href = data.AuthUrl;
+                return;
+            }
+
+            /* Device Code modal */
+            var authOverlay = document.getElementById('authOverlay');
+            if (data.ShowDeviceCode) {
+                document.getElementById('authPrompt').textContent = data.Message || '';
+                document.getElementById('authCode').textContent = data.DeviceCode || '';
+                document.getElementById('authUrlLabel').textContent = data.DeviceCodeUrl || '';
+                authOverlay.classList.add('visible');
+            } else {
+                authOverlay.classList.remove('visible');
+            }
 
             /* Status message */
             if (data.Message) {
