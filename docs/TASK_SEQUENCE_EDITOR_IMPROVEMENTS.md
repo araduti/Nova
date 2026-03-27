@@ -54,13 +54,17 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 ## 3. Integration Improvements (Editor ↔ Bootstrap ↔ Engine)
 
 ### Task Sequence Validation
-- **Pre-flight validation** — before saving, run a set of checks:
+
+**Status:** ✅ Implemented
+
+- **Pre-flight validation** ✅ — toolbar "Validate" button runs a set of checks:
   - Are required steps present (e.g., PartitionDisk before ApplyImage)?
   - Are step dependencies satisfied (e.g., DownloadImage before ApplyImage)?
   - Are parameter values valid (e.g., disk number exists, URL is reachable)?
   - Is the step order logical?
-- **Warning vs. Error** — distinguish between warnings (non-blocking) and errors (must fix before deploy).
-- **Validation report** — generate a printable/downloadable validation summary.
+  - Duplicate step IDs and empty step names detected.
+- **Warning vs. Error** ✅ — distinguish between warnings (non-blocking) and errors (must fix before deploy).
+- **Validation report** ✅ — modal dialog showing color-coded results with error/warning/pass indicators.
 
 ### Bootstrap Integration
 - **Config modal preview** — show a live preview of what the Bootstrap config menu will look like based on the current task sequence.
@@ -157,11 +161,11 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 
 ### Advanced Unattend.xml Management
 
-**Status:** ✅ Partially Implemented
+**Status:** ✅ Mostly Implemented
 
 - **Visual unattend builder** ✅ — form-based editor for OOBE settings (HideEULAPage, HideOEMRegistrationScreen, HideOnlineAccountScreens, HideWirelessSetupInOOBE, ProtectYourPC, SkipMachineOOBE, SkipUserOOBE) with Visual/XML toggle and two-way sync.
 - **Pass-aware editing** ✅ — visual builder shows pass badges (oobeSystem, specialize) and component paths. Managed settings from other steps displayed read-only.
-- **Template library** — pre-built unattend templates for common scenarios (Autopilot, domain join, kiosk mode).
+- **Template library** ✅ — pre-built unattend templates for common deployment scenarios (Default, Autopilot, Enterprise, Kiosk, Minimal) with one-click application via dropdown selector in the visual builder.
 - **Schema validation** — validate against the official Microsoft unattend schema.
 
 ---
