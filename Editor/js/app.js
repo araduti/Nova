@@ -160,6 +160,9 @@ let taskSequence = {
 let selectedIndex = -1;
 let dragSrcIndex = -1;
 let githubConfig = { owner: '', repo: '', clientId: '', oauthProxy: '' };
+let dirty = false;
+let autoSaveTimer = null;
+const DRAFT_KEY = 'ampcloud_editor_draft';
 
 /* ── DOM refs ─────────────────────────────────────────────────────── */
 const $stepList     = document.getElementById('stepList');
@@ -176,6 +179,8 @@ const $addDialog    = document.getElementById('addStepDialog');
 const $addTypeList  = document.getElementById('stepTypeList');
 const $addOk        = document.getElementById('btnAddStepOk');
 const $fileInput    = document.getElementById('fileInput');
+const $validationWarnings = document.getElementById('validationWarnings');
+const $btnSave      = document.getElementById('btnSave');
 
 /* ── Populate type <select> ───────────────────────────────────────── */
 STEP_TYPES.forEach(t => {
@@ -183,6 +188,95 @@ STEP_TYPES.forEach(t => {
     opt.value = t.type;
     opt.textContent = t.label;
     $propType.appendChild(opt);
+});
+
+/* ── Dirty state tracking ─────────────────────────────────────────── */
+function updateDirtyUI() {
+    if (dirty) {
+        $btnSave.classList.add('dirty');
+        document.title = '\u25CF AmpCloud Task Sequence Editor';
+    } else {
+        $btnSave.classList.remove('dirty');
+        document.title = 'AmpCloud Task Sequence Editor';
+    }
+}
+
+function scheduleDraftSave() {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(function () {
+        try { localStorage.setItem(DRAFT_KEY, JSON.stringify(taskSequence)); } catch (e) { console.warn('[AmpCloud] Auto-save draft failed:', e.message); }
+    }, 1000);
+}
+
+function markDirty() {
+    dirty = true;
+    updateDirtyUI();
+    scheduleDraftSave();
+    renderValidationWarnings();
+}
+
+function markClean() {
+    dirty = false;
+    updateDirtyUI();
+    clearTimeout(autoSaveTimer);
+    try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+}
+
+/* ── Step validation ──────────────────────────────────────────────── */
+function validateStep(step) {
+    var warnings = [];
+    var p = step.parameters || {};
+    switch (step.type) {
+        case 'PartitionDisk':
+            if (p.diskNumber < 0) warnings.push('Disk number must be >= 0');
+            break;
+        case 'DownloadImage':
+            if (!p.edition) warnings.push('Edition is empty');
+            break;
+        case 'ApplyImage':
+            if (!p.edition) warnings.push('Edition is empty');
+            break;
+        case 'InjectDrivers':
+            if (!p.driverPath) warnings.push('Driver path is empty');
+            break;
+        case 'ApplyAutopilot':
+            if (!p.jsonUrl && !p.jsonPath) warnings.push('Either JSON URL or JSON path must be provided');
+            break;
+        case 'StageCCMSetup':
+            if (!p.ccmSetupUrl) warnings.push('CCMSetup URL is empty');
+            break;
+        case 'SetComputerName':
+            if (p.maxLength > 15) warnings.push('Max length exceeds NetBIOS limit of 15');
+            break;
+        case 'RunPostScripts':
+            if (!p.scriptUrls || (Array.isArray(p.scriptUrls) && p.scriptUrls.length === 0)) warnings.push('No script URLs configured');
+            break;
+    }
+    return warnings;
+}
+
+function renderValidationWarnings() {
+    if (!$validationWarnings) return;
+    if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) {
+        $validationWarnings.style.display = 'none';
+        return;
+    }
+    var warnings = validateStep(taskSequence.steps[selectedIndex]);
+    if (warnings.length > 0) {
+        $validationWarnings.innerHTML = warnings.map(function (w) {
+            return '<div class="validation-warning-item">\u26A0 ' + escapeHtml(w) + '</div>';
+        }).join('');
+        $validationWarnings.style.display = '';
+    } else {
+        $validationWarnings.style.display = 'none';
+    }
+}
+
+window.addEventListener('beforeunload', function (e) {
+    if (dirty) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
 });
 
 /* ── Render step list ─────────────────────────────────────────────── */
@@ -201,6 +295,8 @@ function renderStepList() {
         li.dataset.index = i;
 
         const badge = STEP_BADGE_LABELS[step.type] || '?';
+        const stepWarnings = validateStep(step);
+        const warnHtml = stepWarnings.length > 0 ? '<span class="step-warning" title="' + escapeHtml(stepWarnings.join('; ')) + '">\u26A0</span>' : '';
 
         li.innerHTML =
             '<span class="step-drag-handle" title="Drag to reorder">&#8942;&#8942;</span>' +
@@ -209,7 +305,7 @@ function renderStepList() {
             '<div class="step-info">' +
                 '<div class="step-title">' + escapeHtml(step.name) + '</div>' +
                 '<div class="step-type-label">' + escapeHtml(typeMap[step.type] ? typeMap[step.type].label : step.type) + '</div>' +
-            '</div>';
+            '</div>' + warnHtml;
 
         li.addEventListener('click', () => selectStep(i));
 
@@ -241,6 +337,7 @@ function selectStep(index) {
     $propDesc.value = step.description || '';
     $propEnabled.checked = step.enabled !== false;
     $propContErr.checked = step.continueOnError === true;
+    renderValidationWarnings();
     renderParamFields(step);
 }
 
@@ -312,6 +409,7 @@ function renderParamFields(step) {
             if (f.kind === 'array') v = input.value.split('\n').map(s => s.trim()).filter(Boolean);
             if (f.kind === 'checkbox') v = input.checked;
             taskSequence.steps[selectedIndex].parameters[f.key] = v;
+            markDirty();
 
             /* Re-evaluate showWhen visibility when a select changes */
             if (f.kind === 'select') applyShowWhen();
@@ -347,6 +445,7 @@ function renderParamFields(step) {
 $propName.addEventListener('input', () => {
     if (selectedIndex < 0) return;
     taskSequence.steps[selectedIndex].name = $propName.value;
+    markDirty();
     renderStepList();
 });
 $propType.addEventListener('change', () => {
@@ -359,16 +458,19 @@ $propType.addEventListener('change', () => {
         if (!step.name || step.name === 'New Step') step.name = def.label;
         if (!step.description) step.description = def.description;
     }
+    markDirty();
     selectStep(selectedIndex);
     renderStepList();
 });
 $propDesc.addEventListener('input', () => {
     if (selectedIndex < 0) return;
     taskSequence.steps[selectedIndex].description = $propDesc.value;
+    markDirty();
 });
 $propEnabled.addEventListener('change', () => {
     if (selectedIndex < 0) return;
     taskSequence.steps[selectedIndex].enabled = $propEnabled.checked;
+    markDirty();
     renderStepList();
     /* Re-sync unattend.xml when a step that touches it is toggled */
     const t = taskSequence.steps[selectedIndex].type;
@@ -379,10 +481,12 @@ $propEnabled.addEventListener('change', () => {
 $propContErr.addEventListener('change', () => {
     if (selectedIndex < 0) return;
     taskSequence.steps[selectedIndex].continueOnError = $propContErr.checked;
+    markDirty();
 });
 $tsName.addEventListener('input', () => {
     taskSequence.name = $tsName.textContent.trim();
     updateBreadcrumb(taskSequence.name);
+    markDirty();
 });
 
 /* ── Drag-and-drop reorder ────────────────────────────────────────── */
@@ -407,6 +511,7 @@ function onDrop(e) {
     const moved = taskSequence.steps.splice(dragSrcIndex, 1)[0];
     taskSequence.steps.splice(destIndex, 0, moved);
     selectedIndex = destIndex;
+    markDirty();
     renderStepList();
     selectStep(selectedIndex);
 }
@@ -422,6 +527,7 @@ document.getElementById('btnMoveUp').addEventListener('click', () => {
     taskSequence.steps[selectedIndex - 1] = taskSequence.steps[selectedIndex];
     taskSequence.steps[selectedIndex] = tmp;
     selectedIndex--;
+    markDirty();
     renderStepList();
     selectStep(selectedIndex);
 });
@@ -431,6 +537,7 @@ document.getElementById('btnMoveDown').addEventListener('click', () => {
     taskSequence.steps[selectedIndex + 1] = taskSequence.steps[selectedIndex];
     taskSequence.steps[selectedIndex] = tmp;
     selectedIndex++;
+    markDirty();
     renderStepList();
     selectStep(selectedIndex);
 });
@@ -441,6 +548,7 @@ document.getElementById('btnRemoveStep').addEventListener('click', () => {
     const removedType = taskSequence.steps[selectedIndex].type;
     taskSequence.steps.splice(selectedIndex, 1);
     if (selectedIndex >= taskSequence.steps.length) selectedIndex = taskSequence.steps.length - 1;
+    markDirty();
     renderStepList();
     selectStep(selectedIndex);
     if (removedType === 'SetComputerName' || removedType === 'SetRegionalSettings') {
@@ -486,6 +594,7 @@ $addOk.addEventListener('click', () => {
     const insertAt = selectedIndex >= 0 ? selectedIndex + 1 : taskSequence.steps.length;
     taskSequence.steps.splice(insertAt, 0, newStep);
     selectedIndex = insertAt;
+    markDirty();
     renderStepList();
     selectStep(selectedIndex);
     if (addDialogChoice === 'SetComputerName' || addDialogChoice === 'SetRegionalSettings') {
@@ -501,6 +610,7 @@ document.getElementById('btnNew').addEventListener('click', () => {
     selectedIndex = -1;
     renderStepList();
     selectStep(-1);
+    markClean();
 });
 
 /* ── Open JSON ────────────────────────────────────────────────────── */
@@ -525,6 +635,7 @@ $fileInput.addEventListener('change', (e) => {
             selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
             renderStepList();
             selectStep(selectedIndex);
+            markClean();
         } catch (err) {
             alert('Failed to load task sequence:\n' + err.message);
         }
@@ -791,6 +902,7 @@ document.getElementById('btnSave').addEventListener('click', async () => {
         }
 
         btnSave.textContent = '\u2705 Saved';
+        markClean();
         setTimeout(function () { btnSave.innerHTML = origLabel; }, 2000);
     } catch (err) {
         alert('Save failed:\n' + err.message);
@@ -1108,6 +1220,40 @@ function populateDefaultUnattendContent(steps) {
 
 /* ── Load default task sequence on start ──────────────────────────── */
 function loadDefault() {
+    /* Check for auto-saved draft */
+    var draftJson = null;
+    try { draftJson = localStorage.getItem(DRAFT_KEY); } catch (_) {}
+    if (draftJson) {
+        try {
+            var draftData = JSON.parse(draftJson);
+            if (draftData && draftData.steps && Array.isArray(draftData.steps)) {
+                if (confirm('An unsaved draft was found. Would you like to restore it?')) {
+                    taskSequence = draftData;
+                    $tsName.textContent = taskSequence.name || 'Untitled';
+                    updateBreadcrumb(taskSequence.name || 'Untitled');
+                    selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
+                    dirty = true;
+                    updateDirtyUI();
+                    renderStepList();
+                    selectStep(selectedIndex);
+                    fetch('../Unattend/unattend.xml')
+                        .then(function (r) { if (!r.ok) throw new Error(r.statusText); return r.text(); })
+                        .then(function (xml) {
+                            defaultUnattendXml = xml;
+                            if (defaultUnattendXml) typeMap.CustomizeOOBE.defaults.unattendContent = defaultUnattendXml;
+                            populateDefaultUnattendContent(taskSequence.steps);
+                            syncUnattendContent();
+                        }).catch(function () {});
+                    return;
+                } else {
+                    localStorage.removeItem(DRAFT_KEY);
+                }
+            }
+        } catch (_) {
+            localStorage.removeItem(DRAFT_KEY);
+        }
+    }
+
     /* Determine source from URL parameters */
     var params = new URLSearchParams(window.location.search);
     var tsParam = params.get('ts');

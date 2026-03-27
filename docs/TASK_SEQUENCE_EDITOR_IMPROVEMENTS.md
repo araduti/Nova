@@ -34,7 +34,7 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 - **Collapsible step groups** — allow grouping steps under a heading that can expand/collapse.
 
 ### Step List Enhancements
-- **Step status icons** — show warning/error icons on steps that have validation issues (e.g., missing required parameters).
+- **Step validation warning icons** ✅ — show ⚠ warning icons on steps that have validation issues (e.g., missing required parameters, NetBIOS length exceeded).
 - **Step dependency lines** — visual connectors showing which steps depend on others (e.g., ApplyImage depends on DownloadImage).
 - **Thumbnail previews** — hover over a step to see a summary tooltip of its key parameters without selecting it.
 - **Multi-select** — allow selecting multiple steps for bulk enable/disable, delete, or move operations.
@@ -43,7 +43,7 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 
 ### Properties Panel
 - **Tabbed layout** — split parameters into tabs: General, Advanced, Conditions.
-- **Inline validation** — real-time feedback on parameter values (e.g., computer name length, URL format, locale validity).
+- **Inline validation** ✅ — real-time validation warnings shown per step (e.g., computer name length, missing required parameters). Warnings appear in both the step list and the properties panel.
 - **Help tooltips** — link to Microsoft documentation for each parameter.
 - **Undo/Redo** — support Ctrl+Z / Ctrl+Y for step changes.
 - **JSON raw view toggle** — switch between the form UI and raw JSON editing for power users.
@@ -88,8 +88,8 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 - **Circular dependency detection** — prevent configurations that could cause infinite loops or deadlocks.
 
 ### Data Integrity
-- **Dirty state tracking** — show an unsaved changes indicator and warn before navigating away.
-- **Auto-save drafts** — periodically save the current state to `localStorage` to prevent data loss.
+- **Dirty state tracking** ✅ — unsaved changes indicator (amber dot on Save button, document title prefix), `beforeunload` warning prevents accidental data loss.
+- **Auto-save drafts** ✅ — debounced save to `localStorage` on every change, with draft recovery prompt on next load.
 - **Conflict detection** — when saving to GitHub, detect if someone else modified the file and offer merge resolution.
 - **Schema versioning** — version the JSON schema so older task sequences can be migrated automatically.
 
@@ -178,9 +178,9 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 |----------|------|--------|--------|
 | 🔴 P0 | Dashboard overview page | Medium | High |
 | 🔴 P0 | Breadcrumb navigation | Low | High |
-| 🟡 P1 | Step validation warnings | Medium | High |
-| 🟡 P1 | Dirty state / unsaved indicator | Low | Medium |
-| 🟡 P1 | Auto-save drafts to localStorage | Low | Medium |
+| ✅ ~~P1~~ | ~~Step validation warnings~~ | Medium | High |
+| ✅ ~~P1~~ | ~~Dirty state / unsaved indicator~~ | Low | Medium |
+| ✅ ~~P1~~ | ~~Auto-save drafts to localStorage~~ | Low | Medium |
 | 🟢 P2 | Step groups / folders | High | High |
 | 🟢 P2 | Conditional logic (if/else) | High | High |
 | 🟢 P2 | Visual unattend builder | High | Medium |
