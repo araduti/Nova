@@ -1,114 +1,185 @@
-# AmpCloud
+<div align="center">
 
-> **GitHub-native OSDCloud replacement.** No USB, no ISO, no local media.  
-> Stages a tiny WinRE/WinPE image on the C: drive, boots it via BCD ramdisk, then streams the full OSD engine directly from raw GitHub URLs.
->
-> **WiFi support:** AmpCloud uses the machine's existing **WinRE** (Windows Recovery Environment) image as its base, which ships with built-in WiFi hardware drivers (Intel, Realtek, MediaTek, Qualcomm) delivered by Microsoft via Windows Update. This means WiFi works on most laptops without manually injecting device-specific drivers. Recovery tools are stripped and the WIM is re-exported with maximum compression to keep the image small.
+# ☁️ AmpCloud
+
+### Cloud-Native Windows OS Deployment Platform
+
+*An [Ampliosoft](https://ampliosoft.com) open-source project*
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue?logo=powershell&logoColor=white)](https://docs.microsoft.com/en-us/powershell/)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11%2FServer-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
+
+**Zero-media, cloud-native Windows imaging — no USB, no ISO, no PXE.**
+Stream the entire deployment engine from GitHub, reimage any PC over WiFi or Ethernet.
+
+[Quick Start](#quick-start) · [How It Works](#how-it-works) · [Task Sequence Editor](#task-sequence-editor) · [Security](#security) · [Contributing](CONTRIBUTING.md)
+
+</div>
+
+---
+
+## What Is AmpCloud?
+
+AmpCloud is a **cloud-native Windows OS deployment platform** that replaces traditional OSDCloud, WinPE USB sticks, and PXE infrastructure. Run a single PowerShell command on any Windows PC, and AmpCloud handles everything: building a minimal boot environment, rebooting, connecting to the network (WiFi included), and streaming the full imaging engine directly from GitHub.
+
+**Key differentiators:**
+
+- **No USB, ISO, or PXE** — everything streams from a GitHub repository.
+- **WiFi out-of-the-box** — uses the machine's own WinRE, which ships with Microsoft-signed WiFi drivers (Intel, Realtek, MediaTek, Qualcomm).
+- **Instant updates** — edit your deployment defaults on GitHub and they take effect immediately. No rebuilds, no redistribution.
+- **Enterprise-ready** — optional Microsoft 365 (Entra ID) authentication gate, Autopilot registration, ConfigMgr staging, and OOBE customization.
+- **Visual task sequence editor** — browser-based, drag-and-drop UI hosted on GitHub Pages.
 
 ---
 
 ## Quick Start
 
-Run this single command on any Windows PC (as Administrator):
+Run this command on any Windows PC as **Administrator**:
 
 ```powershell
 irm https://raw.githubusercontent.com/araduti/AmpCloud/main/Trigger.ps1 | iex
 ```
 
-That's it. AmpCloud handles everything else automatically.
+AmpCloud installs the required tools, builds a compact boot image, reboots, connects to the network, and deploys Windows — all automatically.
+
+> **Tip:** Fork the repository and point the command at your fork to use your own defaults:
+> ```powershell
+> irm https://raw.githubusercontent.com/YOURUSER/AmpCloud/main/Trigger.ps1 | iex
+> ```
 
 ---
 
 ## How It Works
 
+AmpCloud operates in three stages. Each stage hands off to the next automatically.
+
 ```
-User runs one-liner
-       │
-       ▼
-┌──────────────┐
-│  Trigger.ps1 │  ← Runs on existing Windows
-│  (GitHub raw)│
-└──────┬───────┘
-       │  1. Installs ADK + WinPE add-on (if missing)
-       │  2. Locates WinRE.wim (built-in WiFi drivers); falls back to ADK winpe.wim
-       │  3. Slims WinRE: removes recovery tools, re-exports with max compression
-       │  4. Adds PowerShell, WMI, StorageWMI, DISM cmdlets from ADK
-       │  5. Embeds Bootstrap.ps1 + winpeshl.ini
-       │  6. Creates BCD ramdisk entry
-       │  7. Reboots into WinRE/WinPE
-       ▼
-┌────────────────┐
-│ Bootstrap.ps1  │  ← Runs inside WinRE/WinPE on reboot
-│ (in WinRE)     │
-└──────┬─────────┘
-       │  1. Detects internet connectivity (waits up to 10 min)
-       │  2. Fetches AmpCloud.ps1 from GitHub raw URL
-       │  3. Executes AmpCloud.ps1 in memory
-       ▼
-┌──────────────────┐
-│  AmpCloud.ps1    │  ← Full imaging engine (streamed from GitHub)
-│  (GitHub raw)    │
-└──────────────────┘
-       │  1. Partitions disk (UEFI GPT or BIOS MBR)
-       │  2. Downloads Windows WIM/ESD (Microsoft or custom URL)
-       │  3. Applies image with DISM
-       │  4. Configures bootloader (bcdboot)
-       │  5. Injects drivers
-       │  6. Applies Autopilot/Intune JSON
-       │  7. Stages ConfigMgr CCMSetup
-       │  8. Applies OOBE customization (unattend.xml)
-       │  9. Stages post-provisioning scripts
-       │ 10. Reboots into fresh Windows
-       ▼
-   Windows OOBE
+  ┌──────────────────────────────────────────────────────────────┐
+  │  STAGE 1 — Trigger (runs on existing Windows)               │
+  │                                                              │
+  │  • Installs ADK + WinPE add-on (if missing)                 │
+  │  • Extracts WinRE.wim (built-in WiFi drivers)               │
+  │  • Strips recovery tools, re-exports with max compression   │
+  │  • Injects PowerShell, WMI, DISM cmdlets                    │
+  │  • Embeds Bootstrap.ps1 + auto-launcher                     │
+  │  • Creates BCD ramdisk entry and reboots                    │
+  └──────────────────────┬───────────────────────────────────────┘
+                         │ reboot
+  ┌──────────────────────▼───────────────────────────────────────┐
+  │  STAGE 2 — Bootstrap (runs inside WinRE/WinPE)              │
+  │                                                              │
+  │  • Initialises network (DHCP + WiFi selector if needed)      │
+  │  • Launches real-time HTML progress UI (Edge kiosk mode)     │
+  │  • Optional M365 sign-in gate (PKCE or Device Code)         │
+  │  • Downloads AmpCloud.ps1 from GitHub                       │
+  └──────────────────────┬───────────────────────────────────────┘
+                         │
+  ┌──────────────────────▼───────────────────────────────────────┐
+  │  STAGE 3 — Imaging Engine (runs in WinPE)                   │
+  │                                                              │
+  │  1. Partition disk (GPT/UEFI or MBR/BIOS)                   │
+  │  2. Download Windows ESD/WIM from Microsoft or custom CDN   │
+  │  3. Apply image with DISM                                   │
+  │  4. Configure bootloader (bcdboot)                          │
+  │  5. Inject drivers (manual or OEM auto-detect)              │
+  │  6. Embed Autopilot/Intune configuration                    │
+  │  7. Stage ConfigMgr ccmsetup                                │
+  │  8. Apply OOBE customization (unattend.xml)                 │
+  │  9. Stage post-provisioning PowerShell scripts              │
+  │ 10. Reboot into Windows                                     │
+  └──────────────────────────────────────────────────────────────┘
+                         │
+                    Windows OOBE → Autopilot → Production
 ```
 
 ---
 
-## Core Architecture
+## Features
 
-### `Trigger.ps1` — Entry Point
+| | Feature | Details |
+|---|---------|---------|
+| 🚫 | **Zero media** | No USB, ISO, or PXE server needed |
+| 📡 | **WiFi out-of-the-box** | WinRE ships with Intel, Realtek, MediaTek & Qualcomm drivers |
+| ⚡ | **Instant updates** | Edit defaults on GitHub — active immediately |
+| 🔐 | **M365 auth gate** | Optional Entra ID sign-in with PKCE; tenant restrictions server-side |
+| 🔧 | **Autopilot ready** | Registers devices and embeds provisioning JSON |
+| 🏢 | **Intune / ConfigMgr** | First-boot ccmsetup staging built in |
+| 🖥️ | **Bare-metal or in-place** | Works on new hardware or existing Windows |
+| 🌐 | **Multi-language** | Localised UI strings (English, Spanish, French) |
+| 📋 | **Task sequence editor** | Browser-based drag-and-drop step builder |
+| 📊 | **Real-time progress UI** | HTML dashboard in Edge kiosk mode during imaging |
 
-Runs on any existing Windows installation (bare-metal or VM).
+---
 
-**What it does:**
-- Auto-detects and installs the latest **Windows ADK** and **WinPE add-on** if missing
-- **Prefers WinRE** (Windows Recovery Environment) as the base boot image because WinRE ships with real WiFi hardware drivers (Intel, Realtek, MediaTek, Qualcomm) that Microsoft delivers via Windows Update — enabling wireless connectivity on most laptops without any manual driver injection. Falls back to the ADK `winpe.wim` if WinRE is not accessible on the source machine.
-- Strips WinRE-specific recovery packages (startup repair, boot recovery tools) that are not needed for deployment
-- Re-exports the WIM with maximum compression to keep the ramdisk image small
-- Adds PowerShell, WMI, StorageWMI, and DISM cmdlets from the ADK (skips packages already present in WinRE)
-- Fetches `Bootstrap.ps1` from GitHub and embeds it in the boot image
-- Creates a `winpeshl.ini` to auto-launch `Bootstrap.ps1` on boot
-- Creates a **BCD ramdisk entry** pointing to the WIM at `C:\AmpCloud\boot.wim`
-- Reboots into the cloud boot environment (10-second countdown, can be cancelled)
+## Repository Layout
 
-**Parameters:**
+```
+AmpCloud/
+├── Trigger.ps1              # Stage 1 — entry point, WinPE builder
+├── Bootstrap.ps1            # Stage 2 — network, auth, engine launcher
+├── AmpCloud.ps1             # Stage 3 — full imaging engine
+├── AmpCloud-UI/             # Real-time progress UI (HTML/CSS/JS)
+├── Editor/                  # Task sequence editor (GitHub Pages SPA)
+│   ├── index.html
+│   ├── js/app.js
+│   ├── css/style.css
+│   └── lib/                 # MSAL.js, moment.js (vendored)
+├── Config/
+│   ├── auth.json            # OAuth / M365 configuration
+│   └── locale/              # UI localisation (en, es, fr)
+├── TaskSequence/
+│   └── default.json         # Default deployment task sequence
+├── Autopilot/               # Autopilot device import utilities
+├── Drivers/                 # Bundled NetKVM drivers (Hyper-V / KVM)
+├── Unattend/                # Default unattend.xml template
+├── Progress/                # Legacy progress UI
+├── oauth-proxy/             # Cloudflare Worker — GitHub OAuth CORS proxy
+├── products.xml             # Microsoft Windows ESD catalog
+└── CODEBASE_ANALYSIS.md     # Architecture & security analysis
+```
+
+---
+
+## Requirements
+
+### Source machine (where Trigger.ps1 runs)
+
+- Windows 10 / 11 or Windows Server 2016+
+- Administrator privileges
+- Internet access
+- ~4 GB free on the C: drive (for ADK + WinPE workspace)
+
+### Target machine (where imaging happens)
+
+- x64 architecture (amd64 or arm64 with appropriate WinPE)
+- Network adapter with DHCP — wired Ethernet **or** WiFi (Intel, Realtek, MediaTek, Qualcomm supported natively by WinRE)
+- Internet access from the boot environment
+- ≥ 30 GB disk space for Windows installation
+
+---
+
+## Configuration
+
+### Script Parameters
+
+<details>
+<summary><strong>Trigger.ps1</strong> — Entry Point</summary>
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `GitHubUser` | `araduti` | GitHub username |
+| `GitHubUser` | `araduti` | GitHub username or organisation |
 | `GitHubRepo` | `AmpCloud` | Repository name |
 | `GitHubBranch` | `main` | Branch to fetch scripts from |
-| `WinPEWorkDir` | `C:\AmpCloud\WinPE` | Working directory for WinPE build |
+| `WinPEWorkDir` | `C:\AmpCloud\WinPE` | Working directory for the WinPE build |
 | `RamdiskVHD` | `C:\AmpCloud\boot.vhd` | Path for BCD ramdisk files |
 | `ADKInstallPath` | `C:\Program Files (x86)\Windows Kits\10` | ADK installation path |
-| `NoReboot` | `$false` | Skip automatic reboot |
+| `NoReboot` | `$false` | Skip automatic reboot (useful for testing) |
 
----
+</details>
 
-### `Bootstrap.ps1` — WinRE/WinPE Network Waiter
-
-Embedded in the boot image. Runs automatically on boot via `winpeshl.ini`.
-
-**What it does:**
-- Enables DHCP on all network adapters
-- If no wired internet: presents a graphical WiFi selector (WiFi works out-of-the-box when booted from WinRE due to built-in hardware drivers)
-- Polls for internet connectivity (tests against GitHub raw, Microsoft, Google)
-- Waits up to 10 minutes, retrying every 5 seconds
-- Once connected, fetches `AmpCloud.ps1` via `irm` and executes it in memory
-- On failure, drops to an interactive `cmd.exe` shell for troubleshooting
-
-**Parameters:**
+<details>
+<summary><strong>Bootstrap.ps1</strong> — Network & Auth</summary>
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -118,199 +189,163 @@ Embedded in the boot image. Runs automatically on boot via `winpeshl.ini`.
 | `MaxWaitSeconds` | `600` | Maximum seconds to wait for internet |
 | `RetryInterval` | `5` | Seconds between connectivity checks |
 
----
+</details>
 
-### `AmpCloud.ps1` — Full Imaging Engine
-
-Streamed from GitHub at runtime. Never needs to be rebuilt or redeployed.
-
-**What it does:**
-1. **Disk Partitioning** — Initializes target disk with GPT (UEFI) or MBR (BIOS) layout
-2. **Windows Image Download** — Fetches Windows WIM/ESD from Microsoft's ESD catalog or a custom URL
-3. **Image Application** — Applies the image using DISM (`Expand-WindowsImage`)
-4. **Bootloader Configuration** — Runs `bcdboot` to make the installation bootable
-5. **Driver Injection** — Recursively adds drivers from a specified path
-6. **Autopilot/Intune** — Places `AutopilotConfigurationFile.json` in the correct location
-7. **ConfigMgr** — Stages `ccmsetup.exe` for first-boot execution via `SetupComplete.cmd`
-8. **OOBE Customization** — Applies custom or default `unattend.xml`
-9. **Post-Provisioning Scripts** — Stages PowerShell scripts for first-boot execution
-10. **Reboot** — Restarts into the freshly imaged Windows (15-second countdown)
-
-**Parameters:**
+<details>
+<summary><strong>AmpCloud.ps1</strong> — Imaging Engine</summary>
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `TargetDiskNumber` | `0` | Disk to image (disk index) |
 | `FirmwareType` | `UEFI` | `UEFI` or `BIOS` |
-| `WindowsImageUrl` | _(empty)_ | Direct URL to `.wim` or `.esd`; leave empty to use Microsoft ESD catalog |
+| `WindowsImageUrl` | _(empty)_ | Direct URL to `.wim` or `.esd`; leave empty for the Microsoft ESD catalog |
 | `WindowsEdition` | `Windows 11 Pro` | Edition name to apply |
 | `WindowsLanguage` | `en-us` | Language for ESD catalog lookup |
-| `DriverPath` | _(empty)_ | Path to folder containing driver `.inf` files |
+| `DriverPath` | _(empty)_ | Folder containing driver `.inf` files |
 | `AutopilotJsonUrl` | _(empty)_ | URL to `AutopilotConfigurationFile.json` |
 | `AutopilotJsonPath` | _(empty)_ | Local WinPE path to Autopilot JSON |
 | `CCMSetupUrl` | _(empty)_ | URL to `ccmsetup.exe` |
-| `UnattendUrl` | _(empty)_ | URL to `unattend.xml` |
+| `UnattendUrl` | _(empty)_ | URL to custom `unattend.xml` |
 | `UnattendPath` | _(empty)_ | Local WinPE path to `unattend.xml` |
-| `UnattendContent` | _(empty)_ | Inline XML content for `unattend.xml` (from the editor) |
-| `PostScriptUrls` | `@()` | Array of URLs to PowerShell scripts for first-boot |
+| `UnattendContent` | _(empty)_ | Inline XML content (from the editor) |
+| `PostScriptUrls` | `@()` | URLs to PowerShell scripts for first-boot execution |
 | `OSDrive` | `C` | Drive letter to assign to the OS partition |
 
----
+</details>
 
-## Customization Examples
+### Authentication (`Config/auth.json`)
 
-### Custom Windows image + Autopilot
+AmpCloud supports an optional **Microsoft 365 authentication gate** using Entra ID. When enabled, operators must sign in before deployment begins.
 
-```powershell
-# Pass parameters by modifying AmpCloud.ps1 defaults, or call directly:
-$params = @{
-    WindowsImageUrl   = 'https://mycdn.example.com/custom-win11.wim'
-    WindowsEdition    = 'Windows 11 Enterprise'
-    AutopilotJsonUrl  = 'https://mycdn.example.com/autopilot.json'
-    UnattendUrl       = 'https://mycdn.example.com/unattend.xml'
-    PostScriptUrls    = @(
-        'https://mycdn.example.com/Install-Apps.ps1',
-        'https://mycdn.example.com/Set-Branding.ps1'
-    )
-}
-# These are set as defaults in AmpCloud.ps1 for zero-touch deployments
-```
+<details>
+<summary><strong>auth.json fields</strong></summary>
 
-### Fork and customize
+| Field | Description |
+|-------|-------------|
+| `requireAuth` | `true` to enforce sign-in; `false` (default) to skip |
+| `clientId` | Azure AD Application (client) ID |
+| `redirectUri` | Redirect URI registered under **Single-page application** |
+| `autopilotImport` | `true` to import the device into Autopilot during deployment |
+| `graphScopes` | Microsoft Graph delegated permissions (e.g. `DeviceManagementServiceConfig.ReadWrite.All`) |
+| `githubOwner` | GitHub user/org that owns the repository |
+| `githubRepo` | Repository name |
+| `githubClientId` | GitHub OAuth App client ID (enables Device Flow for saving task sequences) |
+| `githubOAuthProxy` | URL of the Cloudflare Worker CORS proxy for GitHub OAuth |
 
-1. Fork this repository
-2. Edit `AmpCloud.ps1` to set your defaults (image URL, Autopilot JSON, etc.)
-3. Run the trigger with your fork:
+</details>
 
-```powershell
-irm https://raw.githubusercontent.com/YOURUSER/AmpCloud/main/Trigger.ps1 | iex
-```
+<details>
+<summary><strong>Setting up M365 authentication</strong></summary>
 
-Updates to `AmpCloud.ps1` take effect **immediately** — no rebuilds, no redistribution.
+1. **Register an Azure AD application:**
+   - [Azure Portal → App registrations → New registration](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade)
+   - Name: e.g. `AmpCloud`
+   - Supported account types: **Accounts in any organizational directory** (multi-tenant)
+   - Under **Authentication → Supported accounts**, select **Allow only certain tenants** and add permitted tenant IDs
+   - Enable **Allow public client flows** (required for Device Code fallback)
+   - Add a **Single-page application** redirect URI pointing to your GitHub Pages editor URL
+   - Add a **Mobile and desktop** redirect URI for `http://localhost` (WinPE Edge sign-in)
+   - *(Optional)* Add **Microsoft Graph → DeviceManagementServiceConfig.ReadWrite.All** and grant admin consent (for Autopilot import)
 
----
+2. **Register a GitHub OAuth App** *(optional — for saving task sequences):*
+   - [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers)
+   - Enable **Device Flow**
 
-## Requirements
+3. **Deploy the OAuth CORS proxy** *(optional):*
+   - See [`oauth-proxy/README.md`](oauth-proxy/README.md) for Cloudflare Worker deployment instructions
 
-### On the source machine (where Trigger.ps1 runs)
-- Windows 10/11 or Windows Server 2016+
-- Administrator privileges
-- Internet access
-- ~4 GB free on C: drive (for ADK + WinPE workspace)
+4. **Update `Config/auth.json`** with your application and client IDs.
 
-### On the target machine (where imaging happens)
-- x64 architecture
-- Network adapter with DHCP (wired) **or** WiFi (Intel/Realtek/MediaTek/Qualcomm — supported natively by WinRE)
-- Internet access from the boot environment
-- Disk with sufficient space for Windows installation (minimum ~30 GB recommended)
-
----
-
-## Key Features
-
-| Feature | Details |
-|---------|---------|
-| 🚫 Zero media required | No USB, ISO, or PXE server needed |
-| 📡 WiFi out-of-the-box | WinRE base image includes Intel, Realtek, MediaTek & Qualcomm drivers |
-| ⚡ Instant updates | Edit `AmpCloud.ps1` on GitHub — active immediately |
-| 🖥️ Bare-metal or in-place | Works on fresh hardware or existing Windows |
-| 🔁 BCD-based reboot | No external boot media |
-| 🛡️ Full error handling | No forced reboot until imaging succeeds |
-| ☁️ Cloud-native | All scripts streamed from GitHub at runtime |
-| 🔧 Autopilot ready | Drop-in Autopilot JSON support |
-| 🏢 Intune/ConfigMgr | First-boot CCMSetup staging built in |
+</details>
 
 ---
 
 ## Task Sequence Editor
 
-AmpCloud includes a browser-based Task Sequence Editor for visually creating and editing deployment task sequences.
+AmpCloud includes a browser-based **Task Sequence Editor** for visually creating deployment workflows — similar to SCCM/MECM task sequences.
 
 **Live editor:** [https://araduti.github.io/AmpCloud/Editor/](https://araduti.github.io/AmpCloud/Editor/)
 
-- Create, reorder, and configure deployment steps in a drag-and-drop interface
-- Open existing `default.json` task sequences or start from scratch
-- Export edited sequences as JSON for use with the `-TaskSequencePath` parameter
-
-The editor is a static web app (HTML/CSS/JS) hosted on GitHub Pages and requires no installation.
+- Drag-and-drop step reordering
+- Configure each step with dedicated form fields
+- Inline unattend.xml editing
+- Import and export task sequences as JSON
+- Save directly to GitHub via OAuth Device Flow
+- Optional M365 login gate
 
 ---
 
-## Security Considerations
+## Customisation
 
-- Always host scripts in a **private** repository if they contain sensitive configuration
-- Use GitHub **Releases** or **branch protection** to prevent unauthorized script modification
-- Scripts are fetched over HTTPS from GitHub; verify your repository is not compromised
-- Consider code-signing scripts and validating signatures in `Bootstrap.ps1` for high-security environments
+### Fork-and-own
 
-### Microsoft 365 Authentication (Entra ID)
+1. **Fork** this repository
+2. Edit `AmpCloud.ps1` defaults (image URL, Autopilot JSON, drivers, etc.)
+3. Update `Config/auth.json` with your own app registrations
+4. Run the trigger pointing at your fork:
 
-AmpCloud supports an optional **M365 authentication gate** that blocks unauthorised users from deploying images and editing task sequences. When enabled, operators must sign in with a Microsoft 365 account from an Entra ID tenant that is explicitly allowed in the app registration.
+```powershell
+irm https://raw.githubusercontent.com/YOURUSER/AmpCloud/main/Trigger.ps1 | iex
+```
 
-Tenant restrictions are managed directly in the **Entra ID app registration** under **Authentication → Supported accounts → Allow only certain tenants**. There is no client-side tenant allow-list — Azure AD rejects sign-in attempts from tenants that are not permitted.
+Changes to `AmpCloud.ps1` take effect **immediately** — no rebuild cycle.
 
-**What is protected:**
+### Example: custom image + Autopilot
 
-- **Deployment engine** (Bootstrap.ps1) — after network connectivity, operators sign in via a **standalone Edge browser** (Authorization Code Flow with PKCE) launched directly inside WinPE. Falls back to Device Code Flow if the Edge browser is unavailable.
-- **Task Sequence Editor** (web UI) — a login overlay blocks the editor until the user signs in via MSAL popup
+```powershell
+$params = @{
+    WindowsImageUrl  = 'https://mycdn.example.com/custom-win11.wim'
+    WindowsEdition   = 'Windows 11 Enterprise'
+    AutopilotJsonUrl = 'https://mycdn.example.com/autopilot.json'
+    UnattendUrl      = 'https://mycdn.example.com/unattend.xml'
+    PostScriptUrls   = @(
+        'https://mycdn.example.com/Install-Apps.ps1',
+        'https://mycdn.example.com/Set-Branding.ps1'
+    )
+}
+```
 
-**How it works:**
+---
 
-1. Both the engine and editor fetch [`Config/auth.json`](Config/auth.json) to check if authentication is required.
-2. If `requireAuth` is `true`, sign-in is enforced.
-3. In WinPE, the engine launches **Microsoft Edge** with GPU-disabled flags, navigating to the Azure AD login page. The operator signs in directly in the Edge browser window — no codes to copy or external devices needed. A localhost HTTP listener captures the redirect. If Edge is unavailable, it transparently falls back to **Device Code Flow** with a one-time code and `https://microsoft.com/devicelogin`.
-4. In the browser (editor), MSAL.js shows a popup sign-in window.
-5. Azure AD enforces tenant restrictions at the app registration level — only allowed tenants can complete sign-in.
+## Security
 
-**Setup:**
+AmpCloud follows modern security best practices for public-client OAuth 2.0 applications.
 
-1. **Register an Azure AD application:**
-   - Go to [Azure Portal → App registrations → New registration](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade)
-   - Name: e.g. `AmpCloud`
-   - Supported account types: **Accounts in any organizational directory** (multi-tenant)
-   - Under **Authentication → Supported accounts**, select **Allow only certain tenants** and add the tenant IDs you want to allow
-   - Under **Authentication → Advanced settings**, enable **Allow public client flows** (required for Device Code Flow fallback in WinPE)
-   - Under **Authentication → Platform configurations → Single-page application**, add your GitHub Pages URL as a redirect URI (e.g. `https://yourusername.github.io/AmpCloud/Editor/`)
-   - Under **Authentication → Platform configurations → Mobile and desktop applications**, add `http://localhost` as a redirect URI (required for the Edge browser sign-in in WinPE)
-   - *(Optional — for Autopilot import)* Under **API permissions**, add **Microsoft Graph → Delegated permissions → DeviceManagementServiceConfig.ReadWrite.All** and grant admin consent
-   - Note the **Application (client) ID**
+| Area | Approach |
+|------|----------|
+| **Script delivery** | All scripts fetched over HTTPS from GitHub |
+| **TLS** | TLS 1.2 explicitly enforced in WinPE scripts |
+| **M365 authentication** | Authorization Code Flow with PKCE; Device Code fallback |
+| **Tenant restriction** | Enforced server-side by Entra ID app registration |
+| **Token handling** | Ephemeral — tokens are not persisted to disk |
+| **Web editor tokens** | Stored in `sessionStorage` (cleared on tab close) |
+| **No secrets in code** | Public client IDs only; no client secrets committed |
+| **GitHub PAT** | Collected via `SecureString`; memory zeroed after use |
 
-2. **Register a GitHub OAuth App** *(optional — for saving task sequences to GitHub):*
-   - Go to [GitHub → Settings → Developer settings → OAuth Apps → New OAuth App](https://github.com/settings/developers)
-   - Application name: e.g. `AmpCloud`
-   - Homepage URL: your GitHub Pages URL (e.g. `https://yourusername.github.io/AmpCloud/Editor/`)
-   - Authorization callback URL: `https://yourusername.github.io/AmpCloud/Editor/`
-   - Check **Enable Device Flow**
-   - Note the **Client ID**
+For a detailed analysis of all authentication flows and security findings, see [**SECURITY_ANALYSIS.md**](SECURITY_ANALYSIS.md).
 
-3. **Configure `Config/auth.json`:**
+For a comprehensive review of the codebase covering architecture, performance, and improvement opportunities, see [**CODEBASE_ANALYSIS.md**](CODEBASE_ANALYSIS.md).
 
-   ```json
-   {
-       "requireAuth": true,
-       "clientId": "YOUR-APPLICATION-CLIENT-ID",
-       "redirectUri": "https://yourusername.github.io/AmpCloud/Editor/",
-       "autopilotImport": true,
-       "graphScopes": "DeviceManagementServiceConfig.ReadWrite.All",
-       "githubOwner": "yourusername",
-       "githubRepo": "AmpCloud",
-       "githubClientId": "YOUR-GITHUB-OAUTH-CLIENT-ID"
-   }
-   ```
+### Responsible disclosure
 
-   | Field | Description |
-   |-------|-------------|
-   | `requireAuth` | Set to `true` to enforce authentication. When `false` (default), auth is skipped. |
-   | `clientId` | The Application (client) ID from your Azure AD app registration. |
-   | `redirectUri` | The redirect URI registered in your app registration under **Single-page application** platform. Must match exactly. |
-   | `autopilotImport` | Set to `true` to enable API-based Autopilot device import during WinPE deployment. The device is imported only if not already registered. |
-   | `graphScopes` | Space-separated Microsoft Graph delegated permissions to request during sign-in (e.g. `DeviceManagementServiceConfig.ReadWrite.All` for Autopilot). No client secret is needed — uses delegated permissions from the interactive sign-in. |
-   | `githubOwner` | GitHub username or organization that owns the repository. Used for saving task sequences via the GitHub API. |
-   | `githubRepo` | GitHub repository name. Used with `githubOwner` to target the correct repo when saving task sequences. |
-   | `githubClientId` | Client ID from your GitHub OAuth App registration. When set, the editor uses OAuth Device Flow for authentication. When empty, falls back to a Personal Access Token prompt. |
+If you discover a security vulnerability, please report it privately. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+
+---
+
+## Contributing
+
+Contributions are welcome! Please read [**CONTRIBUTING.md**](CONTRIBUTING.md) before submitting a pull request.
 
 ---
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+
+*Built with ❤️ by [Ampliosoft](https://ampliosoft.com)*
+
+</div>
