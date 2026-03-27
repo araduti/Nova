@@ -1037,14 +1037,19 @@ function Set-OOBECustomization {
         # Generate a default unattend.xml with locale and device name settings
         $stepName = 'Generate default unattend.xml'
 
+        # XML-encode a value to prevent XML injection / broken structure
+        function EncodeXml([string]$v) {
+            return [System.Security.SecurityElement]::Escape($v)
+        }
+
         # Build the International-Core component for locale/keyboard settings
         $intlComponent = ''
         if ($InputLocale -or $SystemLocale -or $UserLocale -or $UILanguage) {
             $intlParts = @()
-            if ($InputLocale)  { $intlParts += "        <InputLocale>$InputLocale</InputLocale>" }
-            if ($SystemLocale) { $intlParts += "        <SystemLocale>$SystemLocale</SystemLocale>" }
-            if ($UserLocale)   { $intlParts += "        <UserLocale>$UserLocale</UserLocale>" }
-            if ($UILanguage)   { $intlParts += "        <UILanguage>$UILanguage</UILanguage>" }
+            if ($InputLocale)  { $intlParts += "        <InputLocale>$(EncodeXml $InputLocale)</InputLocale>" }
+            if ($SystemLocale) { $intlParts += "        <SystemLocale>$(EncodeXml $SystemLocale)</SystemLocale>" }
+            if ($UserLocale)   { $intlParts += "        <UserLocale>$(EncodeXml $UserLocale)</UserLocale>" }
+            if ($UILanguage)   { $intlParts += "        <UILanguage>$(EncodeXml $UILanguage)</UILanguage>" }
             $intlComponent = @"
     <component name="Microsoft-Windows-International-Core"
                processorArchitecture="amd64"
@@ -1060,7 +1065,7 @@ $($intlParts -join "`n")
         # Build ComputerName element if specified
         $computerNameElement = ''
         if ($ComputerName) {
-            $computerNameElement = "      <ComputerName>$ComputerName</ComputerName>"
+            $computerNameElement = "      <ComputerName>$(EncodeXml $ComputerName)</ComputerName>"
         }
 
     $defaultUnattend = @"
