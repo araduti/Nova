@@ -1060,7 +1060,7 @@ $script:DefaultUnattendXml = @"
 
 function Update-StepUnattendContent {
     <#
-    .SYNOPSIS  Updates the unattendContent in the CustomizeOOBE step with ComputerName and/or locale values.
+    .SYNOPSIS  Updates the CustomizeOOBE step's unattendContent with ComputerName and/or locale values.
     .DESCRIPTION
         Connects the SetComputerName and SetRegionalSettings steps to the
         unattend.xml stored in the task sequence.  When either step resolves
@@ -1095,7 +1095,7 @@ function Update-StepUnattendContent {
     $src = $oobeStep.parameters.unattendSource
     if ($src -and $src -ne 'default') { return }
 
-    # Initialise unattendContent with the default XML if it is empty
+    # Initialize unattendContent with the default XML if it is empty
     $xml = $oobeStep.parameters.unattendContent
     if (-not $xml) {
         $xml = $script:DefaultUnattendXml
