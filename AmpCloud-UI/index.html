@@ -1125,6 +1125,22 @@
         }
 
         setInterval(pollStatus, POLL_MS);
+
+        /* ── F8 hotkey: open a PowerShell shell via Bootstrap API ── */
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'F8' || e.keyCode === 119) {
+                e.preventDefault();
+                sendAction('shell');
+            }
+        });
+
+        /* ── Heartbeat: let Bootstrap.ps1 know the renderer is alive */
+        setInterval(function () {
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', API_BASE + '/heartbeat', true);
+            xhr.onerror = function () {};
+            try { xhr.send(); } catch (e) { /* ignore */ }
+        }, 10000);
     </script>
 </body>
 </html>

@@ -554,6 +554,7 @@ $script:actionTimer.Add_Tick({
                 '/reboot'     { Restart-Computer -Force; $msg = 'rebooting' }
                 '/shutdown'   { Stop-Computer -Force; $msg = 'shutting down' }
                 '/shell'      { Start-Process $script:PsBin -ArgumentList '-NoProfile','-NoExit'; $msg = 'shell opened' }
+                '/heartbeat'  { $script:_lastHeartbeat = [DateTime]::UtcNow; $msg = 'ok' }
             }
 
             if (-not $handled) {
@@ -586,6 +587,151 @@ $script:actionTimer.Add_Tick({
     }
 })
 $script:actionTimer.Start()
+#endregion
+
+
+#region ── Global F8 hotkey (works even when Edge has crashed) ────────────────
+# Register F8 as a system-wide hotkey via Win32 RegisterHotKey so users can
+# open a PowerShell troubleshooting console at any time — regardless of whether
+# Edge is responsive.  The WM_HOTKEY message is delivered to a hidden
+# NativeWindow and processed by the existing DoEvents message pump.
+try {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Windows.Forms;
+
+public class AmpCloudHotkeyWindow : NativeWindow, IDisposable {
+    [DllImport("user32.dll")]
+    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+    [DllImport("user32.dll")]
+    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    private const int WM_HOTKEY = 0x0312;
+    private const uint VK_F8    = 0x77;
+    private const int  HOTKEY_ID = 1;
+
+    public event Action HotkeyPressed;
+
+    public AmpCloudHotkeyWindow() {
+        CreateHandle(new CreateParams());
+        RegisterHotKey(Handle, HOTKEY_ID, 0, VK_F8);
+    }
+
+    protected override void WndProc(ref Message m) {
+        if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == HOTKEY_ID) {
+            var handler = HotkeyPressed;
+            if (handler != null) handler();
+        }
+        base.WndProc(ref m);
+    }
+
+    public void Dispose() {
+        UnregisterHotKey(Handle, HOTKEY_ID);
+        DestroyHandle();
+    }
+}
+'@ -ReferencedAssemblies System.Windows.Forms -ErrorAction Stop
+
+    $script:hotkeyWindow = New-Object AmpCloudHotkeyWindow
+    $script:hotkeyWindow.add_HotkeyPressed({
+        Write-Verbose 'F8 hotkey pressed — opening PowerShell'
+        Start-Process $script:PsBin -ArgumentList '-NoProfile', '-NoExit'
+    })
+    Write-Verbose 'Global F8 hotkey registered'
+} catch {
+    Write-Verbose "Failed to register global F8 hotkey: $_"
+}
+#endregion
+
+
+#region ── Edge watchdog (auto-restart on crash) ─────────────────────────────
+# Edge with SwiftShader in WinPE can crash with Error code 39 (renderer
+# process terminated).  When this happens the user is stranded on Edge's
+# error page with no way to interact with the deployment.
+#
+# The watchdog tracks two signals:
+#   1. Process exit  — all msedge.exe processes have terminated.
+#   2. Heartbeat loss — the HTML UI sends a /heartbeat every 10 s.
+#      If no heartbeat arrives for 30+ seconds the renderer has likely
+#      crashed while the browser chrome process may still be alive.
+#
+# On either signal the watchdog kills any remaining Edge processes, clears
+# the user-data dir lock files, and relaunches Edge with the original args.
+
+$script:EdgeExe  = 'X:\WebView2\Edge\msedge.exe'
+$script:EdgeArgs = @(
+    '--kiosk',           'file:///X:/AmpCloud-UI/index.html',
+    '--kiosk-type=fullscreen',
+    '--allow-run-as-system',
+    '--user-data-dir=X:\Temp\EdgeKiosk',
+    '--disable-gpu',
+    '--disable-gpu-compositing',
+    '--disable-direct-composition',
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
+    '--in-process-gpu',
+    '--no-first-run',
+    '--disable-fre',
+    '--disable-features=msWebOOBE',
+    '--allow-file-access-from-files',
+    '--disable-popup-blocking'
+)
+
+$script:_lastHeartbeat       = [DateTime]::UtcNow
+$script:_edgeWatchdogStarted = $false
+
+function Restart-Edge {
+    <#
+    .SYNOPSIS  Kill all Edge processes and relaunch the kiosk UI.
+    #>
+    Write-Verbose 'Edge watchdog — restarting Edge'
+    # Terminate every msedge process
+    Get-Process -Name 'msedge' -ErrorAction SilentlyContinue |
+        ForEach-Object { try { $_.Kill() } catch {} }
+    Start-Sleep -Seconds 2
+    # Remove stale lock files so Edge starts cleanly
+    Remove-Item 'X:\Temp\EdgeKiosk\lockfile'   -Force -ErrorAction SilentlyContinue
+    Remove-Item 'X:\Temp\EdgeKiosk\SingletonLock' -Force -ErrorAction SilentlyContinue
+    if (Test-Path $script:EdgeExe) {
+        Start-Process -FilePath $script:EdgeExe -ArgumentList $script:EdgeArgs
+    }
+    $script:_lastHeartbeat = [DateTime]::UtcNow
+}
+
+$script:edgeWatchdogTimer = New-Object System.Windows.Forms.Timer
+$script:edgeWatchdogTimer.Interval = 10000   # check every 10 seconds
+
+$script:edgeWatchdogTimer.Add_Tick({
+    # Skip watchdog until at least one heartbeat has been received, giving
+    # Edge enough time to start on first boot.
+    if (-not $script:_edgeWatchdogStarted) {
+        if (([DateTime]::UtcNow - $script:_lastHeartbeat).TotalSeconds -lt 60) {
+            # Still in grace period — check if we have received an actual
+            # heartbeat (timestamp updated by /heartbeat route).
+            $edgeRunning = Get-Process -Name 'msedge' -ErrorAction SilentlyContinue
+            if ($edgeRunning) { return }
+        }
+        $script:_edgeWatchdogStarted = $true
+    }
+
+    $edgeRunning = Get-Process -Name 'msedge' -ErrorAction SilentlyContinue
+
+    if (-not $edgeRunning) {
+        # Edge process has exited entirely — restart it.
+        Write-Verbose 'Edge watchdog — Edge process not found'
+        Restart-Edge
+        return
+    }
+
+    # Edge is running but the UI may be unresponsive (Error code 39 scenario).
+    $heartbeatAge = ([DateTime]::UtcNow - $script:_lastHeartbeat).TotalSeconds
+    if ($heartbeatAge -gt 30) {
+        Write-Verbose "Edge watchdog — heartbeat lost (${heartbeatAge}s ago)"
+        Restart-Edge
+    }
+})
+$script:edgeWatchdogTimer.Start()
 #endregion
 
 
@@ -1514,5 +1660,7 @@ while (-not $script:ExitMainLoop) {
     Start-Sleep -Milliseconds 50
 }
 try { $script:HttpListener.Stop() } catch {}
+try { $script:edgeWatchdogTimer.Stop() } catch {}
+try { if ($script:hotkeyWindow) { $script:hotkeyWindow.Dispose() } } catch {}
 Stop-Transcript -ErrorAction SilentlyContinue
 #endregion
