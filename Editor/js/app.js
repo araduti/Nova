@@ -1753,7 +1753,6 @@ function setupVisualUnattendBuilder(container, textarea, step) {
 
     /* When the XML textarea changes externally (e.g. via syncUnattendContent),
        refresh the visual builder if it's visible */
-    var origDispatch = textarea.dispatchEvent.bind(textarea);
     textarea.addEventListener('vub-refresh', function () {
         if (builderEl.style.display !== 'none') {
             renderVisualUnattendForm(builderEl, textarea, step);
