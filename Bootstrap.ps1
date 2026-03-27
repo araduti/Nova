@@ -194,6 +194,8 @@ if (-not $Strings.ContainsKey('EN')) {
         ConfigLang="Language"; ConfigOsLang="OS Language";
         ConfigArch="Architecture"; ConfigActivation="Activation";
         ConfigEdition="Windows Edition";
+        ConfigRegion="Region"; ConfigKeyboard="Keyboard layout";
+        ConfigDeviceName="Device name";
         ConfigBtn="Start deployment";
         AuthSigning="Signing in with Microsoft 365...";
         AuthPrompt="Sign in with your Microsoft 365 account to continue.";
