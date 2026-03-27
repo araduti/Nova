@@ -180,6 +180,7 @@ const $addTypeList  = document.getElementById('stepTypeList');
 const $addOk        = document.getElementById('btnAddStepOk');
 const $fileInput    = document.getElementById('fileInput');
 const $validationWarnings = document.getElementById('validationWarnings');
+const $btnSave      = document.getElementById('btnSave');
 
 /* ── Populate type <select> ───────────────────────────────────────── */
 STEP_TYPES.forEach(t => {
@@ -191,7 +192,6 @@ STEP_TYPES.forEach(t => {
 
 /* ── Dirty state tracking ─────────────────────────────────────────── */
 function updateDirtyUI() {
-    var $btnSave = document.getElementById('btnSave');
     if (dirty) {
         $btnSave.classList.add('dirty');
         document.title = '\u25CF AmpCloud Task Sequence Editor';
@@ -204,7 +204,7 @@ function updateDirtyUI() {
 function scheduleDraftSave() {
     clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(function () {
-        try { localStorage.setItem(DRAFT_KEY, JSON.stringify(taskSequence)); } catch (_) {}
+        try { localStorage.setItem(DRAFT_KEY, JSON.stringify(taskSequence)); } catch (e) { console.warn('[AmpCloud] Auto-save draft failed:', e.message); }
     }, 1000);
 }
 
