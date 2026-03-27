@@ -150,6 +150,82 @@ const STEP_TYPES = [
 
 const typeMap = Object.fromEntries(STEP_TYPES.map(t => [t.type, t]));
 
+/* ── Step help documentation URLs ─────────────────────────────────── */
+const STEP_HELP_URLS = {
+    PartitionDisk:      'https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions',
+    DownloadImage:      'https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/dism-image-management-command-line-options-s14',
+    ApplyImage:         'https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/apply-images-using-dism',
+    SetBootloader:      'https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/bcdboot-command-line-options-techref-di',
+    InjectDrivers:      'https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/add-and-remove-drivers-to-an-offline-windows-image',
+    InjectOemDrivers:   'https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/add-and-remove-drivers-to-an-offline-windows-image',
+    ImportAutopilot:    'https://learn.microsoft.com/en-us/autopilot/registration-overview',
+    ApplyAutopilot:     'https://learn.microsoft.com/en-us/autopilot/existing-devices',
+    StageCCMSetup:      'https://learn.microsoft.com/en-us/mem/configmgr/core/clients/deploy/about-client-installation-properties',
+    SetComputerName:    'https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/microsoft-windows-shell-setup-computername',
+    SetRegionalSettings:'https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/microsoft-windows-international-core',
+    CustomizeOOBE:      'https://learn.microsoft.com/en-us/windows-hardware/customize/desktop/unattend/microsoft-windows-shell-setup-oobe',
+    RunPostScripts:     'https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/add-a-custom-script-to-windows-setup'
+};
+
+/* ── Built-in step templates ──────────────────────────────────────── */
+const BUILT_IN_STEP_TEMPLATES = [
+    {
+        id: 'tpl-serial-naming',
+        label: 'Serial Number Naming',
+        description: 'Name PCs using serial number with AMP- prefix',
+        type: 'SetComputerName',
+        parameters: { computerName: '', namingSource: 'serialNumber', prefix: 'AMP-', suffix: '', randomDigitCount: 4, maxLength: 15 }
+    },
+    {
+        id: 'tpl-autopilot-full',
+        label: 'Autopilot Full Skip',
+        description: 'Customize OOBE with all screens skipped for Autopilot',
+        type: 'CustomizeOOBE',
+        parameters: { unattendSource: 'default', unattendContent: '', unattendUrl: '', unattendPath: '' }
+    },
+    {
+        id: 'tpl-standard-partition',
+        label: 'Standard GPT Partition',
+        description: 'Partition disk 0 with OS on C: (GPT/UEFI layout)',
+        type: 'PartitionDisk',
+        parameters: { diskNumber: 0, osDriveLetter: 'C' }
+    },
+    {
+        id: 'tpl-en-us-locale',
+        label: 'English (US) Regional',
+        description: 'Set all locale settings to en-US for US English',
+        type: 'SetRegionalSettings',
+        parameters: { inputLocale: 'en-US', systemLocale: 'en-US', userLocale: 'en-US', uiLanguage: 'en-US' }
+    },
+    {
+        id: 'tpl-fr-fr-locale',
+        label: 'French (France) Regional',
+        description: 'Set all locale settings to fr-FR for French (France)',
+        type: 'SetRegionalSettings',
+        parameters: { inputLocale: 'fr-FR', systemLocale: 'fr-FR', userLocale: 'fr-FR', uiLanguage: 'fr-FR' }
+    }
+];
+
+const TEMPLATES_KEY = 'ampcloud_step_templates';
+
+/** Load user-saved templates from localStorage. */
+function loadUserTemplates() {
+    try {
+        const raw = localStorage.getItem(TEMPLATES_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch (_) { return []; }
+}
+
+/** Save user templates to localStorage. */
+function saveUserTemplates(templates) {
+    try { localStorage.setItem(TEMPLATES_KEY, JSON.stringify(templates)); } catch (_) {}
+}
+
+/** Get all templates (built-in + user). */
+function getAllTemplates() {
+    return BUILT_IN_STEP_TEMPLATES.concat(loadUserTemplates());
+}
+
 /* ── Default step-type → group mapping ─────────────────────────────── */
 const STEP_GROUP_DEFAULTS = {
     SetComputerName:    'Configuration',
@@ -436,6 +512,33 @@ window.addEventListener('beforeunload', function (e) {
     }
 });
 
+/* ── Step tooltip (thumbnail preview) ─────────────────────────────── */
+/** Build a multi-line tooltip summarising a step's key parameters. */
+function getStepTooltip(step) {
+    const parts = [];
+    if (step.description) parts.push(step.description);
+    const p = step.parameters || {};
+    const typeDef = typeMap[step.type];
+    if (typeDef && typeDef.fields) {
+        typeDef.fields.forEach(f => {
+            if (f.kind === 'heading' || f.kind === 'xml') return;
+            const val = p[f.key];
+            if (val === undefined || val === '' || val === null) return;
+            if (Array.isArray(val)) {
+                if (val.length > 0) parts.push(f.label + ': ' + val.length + ' item(s)');
+            } else {
+                const display = typeof val === 'boolean' ? (val ? 'Yes' : 'No') : String(val);
+                parts.push(f.label + ': ' + display);
+            }
+        });
+    }
+    if (step.condition && step.condition.type) {
+        parts.push('Condition: ' + getConditionSummary(step.condition));
+    }
+    if (step.enabled === false) parts.push('[Disabled]');
+    return parts.join('\n');
+}
+
 /* ── Render step list ─────────────────────────────────────────────── */
 const STEP_BADGE_LABELS = {
     PartitionDisk: 'P', DownloadImage: 'D', ApplyImage: 'A', SetBootloader: 'B',
@@ -509,6 +612,7 @@ function renderStepList() {
             (group ? ' in-group' : '');
         li.draggable = true;
         li.dataset.index = i;
+        li.title = getStepTooltip(step);
 
         const badge = STEP_BADGE_LABELS[step.type] || '?';
         const stepWarnings = validateStep(step);
@@ -593,6 +697,7 @@ function showPropertiesForIndex(index) {
     $propContErr.checked = step.continueOnError === true;
     $propGroup.value = step.group || '';
     updateGroupSuggestions();
+    updateHelpLink(step.type);
     renderConditionUI(step);
     renderValidationWarnings();
     if (jsonRawMode) {
@@ -613,6 +718,19 @@ function updateGroupSuggestions() {
         opt.value = g;
         $groupSuggestions.appendChild(opt);
     });
+}
+
+/** Show or hide the documentation help link for the current step type. */
+function updateHelpLink(stepType) {
+    const $link = document.getElementById('helpLink');
+    if (!$link) return;
+    const url = STEP_HELP_URLS[stepType];
+    if (url) {
+        $link.href = url;
+        $link.style.display = '';
+    } else {
+        $link.style.display = 'none';
+    }
 }
 
 /* ── Condition UI ─────────────────────────────────────────────────── */
@@ -1030,10 +1148,85 @@ document.getElementById('btnRemoveStep').addEventListener('click', () => {
 
 /* ── Add step dialog ──────────────────────────────────────────────── */
 let addDialogChoice = null;
+let addDialogTemplate = null;  /* Holds the template object when a template is selected */
+const $templateList = document.getElementById('templateList');
+const $noTemplates = document.getElementById('noTemplates');
+
+/** Render the template list in the Add Step dialog. */
+function renderTemplateList() {
+    if (!$templateList) return;
+    $templateList.innerHTML = '';
+    const templates = getAllTemplates();
+    if (templates.length === 0) {
+        if ($noTemplates) $noTemplates.style.display = '';
+        return;
+    }
+    if ($noTemplates) $noTemplates.style.display = 'none';
+    templates.forEach(tpl => {
+        const li = document.createElement('li');
+        const badge = STEP_BADGE_LABELS[tpl.type] || '?';
+        const isUser = !BUILT_IN_STEP_TEMPLATES.some(b => b.id === tpl.id);
+        li.innerHTML =
+            '<div class="st-name">' +
+                '<span class="step-badge st-badge-inline" data-type="' + escapeHtml(tpl.type) + '">' + badge + '</span> ' +
+                escapeHtml(tpl.label) +
+                (isUser ? '<button class="tpl-delete-btn" data-tpl-id="' + escapeHtml(tpl.id) + '" title="Delete template">&#10005;</button>' : '') +
+            '</div>' +
+            '<div class="st-desc">' + escapeHtml(tpl.description) + '</div>';
+        li.addEventListener('click', (e) => {
+            if (e.target.classList.contains('tpl-delete-btn')) return; /* handled below */
+            $templateList.querySelectorAll('li').forEach(el => el.classList.remove('selected'));
+            $addTypeList.querySelectorAll('li').forEach(el => el.classList.remove('selected'));
+            li.classList.add('selected');
+            addDialogChoice = tpl.type;
+            addDialogTemplate = tpl;
+            $addOk.disabled = false;
+        });
+        /* Delete button for user templates */
+        const delBtn = li.querySelector('.tpl-delete-btn');
+        if (delBtn) {
+            delBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const userTemplates = loadUserTemplates().filter(t => t.id !== tpl.id);
+                saveUserTemplates(userTemplates);
+                addDialogTemplate = null;
+                addDialogChoice = null;
+                $addOk.disabled = true;
+                renderTemplateList();
+            });
+        }
+        $templateList.appendChild(li);
+    });
+}
+
+/* Tab switching in the Add Step dialog */
+document.querySelectorAll('.dialog-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.dialog-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const target = tab.dataset.tab;
+        document.getElementById('tabTypes').style.display = target === 'types' ? '' : 'none';
+        document.getElementById('tabTemplates').style.display = target === 'templates' ? '' : 'none';
+        /* Clear selection when switching tabs */
+        addDialogChoice = null;
+        addDialogTemplate = null;
+        $addOk.disabled = true;
+        $addTypeList.querySelectorAll('li').forEach(el => el.classList.remove('selected'));
+        if ($templateList) $templateList.querySelectorAll('li').forEach(el => el.classList.remove('selected'));
+        if (target === 'templates') renderTemplateList();
+    });
+});
 
 document.getElementById('btnAddStep').addEventListener('click', () => {
     addDialogChoice = null;
+    addDialogTemplate = null;
     $addOk.disabled = true;
+    /* Reset to Step Types tab */
+    document.querySelectorAll('.dialog-tab').forEach(t => t.classList.remove('active'));
+    const typesTab = document.querySelector('.dialog-tab[data-tab="types"]');
+    if (typesTab) typesTab.classList.add('active');
+    document.getElementById('tabTypes').style.display = '';
+    document.getElementById('tabTemplates').style.display = 'none';
     $addTypeList.innerHTML = '';
     STEP_TYPES.forEach(t => {
         const li = document.createElement('li');
@@ -1041,8 +1234,10 @@ document.getElementById('btnAddStep').addEventListener('click', () => {
                        '<div class="st-desc">' + escapeHtml(t.description) + '</div>';
         li.addEventListener('click', () => {
             $addTypeList.querySelectorAll('li').forEach(el => el.classList.remove('selected'));
+            if ($templateList) $templateList.querySelectorAll('li').forEach(el => el.classList.remove('selected'));
             li.classList.add('selected');
             addDialogChoice = t.type;
+            addDialogTemplate = null;
             $addOk.disabled = false;
         });
         $addTypeList.appendChild(li);
@@ -1056,12 +1251,12 @@ $addOk.addEventListener('click', () => {
     const def = typeMap[addDialogChoice];
     const newStep = {
         id: generateStepId(addDialogChoice),
-        name: def.label,
+        name: addDialogTemplate ? addDialogTemplate.label : def.label,
         type: addDialogChoice,
         enabled: true,
-        description: def.description,
+        description: addDialogTemplate ? addDialogTemplate.description : def.description,
         continueOnError: false,
-        parameters: structuredClone(def.defaults)
+        parameters: addDialogTemplate ? structuredClone(addDialogTemplate.parameters) : structuredClone(def.defaults)
     };
     /* Inherit group from the selected step, or use the type default */
     if (selectedIndex >= 0 && taskSequence.steps[selectedIndex] && taskSequence.steps[selectedIndex].group) {
@@ -1072,12 +1267,30 @@ $addOk.addEventListener('click', () => {
     const insertAt = selectedIndex >= 0 ? selectedIndex + 1 : taskSequence.steps.length;
     taskSequence.steps.splice(insertAt, 0, newStep);
     selectedIndex = insertAt;
+    addDialogTemplate = null;
     markDirty();
     renderStepList();
     selectStep(selectedIndex);
     if (addDialogChoice === 'SetComputerName' || addDialogChoice === 'SetRegionalSettings') {
         syncUnattendContent();
     }
+});
+
+/* ── Save step as template ────────────────────────────────────────── */
+document.getElementById('btnSaveTemplate').addEventListener('click', () => {
+    if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) return;
+    const step = taskSequence.steps[selectedIndex];
+    const name = prompt('Template name:', step.name || 'My Template');
+    if (!name || !name.trim()) return;
+    const userTemplates = loadUserTemplates();
+    userTemplates.push({
+        id: 'user-tpl-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
+        label: name.trim(),
+        description: step.description || (typeMap[step.type] ? typeMap[step.type].description : ''),
+        type: step.type,
+        parameters: structuredClone(step.parameters || {})
+    });
+    saveUserTemplates(userTemplates);
 });
 
 /* ── New ──────────────────────────────────────────────────────────── */

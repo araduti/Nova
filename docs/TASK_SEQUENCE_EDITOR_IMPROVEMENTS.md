@@ -37,15 +37,15 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 - **Step validation warning icons** ✅ — show ⚠ warning icons on steps that have validation issues (e.g., missing required parameters, NetBIOS length exceeded).
 - **Step search / filter** ✅ — search input in the step list panel filters steps by name or type label as you type. Focus with Ctrl+F or `/`, clear with Escape.
 - **Step dependency lines** — visual connectors showing which steps depend on others (e.g., ApplyImage depends on DownloadImage).
-- **Thumbnail previews** — hover over a step to see a summary tooltip of its key parameters without selecting it.
+- **Thumbnail previews** ✅ — hover over a step to see a multi-line tooltip summarising its key parameters (description, parameter values, condition, enabled state) without selecting it.
 - **Multi-select** ✅ — select multiple steps via Ctrl+Click (toggle) and Shift+Click (range) for bulk delete operations. Primary selection shown with accent highlight, secondary selections with subtle highlight.
 - **Copy/paste steps** ✅ — duplicate a step within the same sequence (Ctrl+D or toolbar button).
-- **Step templates** — save commonly-used step configurations as reusable templates.
+- **Step templates** ✅ — save commonly-used step configurations as reusable templates. Built-in presets (Serial Number Naming, Standard GPT Partition, English/French Regional, Autopilot Full Skip) plus user-saved templates stored in localStorage. Templates tab in the Add Step dialog with inline type badges and delete buttons for user templates. Save selected step as a template via the 🔖 toolbar button.
 
 ### Properties Panel
 - **Tabbed layout** — split parameters into tabs: General, Advanced, Conditions.
 - **Inline validation** ✅ — real-time validation warnings shown per step (e.g., computer name length, missing required parameters). Warnings appear in both the step list and the properties panel.
-- **Help tooltips** — link to Microsoft documentation for each parameter.
+- **Help tooltips** ✅ — "? Docs" link in the Parameters header opens the relevant Microsoft Learn documentation page for the selected step type. Covers all 13 step types with direct links to partition, DISM, Autopilot, unattend, and scripting docs.
 - **Undo/Redo** ✅ — Ctrl+Z / Ctrl+Y for step changes with a 50-level undo stack and toolbar buttons.
 - **JSON raw view toggle** ✅ — switch between the form UI and raw JSON editing for power users.
 
