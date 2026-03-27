@@ -176,6 +176,10 @@ function Save-DeploymentReport {
         if ($dir -and -not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
         $report | ConvertTo-Json | Set-Content -Path $ReportPath -Force
         Write-Success "Deployment report saved to $ReportPath"
+
+        # Push to GitHub so the Monitoring dashboard can read it
+        $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
+        Push-ReportToGitHub -FilePath "Deployments/reports/deployment-report-$safeName.json" -Content $report
     } catch {
         Write-Warn "Failed to save deployment report: $_"
     }
@@ -205,9 +209,12 @@ function Update-ActiveDeploymentReport {
         $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
         $ReportPath = Join-Path $ScratchDir "active-deployment-$safeName.json"
     }
+    $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
+    $ghPath   = "Deployments/active/active-deployment-$safeName.json"
     try {
         if ($Clear) {
             if (Test-Path $ReportPath) { Remove-Item $ReportPath -Force -ErrorAction SilentlyContinue }
+            Push-ReportToGitHub -FilePath $ghPath -Content @{} -Delete
             return
         }
         $report = @{
@@ -222,6 +229,8 @@ function Update-ActiveDeploymentReport {
         $dir = Split-Path $ReportPath
         if ($dir -and -not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
         $report | ConvertTo-Json -Compress | Set-Content -Path $ReportPath -Force -ErrorAction SilentlyContinue
+
+        Push-ReportToGitHub -FilePath $ghPath -Content $report
     } catch {
         Write-Verbose "Active deployment report update suppressed: $_"
     }
@@ -334,6 +343,77 @@ function Send-DeploymentAlert {
         } catch {
             Write-Warn "Email notification failed: $_"
         }
+    }
+}
+
+function Push-ReportToGitHub {
+    <#
+    .SYNOPSIS  Pushes a deployment JSON file to the GitHub repo via the Contents API.
+    .DESCRIPTION
+        Uses the GitHub REST API (PUT /repos/{owner}/{repo}/contents/{path}) to
+        write a per-device JSON file into the Deployments/ directory.  Each file
+        is named after the device, so concurrent deployments never collide.
+
+        The API call is atomic — there is no git clone/push, so it cannot
+        conflict with the .github/ workflows or block other pushes.
+
+        Requires a GitHub token with contents:write scope.  The token is read
+        from -Token, then from $env:GITHUB_TOKEN.  If neither is available the
+        function silently returns so that deployments still succeed without a
+        configured token.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$FilePath,
+        [hashtable]$Content,
+        [string]$Token  = $env:GITHUB_TOKEN,
+        [switch]$Delete
+    )
+    if (-not $Token) { return }
+    try {
+        $apiUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/$FilePath"
+        $headers = @{
+            Authorization  = "Bearer $Token"
+            Accept         = 'application/vnd.github.v3+json'
+            'User-Agent'   = 'AmpCloud-Engine'
+        }
+
+        # Get the current file SHA (required for updates/deletes)
+        $sha = $null
+        try {
+            $existing = Invoke-RestMethod -Uri $apiUrl -Headers $headers `
+                -Method Get -UseBasicParsing -ErrorAction Stop
+            $sha = $existing.sha
+        } catch {
+            # File does not exist yet — that is fine for creates
+            if ($Delete) { return }
+        }
+
+        if ($Delete) {
+            $body = @{
+                message = "Remove active deployment: $(Split-Path $FilePath -Leaf)"
+                sha     = $sha
+                branch  = $GitHubBranch
+            } | ConvertTo-Json
+            Invoke-RestMethod -Uri $apiUrl -Headers $headers `
+                -Method Delete -Body $body -ContentType 'application/json' `
+                -UseBasicParsing -ErrorAction Stop | Out-Null
+        } else {
+            $jsonBytes  = [System.Text.Encoding]::UTF8.GetBytes(($Content | ConvertTo-Json))
+            $b64Content = [Convert]::ToBase64String($jsonBytes)
+            $body = @{
+                message = "Deployment report: $(Split-Path $FilePath -Leaf)"
+                content = $b64Content
+                branch  = $GitHubBranch
+            }
+            if ($sha) { $body.sha = $sha }
+            $body = $body | ConvertTo-Json
+            Invoke-RestMethod -Uri $apiUrl -Headers $headers `
+                -Method Put -Body $body -ContentType 'application/json' `
+                -UseBasicParsing -ErrorAction Stop | Out-Null
+        }
+    } catch {
+        Write-Verbose "GitHub report push suppressed: $_"
     }
 }
 
