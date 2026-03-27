@@ -1684,8 +1684,8 @@ const UNATTEND_TEMPLATES = [
     {
         id: 'kiosk',
         label: 'Kiosk',
-        description: 'Kiosk / shared device — skip all OOBE screens for unattended setup',
-        values: { HideEULAPage: 'true', HideOEMRegistrationScreen: 'true', HideOnlineAccountScreens: 'true', HideWirelessSetupInOOBE: 'true', ProtectYourPC: '3', SkipMachineOOBE: 'true', SkipUserOOBE: 'true' }
+        description: 'Kiosk / shared device — skip machine OOBE, keep user sign-in for assigned access',
+        values: { HideEULAPage: 'true', HideOEMRegistrationScreen: 'true', HideOnlineAccountScreens: 'false', HideWirelessSetupInOOBE: 'true', ProtectYourPC: '3', SkipMachineOOBE: 'true', SkipUserOOBE: 'false' }
     },
     {
         id: 'minimal',
