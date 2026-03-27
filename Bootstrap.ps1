@@ -852,7 +852,7 @@ function Update-TaskSequenceFromConfig {
         }
     }
 
-    $ts | ConvertTo-Json -Depth 10 | Set-Content $TaskSequencePath -Encoding UTF8 -Force
+    $ts | ConvertTo-Json -Depth 20 | Set-Content $TaskSequencePath -Encoding UTF8 -Force
 }
 
 #region ── M365 Authentication ────────────────────────────────────────────────
