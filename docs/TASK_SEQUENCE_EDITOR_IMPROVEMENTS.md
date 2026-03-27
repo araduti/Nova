@@ -40,7 +40,7 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 - **Thumbnail previews** ✅ — hover over a step to see a multi-line tooltip summarising its key parameters (description, parameter values, condition, enabled state) without selecting it.
 - **Multi-select** ✅ — select multiple steps via Ctrl+Click (toggle) and Shift+Click (range) for bulk delete operations. Primary selection shown with accent highlight, secondary selections with subtle highlight.
 - **Copy/paste steps** ✅ — duplicate a step within the same sequence (Ctrl+D or toolbar button).
-- **Step templates** ✅ — save commonly-used step configurations as reusable templates. Built-in presets (Serial Number Naming, Standard GPT Partition, English/French Regional, Autopilot Full Skip) plus user-saved templates stored in localStorage. Templates tab in the Add Step dialog with inline type badges and delete buttons for user templates. Save selected step as a template via the 🔗 toolbar button.
+- **Step templates** ✅ — save commonly-used step configurations as reusable templates. Built-in presets (Serial Number Naming, Standard GPT Partition, English/French Regional, Autopilot Full Skip) plus user-saved templates stored in localStorage. Templates tab in the Add Step dialog with inline type badges and delete buttons for user templates. Save selected step as a template via the 🔖 toolbar button.
 
 ### Properties Panel
 - **Tabbed layout** — split parameters into tabs: General, Advanced, Conditions.

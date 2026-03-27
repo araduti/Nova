@@ -1284,7 +1284,7 @@ document.getElementById('btnSaveTemplate').addEventListener('click', () => {
     if (!name || !name.trim()) return;
     const userTemplates = loadUserTemplates();
     userTemplates.push({
-        id: 'user-tpl-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        id: 'user-tpl-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6),
         label: name.trim(),
         description: step.description || (typeMap[step.type] ? typeMap[step.type].description : ''),
         type: step.type,
