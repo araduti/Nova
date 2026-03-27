@@ -397,6 +397,96 @@
             margin-bottom: 20px;
         }
 
+        /* ── Configuration menu modal ──────────────────────────────── */
+        .config-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.55);
+            z-index: 200;
+            align-items: center;
+            justify-content: center;
+        }
+        .config-overlay.visible { display: flex; }
+        .config-modal {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 36px 40px 32px;
+            width: 520px;
+            max-width: 92vw;
+            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.3);
+            transition: background 0.4s ease, box-shadow 0.4s ease;
+        }
+        .dark .config-modal {
+            background: var(--card-dark);
+            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.6),
+                        0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+        }
+        .config-title {
+            font-size: 20px;
+            font-weight: 300;
+            letter-spacing: 3px;
+            color: var(--accent);
+            text-align: center;
+            margin-bottom: 4px;
+        }
+        .config-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            text-align: center;
+            margin-bottom: 24px;
+        }
+        .config-row {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .config-field {
+            flex: 1;
+            min-width: 0;
+        }
+        .config-field.full { flex: 0 0 100%; }
+        .config-field label {
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text);
+            margin-bottom: 6px;
+        }
+        .dark .config-field label { color: var(--text-dark); }
+        .config-field select {
+            width: 100%;
+            padding: 10px 12px;
+            font-family: var(--font);
+            font-size: 14px;
+            border: 1px solid rgba(0, 0, 0, 0.12);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.03);
+            color: var(--text);
+            cursor: pointer;
+            appearance: auto;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+        .config-field select:focus { border-color: var(--accent); }
+        .dark .config-field select {
+            background: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.10);
+            color: var(--text-dark);
+        }
+        .dark .config-field select:focus { border-color: var(--accent); }
+        .config-actions {
+            text-align: center;
+            margin-top: 24px;
+        }
+        .config-brand {
+            text-align: right;
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 16px;
+            opacity: 0.6;
+        }
+
         /* ── Fade-in ───────────────────────────────────────────────── */
         body { opacity: 0; animation: fadeIn 0.8s ease forwards; }
         @keyframes fadeIn { to { opacity: 1; } }
@@ -531,6 +621,53 @@
         </div>
     </div>
 
+    <!-- Configuration menu modal overlay -->
+    <div class="config-overlay" id="configOverlay">
+        <div class="config-modal">
+            <div class="config-title" id="cfgTitle">A M P C L O U D</div>
+            <div class="config-subtitle" id="cfgSubtitle">Configure your deployment</div>
+
+            <div class="config-row">
+                <div class="config-field">
+                    <label id="cfgLangLabel">Language</label>
+                    <select id="cfgLang">
+                        <option value="EN">English (EN)</option>
+                        <option value="FR">Fran&#231;ais (FR)</option>
+                        <option value="ES">Espa&#241;ol (ES)</option>
+                    </select>
+                </div>
+                <div class="config-field">
+                    <label id="cfgOsLangLabel">OS Language</label>
+                    <select id="cfgOsLang"></select>
+                </div>
+            </div>
+
+            <div class="config-row">
+                <div class="config-field">
+                    <label id="cfgArchLabel">Architecture</label>
+                    <select id="cfgArch"></select>
+                </div>
+                <div class="config-field">
+                    <label id="cfgActLabel">Activation</label>
+                    <select id="cfgAct"></select>
+                </div>
+            </div>
+
+            <div class="config-row">
+                <div class="config-field full">
+                    <label id="cfgEdLabel">Windows Edition</label>
+                    <select id="cfgEd"></select>
+                </div>
+            </div>
+
+            <div class="config-actions">
+                <button class="btn btn-primary" id="cfgBtn" onclick="submitConfig()">Start deployment &#8594;</button>
+            </div>
+
+            <div class="config-brand">ampliosoft</div>
+        </div>
+    </div>
+
     <script>
         /* ── AmpCloud Interactive UI ─────────────────────────────────
          *  Polls X:\AmpCloud-Status.json (written by Bootstrap.ps1 and
@@ -581,6 +718,163 @@
             try { xhr.send(); } catch (e) { /* ignore */ }
         }
 
+        /* ── Configuration menu logic ────────────────────────────── */
+        var configCatalog = null;   /* flat array of catalog entries */
+        var configShowing = false;
+
+        var elConfigOverlay = document.getElementById('configOverlay');
+        var elCfgLang    = document.getElementById('cfgLang');
+        var elCfgOsLang  = document.getElementById('cfgOsLang');
+        var elCfgArch    = document.getElementById('cfgArch');
+        var elCfgAct     = document.getElementById('cfgAct');
+        var elCfgEd      = document.getElementById('cfgEd');
+
+        /* Locale label map — updated from ConfigData.Labels */
+        var cfgLabels = {};
+
+        function cfgUpdateLabels() {
+            if (!cfgLabels.ConfigSubtitle) return;
+            var el;
+            el = document.getElementById('cfgSubtitle'); if (el) el.textContent = cfgLabels.ConfigSubtitle;
+            el = document.getElementById('cfgLangLabel'); if (el) el.textContent = cfgLabels.ConfigLang;
+            el = document.getElementById('cfgOsLangLabel'); if (el) el.textContent = cfgLabels.ConfigOsLang;
+            el = document.getElementById('cfgArchLabel'); if (el) el.textContent = cfgLabels.ConfigArch;
+            el = document.getElementById('cfgActLabel'); if (el) el.textContent = cfgLabels.ConfigActivation;
+            el = document.getElementById('cfgEdLabel'); if (el) el.textContent = cfgLabels.ConfigEdition;
+            var btn = document.getElementById('cfgBtn');
+            if (btn && cfgLabels.ConfigBtn) btn.textContent = cfgLabels.ConfigBtn + ' \u2192';
+        }
+
+        /* Unique sorted values from catalog matching a filter */
+        function cfgUnique(arr, field, filter) {
+            var seen = {}, result = [];
+            for (var i = 0; i < arr.length; i++) {
+                if (filter && !filter(arr[i])) continue;
+                var v = arr[i][field];
+                if (!seen[v]) { seen[v] = true; result.push(v); }
+            }
+            return result.sort();
+        }
+
+        /* Populate a <select> keeping previous selection if possible */
+        function cfgPopulate(sel, items, preferred) {
+            var prev = sel.value;
+            sel.innerHTML = '';
+            for (var i = 0; i < items.length; i++) {
+                var o = document.createElement('option');
+                o.value = items[i]; o.textContent = items[i];
+                sel.appendChild(o);
+            }
+            /* Restore previous or use preferred default */
+            if (items.indexOf(prev) >= 0) { sel.value = prev; }
+            else if (preferred && items.indexOf(preferred) >= 0) { sel.value = preferred; }
+            else if (items.length > 0) { sel.selectedIndex = 0; }
+        }
+
+        function cfgGetOsLang() {
+            var v = elCfgOsLang.value;
+            return v ? v.split(' ')[0] : 'en-us';
+        }
+
+        function cfgRefreshEditions() {
+            if (!configCatalog) return;
+            var lang = cfgGetOsLang(), arch = elCfgArch.value, act = elCfgAct.value;
+            var eds = cfgUnique(configCatalog, 'Edition', function (f) {
+                return f.LanguageCode === lang && f.Architecture === arch && f.Activation === act;
+            });
+            /* Prefer Professional > any Pro-like > first */
+            var pref = eds[0] || '';
+            for (var i = 0; i < eds.length; i++) {
+                if (eds[i] === 'Professional') { pref = eds[i]; break; }
+            }
+            if (pref !== 'Professional') {
+                for (var i = 0; i < eds.length; i++) {
+                    if (eds[i].indexOf('Pro') >= 0 && eds[i].indexOf('Education') < 0 && eds[i].indexOf('Workstation') < 0) {
+                        pref = eds[i]; break;
+                    }
+                }
+            }
+            cfgPopulate(elCfgEd, eds, pref);
+        }
+
+        function cfgRefreshActivations() {
+            if (!configCatalog) return;
+            var lang = cfgGetOsLang(), arch = elCfgArch.value;
+            var acts = cfgUnique(configCatalog, 'Activation', function (f) {
+                return f.LanguageCode === lang && f.Architecture === arch;
+            });
+            cfgPopulate(elCfgAct, acts, 'Retail');
+            cfgRefreshEditions();
+        }
+
+        function cfgRefreshArchitectures() {
+            if (!configCatalog) return;
+            var lang = cfgGetOsLang();
+            var archs = cfgUnique(configCatalog, 'Architecture', function (f) {
+                return f.LanguageCode === lang;
+            });
+            cfgPopulate(elCfgArch, archs, 'x64');
+            cfgRefreshActivations();
+        }
+
+        function cfgRefreshOsLanguages() {
+            if (!configCatalog) return;
+            /* Build "code — Name" entries */
+            var seen = {}, items = [];
+            for (var i = 0; i < configCatalog.length; i++) {
+                var c = configCatalog[i].LanguageCode;
+                if (!seen[c]) {
+                    seen[c] = true;
+                    items.push(c + ' \u2014 ' + configCatalog[i].Language);
+                }
+            }
+            items.sort();
+            /* Map UI language to default OS language */
+            var langMap = { EN: 'en-us', FR: 'fr-fr', ES: 'es-es' };
+            var uiLang = elCfgLang.value || 'EN';
+            var pref = langMap[uiLang] || 'en-us';
+            var prefItem = '';
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].indexOf(pref) === 0) { prefItem = items[i]; break; }
+            }
+            cfgPopulate(elCfgOsLang, items, prefItem);
+            cfgRefreshArchitectures();
+        }
+
+        /* Wire cascade change events */
+        elCfgLang.addEventListener('change', cfgRefreshOsLanguages);
+        elCfgOsLang.addEventListener('change', cfgRefreshArchitectures);
+        elCfgArch.addEventListener('change', cfgRefreshActivations);
+        elCfgAct.addEventListener('change', cfgRefreshEditions);
+
+        function showConfigModal(data) {
+            if (!data || !data.CatalogEntries) return;
+            configCatalog = data.CatalogEntries;
+            if (data.Labels) { cfgLabels = data.Labels; cfgUpdateLabels(); }
+            cfgRefreshOsLanguages();
+            configShowing = true;
+            elConfigOverlay.classList.add('visible');
+        }
+
+        function submitConfig() {
+            var osLangRaw = elCfgOsLang.value || '';
+            var osLang = osLangRaw.split(' ')[0] || 'en-us';
+            var payload = {
+                Language:    elCfgLang.value || 'EN',
+                OsLanguage:  osLang,
+                Architecture: elCfgArch.value || 'x64',
+                Activation:  elCfgAct.value || 'Retail',
+                Edition:     elCfgEd.value || ''
+            };
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', API_BASE + '/configsubmit', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.onerror = function () {};
+            try { xhr.send(JSON.stringify(payload)); } catch (e) {}
+            configShowing = false;
+            elConfigOverlay.classList.remove('visible');
+        }
+
         /* ── Update UI from status JSON ──────────────────────────── */
         function updateUI(data) {
             if (!data) return;
@@ -605,6 +899,14 @@
                 authOverlay.classList.add('visible');
             } else {
                 authOverlay.classList.remove('visible');
+            }
+
+            /* Configuration menu modal */
+            if (data.ShowConfig && data.ConfigData && !configShowing) {
+                showConfigModal(data.ConfigData);
+            } else if (!data.ShowConfig && configShowing) {
+                configShowing = false;
+                elConfigOverlay.classList.remove('visible');
             }
 
             /* Status message */
