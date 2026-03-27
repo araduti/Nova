@@ -12,10 +12,11 @@
       "continueOnError": true,
       "parameters": {
         "computerName": "",
+        "namingSource": "serialNumber",
         "prefix": "AMP-",
         "suffix": "",
-        "maxLength": 15,
-        "useSerialNumber": true
+        "randomDigitCount": 4,
+        "maxLength": 15
       }
     },
     {

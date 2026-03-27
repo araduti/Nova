@@ -94,14 +94,23 @@ const STEP_TYPES = [
     {
         type: 'SetComputerName',
         label: 'Set Computer Name',
-        description: 'Configure the Windows computer name with naming rules (prefix, suffix, serial number)',
-        defaults: { computerName: '', prefix: '', suffix: '', maxLength: 15, useSerialNumber: false },
+        description: 'Configure the Windows computer name with naming rules',
+        defaults: { computerName: '', namingSource: 'serialNumber', prefix: '', suffix: '', randomDigitCount: 4, maxLength: 15 },
         fields: [
-            { key: 'computerName', label: 'Computer name', kind: 'text', hint: 'Static computer name (e.g. PC-001). If set, prefix/suffix/serial rules are ignored. Shown in config menu for editing.' },
-            { key: 'prefix', label: 'Prefix', kind: 'text', hint: 'Prefix prepended to the generated name (e.g. AMP-)' },
-            { key: 'suffix', label: 'Suffix', kind: 'text', hint: 'Suffix appended to the generated name (e.g. -PC)' },
-            { key: 'maxLength', label: 'Max length', kind: 'number', hint: 'Maximum computer name length (NetBIOS limit is 15)' },
-            { key: 'useSerialNumber', label: 'Use serial number', kind: 'checkbox', hint: 'Use the device serial number as the base name (prefix + serial + suffix)' }
+            { key: '_headingStatic', label: 'Static Name', kind: 'heading', hint: 'Assign a fixed name to every device' },
+            { key: 'computerName', label: 'Computer name', kind: 'text', hint: 'Fixed name (e.g. RECEPTION-PC). When set, naming pattern rules below are skipped. Editable in the config menu at deploy time.' },
+            { key: '_headingPattern', label: 'Naming Pattern', kind: 'heading', hint: 'Build the name dynamically — used when the static name above is empty' },
+            { key: 'prefix', label: 'Prefix', kind: 'text', hint: 'Text prepended to the generated base (e.g. AMP-)' },
+            { key: 'namingSource', label: 'Naming source', kind: 'select', options: [
+                    { value: 'serialNumber', label: 'Serial number' },
+                    { value: 'assetTag', label: 'Asset tag' },
+                    { value: 'macAddress', label: 'MAC address (last 6 hex)' },
+                    { value: 'deviceModel', label: 'Device model' },
+                    { value: 'randomDigits', label: 'Random digits' }
+                ], hint: 'Device attribute used as the base of the generated name' },
+            { key: 'suffix', label: 'Suffix', kind: 'text', hint: 'Text appended to the generated base (e.g. -PC)' },
+            { key: 'randomDigitCount', label: 'Random digit count', kind: 'number', hint: 'Number of random digits (default 4)', showWhen: { key: 'namingSource', value: 'randomDigits' } },
+            { key: 'maxLength', label: 'Max length', kind: 'number', hint: 'Maximum computer name length (NetBIOS limit is 15)' }
         ]
     },
     {
@@ -251,11 +260,21 @@ function renderParamFields(step) {
     typeDef.fields.forEach(f => {
         const val = step.parameters[f.key] !== undefined ? step.parameters[f.key] : (typeDef.defaults[f.key] !== undefined ? typeDef.defaults[f.key] : '');
         const div = document.createElement('div');
-        div.className = 'param-field' + (f.kind === 'array' ? ' param-field-array' : '') + (f.kind === 'xml' ? ' param-field-xml' : '');
+        div.className = 'param-field' + (f.kind === 'array' ? ' param-field-array' : '') + (f.kind === 'xml' ? ' param-field-xml' : '') + (f.kind === 'heading' ? ' param-field-heading' : '');
 
         let inputHtml = '';
-        if (f.kind === 'select') {
-            const opts = (f.options || []).map(o => '<option value="' + escapeHtml(o) + '"' + (o === val ? ' selected' : '') + '>' + escapeHtml(o) + '</option>').join('');
+        if (f.kind === 'heading') {
+            div.innerHTML = '<span class="param-heading-text">' + escapeHtml(f.label) + '</span>' +
+                (f.hint ? '<div class="param-hint">' + escapeHtml(f.hint) + '</div>' : '');
+            fieldWrappers.push({ div: div, field: f });
+            $paramFields.appendChild(div);
+            return; /* headings have no input — skip binding */
+        } else if (f.kind === 'select') {
+            const opts = (f.options || []).map(o => {
+                const optVal = typeof o === 'object' ? o.value : o;
+                const optLabel = typeof o === 'object' ? o.label : o;
+                return '<option value="' + escapeHtml(optVal) + '"' + (optVal === val ? ' selected' : '') + '>' + escapeHtml(optLabel) + '</option>';
+            }).join('');
             inputHtml = '<select data-param="' + f.key + '">' + opts + '</select>';
         } else if (f.kind === 'number') {
             inputHtml = '<input type="number" data-param="' + f.key + '" value="' + (typeof val === 'number' ? val : 0) + '">';

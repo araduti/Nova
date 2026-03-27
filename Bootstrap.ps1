@@ -867,11 +867,34 @@ function Show-ConfigurationMenu {
                     $sp = $step.parameters
                     if ($sp.computerName) {
                         $tsDefaults.ComputerName = $sp.computerName
-                    } elseif ($sp.prefix -or $sp.suffix -or $sp.useSerialNumber) {
+                    } elseif ($sp.namingSource -or $sp.prefix -or $sp.suffix -or $sp.useSerialNumber) {
                         # Generate a preview name from naming rules
+                        $source = if ($sp.namingSource) { $sp.namingSource }
+                                  elseif ($sp.useSerialNumber) { 'serialNumber' }
+                                  else { 'randomDigits' }
                         $base = ''
-                        if ($sp.useSerialNumber) {
-                            try { $base = (Get-WmiObject Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch { $base = '' }
+                        switch ($source) {
+                            'serialNumber' {
+                                try { $base = (Get-WmiObject Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch { $base = '' }
+                            }
+                            'assetTag' {
+                                try { $base = (Get-WmiObject Win32_SystemEnclosure).SMBIOSAssetTag -replace '[^A-Za-z0-9]','' } catch { $base = '' }
+                            }
+                            'macAddress' {
+                                try {
+                                    $mac = (Get-WmiObject Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1).MACAddress
+                                    if ($mac) { $base = ($mac -replace '[:\-]','').Substring(6) }
+                                } catch { $base = '' }
+                            }
+                            'deviceModel' {
+                                try { $base = (Get-WmiObject Win32_ComputerSystem).Model -replace '[^A-Za-z0-9]','' } catch { $base = '' }
+                            }
+                            'randomDigits' {
+                                $count = if ($sp.randomDigitCount -gt 0) { [math]::Min($sp.randomDigitCount, 10) } else { 4 }
+                                $min = [math]::Pow(10, $count - 1)
+                                $max = [math]::Pow(10, $count)
+                                $base = (Get-Random -Minimum ([int]$min) -Maximum ([int]$max)).ToString()
+                            }
                         }
                         if (-not $base) { $base = 'PC' + (Get-Random -Minimum 1000 -Maximum 9999).ToString() }
                         $pfx = if ($sp.prefix) { $sp.prefix } else { '' }

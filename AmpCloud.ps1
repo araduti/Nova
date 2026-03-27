@@ -1274,10 +1274,33 @@ function Invoke-TaskSequenceStep {
             # names into unattendContent — the engine just resolves and logs.
             $cName = if ($p -and $p.computerName) { $p.computerName } else { '' }
             if (-not $cName -and $p) {
-                # Generate from naming rules (prefix + serial/random + suffix)
+                # Determine naming source (backward compat: useSerialNumber → serialNumber)
+                $source = if ($p.namingSource) { $p.namingSource }
+                          elseif ($p.useSerialNumber) { 'serialNumber' }
+                          else { 'randomDigits' }
                 $base = ''
-                if ($p.useSerialNumber) {
-                    try { $base = (Get-WmiObject Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch {}
+                switch ($source) {
+                    'serialNumber' {
+                        try { $base = (Get-WmiObject Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch {}
+                    }
+                    'assetTag' {
+                        try { $base = (Get-WmiObject Win32_SystemEnclosure).SMBIOSAssetTag -replace '[^A-Za-z0-9]','' } catch {}
+                    }
+                    'macAddress' {
+                        try {
+                            $mac = (Get-WmiObject Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1).MACAddress
+                            if ($mac) { $base = ($mac -replace '[:\-]','').Substring(6) }
+                        } catch {}
+                    }
+                    'deviceModel' {
+                        try { $base = (Get-WmiObject Win32_ComputerSystem).Model -replace '[^A-Za-z0-9]','' } catch {}
+                    }
+                    'randomDigits' {
+                        $count = if ($p.randomDigitCount -gt 0) { [math]::Min($p.randomDigitCount, 10) } else { 4 }
+                        $min = [math]::Pow(10, $count - 1)
+                        $max = [math]::Pow(10, $count)
+                        $base = (Get-Random -Minimum ([int]$min) -Maximum ([int]$max)).ToString()
+                    }
                 }
                 if (-not $base) { $base = 'PC' + (Get-Random -Minimum 1000 -Maximum 9999).ToString() }
                 $pfx = if ($p.prefix) { $p.prefix } else { '' }
