@@ -1003,8 +1003,8 @@ function Install-CCMSetup {
 
 function New-XmlNsManager([xml]$doc, [hashtable]$namespaces) {
     $mgr = New-Object System.Xml.XmlNamespaceManager($doc.NameTable)
-    foreach ($kv in $namespaces.GetEnumerator()) { $mgr.AddNamespace($kv.Key, $kv.Value) }
-    return $mgr
+    foreach ($kv in $namespaces.GetEnumerator()) { [void]$mgr.AddNamespace($kv.Key, $kv.Value) }
+    return , $mgr
 }
 
 function Set-OOBECustomization {
@@ -1048,9 +1048,6 @@ function Set-OOBECustomization {
             # Inject ComputerName and locale settings into the provided XML
             # so that task sequence content doesn't silently discard them.
             $xmlDoc = $UnattendContent
-            function EncodeXmlInline([string]$v) {
-                return [System.Security.SecurityElement]::Escape($v)
-            }
             if ($ComputerName -or $InputLocale -or $SystemLocale -or $UserLocale -or $UILanguage) {
                 try {
                     [xml]$xd = $xmlDoc
@@ -1081,10 +1078,10 @@ function Set-OOBECustomization {
                         $cnNode = $shellComp.SelectSingleNode(
                             'u:ComputerName', (New-XmlNsManager $xd $ns))
                         if ($cnNode) {
-                            $cnNode.InnerText = (EncodeXmlInline $ComputerName)
+                            $cnNode.InnerText = $ComputerName
                         } else {
                             $cnNode = $xd.CreateElement('ComputerName', 'urn:schemas-microsoft-com:unattend')
-                            $cnNode.InnerText = (EncodeXmlInline $ComputerName)
+                            $cnNode.InnerText = $ComputerName
                             $shellComp.AppendChild($cnNode) | Out-Null
                         }
                     }
@@ -1113,10 +1110,10 @@ function Set-OOBECustomization {
                                 $node = $intlComp.SelectSingleNode(
                                     "u:$($pair[0])", (New-XmlNsManager $xd $ns))
                                 if ($node) {
-                                    $node.InnerText = (EncodeXmlInline $pair[1])
+                                    $node.InnerText = $pair[1]
                                 } else {
                                     $node = $xd.CreateElement($pair[0], 'urn:schemas-microsoft-com:unattend')
-                                    $node.InnerText = (EncodeXmlInline $pair[1])
+                                    $node.InnerText = $pair[1]
                                     $intlComp.AppendChild($node) | Out-Null
                                 }
                             }
