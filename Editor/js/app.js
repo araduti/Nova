@@ -382,6 +382,7 @@ $propContErr.addEventListener('change', () => {
 });
 $tsName.addEventListener('input', () => {
     taskSequence.name = $tsName.textContent.trim();
+    updateBreadcrumb(taskSequence.name);
 });
 
 /* ── Drag-and-drop reorder ────────────────────────────────────────── */
@@ -1107,6 +1108,65 @@ function populateDefaultUnattendContent(steps) {
 
 /* ── Load default task sequence on start ──────────────────────────── */
 function loadDefault() {
+    /* Determine source from URL parameters */
+    var params = new URLSearchParams(window.location.search);
+    var tsParam = params.get('ts');
+    var isNew = params.get('new');
+    var SESSION_PREFIX = 'session:';
+
+    if (isNew) {
+        /* Start with an empty task sequence */
+        taskSequence = { name: 'New Task Sequence', version: '1.0', description: '', steps: [] };
+        $tsName.textContent = taskSequence.name;
+        updateBreadcrumb(taskSequence.name);
+        selectedIndex = -1;
+        renderStepList();
+        selectStep(-1);
+        /* Still fetch the default unattend.xml for the Reset button */
+        fetch('../Unattend/unattend.xml')
+            .then(function (r) { if (!r.ok) throw new Error(r.statusText); return r.text(); })
+            .then(function (xml) {
+                defaultUnattendXml = xml;
+                if (defaultUnattendXml) {
+                    typeMap.CustomizeOOBE.defaults.unattendContent = defaultUnattendXml;
+                }
+            }).catch(function () { /* Ignore */ });
+        return;
+    }
+
+    if (tsParam && tsParam.indexOf(SESSION_PREFIX) === 0) {
+        /* Load from sessionStorage (imported / duplicated from dashboard) */
+        var sessionKey = tsParam.slice(SESSION_PREFIX.length);
+        var stored = sessionStorage.getItem(sessionKey);
+        if (stored) {
+            try {
+                var data = JSON.parse(stored);
+                if (data.steps && Array.isArray(data.steps)) {
+                    /* Also fetch the default unattend.xml */
+                    fetch('../Unattend/unattend.xml')
+                        .then(function (r) { if (!r.ok) throw new Error(r.statusText); return r.text(); })
+                        .catch(function () { return ''; })
+                        .then(function (xml) {
+                            defaultUnattendXml = xml;
+                            if (defaultUnattendXml) {
+                                typeMap.CustomizeOOBE.defaults.unattendContent = defaultUnattendXml;
+                            }
+                            taskSequence = data;
+                            populateDefaultUnattendContent(taskSequence.steps);
+                            syncUnattendContent();
+                            $tsName.textContent = taskSequence.name || 'Untitled';
+                            updateBreadcrumb(taskSequence.name || 'Untitled');
+                            selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
+                            renderStepList();
+                            selectStep(selectedIndex);
+                        });
+                    return;
+                }
+            } catch (_) { /* Fall through to default load */ }
+        }
+    }
+
+    /* Default: load from TaskSequence/default.json */
     Promise.all([
         fetch('../TaskSequence/default.json')
             .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); }),
@@ -1130,6 +1190,7 @@ function loadDefault() {
         syncUnattendContent();
 
         $tsName.textContent = taskSequence.name || 'Untitled';
+        updateBreadcrumb(taskSequence.name || 'Untitled');
         selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
         renderStepList();
         selectStep(selectedIndex);
@@ -1137,6 +1198,12 @@ function loadDefault() {
         /* No default file available — start empty */
         renderStepList();
     });
+}
+
+/** Update the breadcrumb with the current task sequence name. */
+function updateBreadcrumb(name) {
+    var el = document.getElementById('breadcrumbName');
+    if (el) el.textContent = name || 'Editor';
 }
 
 /* ── MSAL Authentication Gate ─────────────────────────────────────── */

@@ -58,7 +58,10 @@ html, body {
     display: flex;
     align-items: center;
     gap: 6px;
+    text-decoration: none;
+    transition: opacity var(--transition);
 }
+.logo:hover { opacity: 0.85; }
 .logo-icon {
     display: inline-flex;
     align-items: center;
@@ -609,3 +612,30 @@ h3::before {
 
 /* ── Login Overlay ── (critical styles are embedded in index.html <style>) */
 .user-name { color: var(--text-muted); font-size: 12px; margin-right: 6px; }
+
+/* ── Breadcrumb ──────────────────────────────────────────────────── */
+.breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+.breadcrumb-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color var(--transition);
+}
+.breadcrumb-link:hover { color: var(--accent); }
+.breadcrumb-sep {
+    color: var(--text-muted);
+    opacity: 0.5;
+    font-size: 14px;
+}
+.breadcrumb-current {
+    color: var(--text);
+    font-weight: 500;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

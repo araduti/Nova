@@ -119,7 +119,13 @@
     <!-- ── Toolbar ──────────────────────────────────────────────────── -->
     <header class="toolbar" style="display:none;">
         <div class="toolbar-left">
-            <span class="logo"><span class="logo-icon">&#9729;</span> AmpCloud</span>
+            <a href="../" class="logo" title="Back to Dashboard"><span class="logo-icon">&#9729;</span> AmpCloud</a>
+            <span class="toolbar-sep"></span>
+            <nav class="breadcrumb" aria-label="Breadcrumb">
+                <a href="../" class="breadcrumb-link">Dashboard</a>
+                <span class="breadcrumb-sep">&#8250;</span>
+                <span class="breadcrumb-current" id="breadcrumbName">Editor</span>
+            </nav>
             <span class="toolbar-sep"></span>
             <button id="btnNew" class="tb-btn" title="New task sequence">&#128196; New</button>
             <button id="btnOpen" class="tb-btn" title="Open JSON file">&#128194; Open</button>
