@@ -1189,6 +1189,103 @@ function Read-TaskSequence {
     return $ts
 }
 
+function Test-StepCondition {
+    <#
+    .SYNOPSIS  Evaluates a step's condition object and returns $true/$false.
+    .DESCRIPTION
+        Each step in the task sequence may carry an optional 'condition' property
+        (set via the Editor's Condition UI).  This function evaluates the condition
+        at runtime and returns $true when the step should run, $false to skip it.
+        Steps without a condition always return $true.
+
+        Supported condition types:
+          variable  — check an environment / task-sequence variable
+          wmiQuery  — run a WMI query and check whether it returns results
+          registry  — check a registry path/value
+    #>
+    param(
+        [psobject]$Condition
+    )
+
+    if (-not $Condition -or -not $Condition.type) { return $true }
+
+    switch ($Condition.type) {
+        'variable' {
+            $varName = $Condition.variable
+            if (-not $varName) { return $true }
+            $actual = [System.Environment]::GetEnvironmentVariable($varName)
+            $op = if ($Condition.operator) { $Condition.operator } else { 'equals' }
+            $expected = if ($Condition.value) { $Condition.value } else { '' }
+
+            switch ($op) {
+                'equals'     { return ($actual -eq $expected) }
+                'notEquals'  { return ($actual -ne $expected) }
+                'contains'   { return ($null -ne $actual -and $actual.IndexOf($expected, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) }
+                'startsWith' { return ($null -ne $actual -and $actual.StartsWith($expected, [System.StringComparison]::OrdinalIgnoreCase)) }
+                'exists'     { return ($null -ne $actual) }
+                'notExists'  { return ($null -eq $actual) }
+                default      { return $true }
+            }
+        }
+        'wmiQuery' {
+            $query = $Condition.query
+            if (-not $query) { return $true }
+            $ns = if ($Condition.namespace) { $Condition.namespace } else { 'root\cimv2' }
+            try {
+                $results = Get-CimInstance -Query $query -Namespace $ns -ErrorAction Stop
+                return ($null -ne $results -and @($results).Count -gt 0)
+            } catch {
+                Write-Warn "WMI condition query failed: $_"
+                return $false
+            }
+        }
+        'registry' {
+            $regPath = $Condition.registryPath
+            if (-not $regPath) { return $true }
+            $regValue = $Condition.registryValue
+            $op = if ($Condition.operator) { $Condition.operator } else { 'exists' }
+            $expected = if ($Condition.value) { $Condition.value } else { '' }
+
+            try {
+                if (-not $regValue) {
+                    # Check key existence only
+                    $keyExists = Test-Path $regPath
+                    switch ($op) {
+                        'exists'    { return $keyExists }
+                        'notExists' { return (-not $keyExists) }
+                        default     { return $keyExists }
+                    }
+                }
+
+                # Check specific value
+                $valueExists = $false
+                $actual = $null
+                if (Test-Path $regPath) {
+                    try {
+                        $actual = (Get-ItemProperty -Path $regPath -Name $regValue -ErrorAction Stop).$regValue
+                        $valueExists = $true
+                    } catch { $valueExists = $false }
+                }
+
+                switch ($op) {
+                    'exists'    { return $valueExists }
+                    'notExists' { return (-not $valueExists) }
+                    'equals'    { return ($valueExists -and "$actual" -eq $expected) }
+                    'notEquals' { return (-not $valueExists -or "$actual" -ne $expected) }
+                    default     { return $valueExists }
+                }
+            } catch {
+                Write-Warn "Registry condition check failed: $_"
+                return $false
+            }
+        }
+        default {
+            Write-Warn "Unknown condition type '$($Condition.type)' — treating as met"
+            return $true
+        }
+    }
+}
+
 function Invoke-TaskSequenceStep {
     <#
     .SYNOPSIS  Executes a single task sequence step by dispatching to the matching engine function.
@@ -1402,6 +1499,15 @@ try {
     for ($i = 0; $i -lt $enabledSteps.Count; $i++) {
         $s = $enabledSteps[$i]
         $stepName = $s.name
+
+        # Evaluate step condition (if any) before execution
+        if ($s.condition -and $s.condition.type) {
+            if (-not (Test-StepCondition -Condition $s.condition)) {
+                Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type)) — condition not met, skipping"
+                continue
+            }
+        }
+
         Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type))"
 
         # After PartitionDisk, redirect scratch to OS drive
