@@ -745,10 +745,13 @@ function Show-ConfigurationMenu {
                     if ($sp.uiLanguage -and -not $tsDefaults.UILanguage)     { $tsDefaults.UILanguage   = $sp.uiLanguage }
                     if ($sp.computerName -and -not $tsDefaults.ComputerName) { $tsDefaults.ComputerName = $sp.computerName }
                 }
-                if ($step.type -eq 'ImportAutopilot' -and $step.enabled -ne $false -and $step.parameters) {
-                    $sp = $step.parameters
-                    if ($sp.groupTag)  { $tsDefaults.AutopilotGroupTag = $sp.groupTag }
-                    if ($sp.userEmail) { $tsDefaults.AutopilotUserEmail = $sp.userEmail }
+                if ($step.type -eq 'ImportAutopilot' -and $step.enabled -ne $false) {
+                    $tsDefaults.HasAutopilotStep = $true
+                    if ($step.parameters) {
+                        $sp = $step.parameters
+                        if ($sp.groupTag)  { $tsDefaults.AutopilotGroupTag = $sp.groupTag }
+                        if ($sp.userEmail) { $tsDefaults.AutopilotUserEmail = $sp.userEmail }
+                    }
                 }
             }
         }
@@ -801,6 +804,8 @@ function Show-ConfigurationMenu {
         UserLocale   = if ($r.UserLocale)   { $r.UserLocale }   else { '' }
         UILanguage   = if ($r.UILanguage)   { $r.UILanguage }   else { '' }
         ComputerName = if ($r.ComputerName) { $r.ComputerName } else { '' }
+        AutopilotGroupTag  = if ($r.AutopilotGroupTag)  { $r.AutopilotGroupTag }  else { '' }
+        AutopilotUserEmail = if ($r.AutopilotUserEmail) { $r.AutopilotUserEmail } else { '' }
         TaskSequencePath = if (Test-Path $tsPath) { $tsPath } else { '' }
     }
 }
@@ -848,6 +853,10 @@ function Update-TaskSequenceFromConfig {
                 if ($Config.SystemLocale) { $step.parameters | Add-Member -NotePropertyName systemLocale -NotePropertyValue $Config.SystemLocale -Force }
                 if ($Config.UserLocale)   { $step.parameters | Add-Member -NotePropertyName userLocale   -NotePropertyValue $Config.UserLocale   -Force }
                 if ($Config.UILanguage)   { $step.parameters | Add-Member -NotePropertyName uiLanguage   -NotePropertyValue $Config.UILanguage   -Force }
+            }
+            'ImportAutopilot' {
+                if ($Config.ContainsKey('AutopilotGroupTag'))  { $step.parameters | Add-Member -NotePropertyName groupTag  -NotePropertyValue $Config.AutopilotGroupTag  -Force }
+                if ($Config.ContainsKey('AutopilotUserEmail')) { $step.parameters | Add-Member -NotePropertyName userEmail -NotePropertyValue $Config.AutopilotUserEmail -Force }
             }
         }
     }
@@ -1255,37 +1264,6 @@ function ProceedToEngine {
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect
         return
-    }
-
-    # ── Autopilot device import ─────────────────────────────────────────────
-    # When autopilotImport is enabled in auth.json and a Graph access token
-    # was obtained during sign-in, register the device in Autopilot via
-    # the Microsoft Graph API (delegated permissions — no client secret).
-    # The device is only imported if it is not already registered.
-    if ($script:AuthConfig -and $script:AuthConfig.autopilotImport -and $script:GraphAccessToken) {
-        Write-AuthLog "Autopilot import enabled — checking device registration..."
-        try {
-            $serial = $null
-            try { $serial = (Get-WmiObject -Class Win32_BIOS).SerialNumber } catch {}
-            if ($serial -and $serial.Trim() -ne '') {
-                $sanitized = $serial -replace "['\\\x00-\x1f]", ''
-                $filter = [uri]::EscapeDataString("contains(serialNumber,'$sanitized')")
-                $uri    = "https://graph.microsoft.com/v1.0/deviceManagement/windowsAutopilotDeviceIdentities?`$filter=$filter"
-                $check  = Invoke-RestMethod -Uri $uri -Headers @{
-                    'Authorization' = "Bearer $($script:GraphAccessToken)"
-                } -Method GET
-
-                if ($check.value -and $check.value.Count -gt 0) {
-                    Write-AuthLog "Device $serial is already registered in Autopilot — skipping import."
-                } else {
-                    Write-AuthLog "Device $serial not found in Autopilot — it will be imported during the task sequence."
-                }
-            } else {
-                Write-AuthLog "Could not determine device serial number — skipping Autopilot check."
-            }
-        } catch {
-            Write-AuthLog "Autopilot check failed (non-fatal): $_"
-        }
     }
 
     Update-Step 4
