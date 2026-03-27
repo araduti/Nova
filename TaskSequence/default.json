@@ -47,7 +47,7 @@
       "id": "download-image",
       "name": "Download Windows Image",
       "type": "DownloadImage",
-      "enabled": true,
+      "enabled": false,
       "description": "Fetch the Windows ESD/WIM from Microsoft CDN or a custom URL",
       "continueOnError": false,
       "parameters": {
