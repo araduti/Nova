@@ -5,7 +5,7 @@
   "steps": [
     {
       "id": "partition-disk",
-      "name": "Partition Disk",
+      "name": "Partition Disk 1",
       "type": "PartitionDisk",
       "enabled": true,
       "description": "Create GPT (UEFI) or MBR (BIOS) layout on the target drive",
