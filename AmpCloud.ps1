@@ -1271,9 +1271,7 @@ function Invoke-TaskSequenceStep {
         'SetComputerName' {
             # Resolve computer name from naming rules or use the static value.
             # The Task Sequence Editor and Bootstrap config modal handle syncing
-            # static names into unattendContent.  This handler only resolves
-            # dynamic names (serial/random) and updates the XML via a simple
-            # regex replacement — no heavy XmlDocument manipulation needed.
+            # names into unattendContent — the engine just resolves and logs.
             $cName = if ($p -and $p.computerName) { $p.computerName } else { '' }
             if (-not $cName -and $p) {
                 # Generate from naming rules (prefix + serial/random + suffix)

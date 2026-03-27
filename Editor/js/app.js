@@ -1000,17 +1000,8 @@ function syncUnattendContent() {
             shellComp.setAttribute('language', 'neutral');
             shellComp.setAttribute('versionScope', 'nonSxS');
         }
-        var cnNode = null;
-        for (var c = shellComp.firstElementChild; c; c = c.nextElementSibling) {
-            if (c.localName === 'ComputerName') { cnNode = c; break; }
-        }
-        if (cnNode) {
-            cnNode.textContent = computerName;
-        } else {
-            cnNode = doc.createElementNS(NS, 'ComputerName');
-            cnNode.textContent = computerName;
-            shellComp.appendChild(cnNode);
-        }
+        var cnNode = ensureElement(shellComp, 'ComputerName');
+        cnNode.textContent = computerName;
     } else if (specPass) {
         /* Remove ComputerName element if name was cleared */
         for (var c = specPass.firstElementChild; c; c = c.nextElementSibling) {
@@ -1049,19 +1040,10 @@ function syncUnattendContent() {
         ];
         locales.forEach(function (pair) {
             var tag = pair[0], val = pair[1];
-            var existing = null;
-            for (var c = intlComp.firstElementChild; c; c = c.nextElementSibling) {
-                if (c.localName === tag) { existing = c; break; }
-            }
             if (val) {
-                if (existing) { existing.textContent = val; }
-                else {
-                    var el = doc.createElementNS(NS, tag);
-                    el.textContent = val;
-                    intlComp.appendChild(el);
-                }
-            } else if (existing) {
-                intlComp.removeChild(existing);
+                ensureElement(intlComp, tag).textContent = val;
+            } else {
+                removeElement(intlComp, tag);
             }
         });
         /* Remove International-Core component if all locale fields are empty */
