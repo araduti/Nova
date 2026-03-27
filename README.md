@@ -69,7 +69,7 @@ AmpCloud operates in three stages. Each stage hands off to the next automaticall
   ┌──────────────────────▼───────────────────────────────────────┐
   │  STAGE 2 — Bootstrap (runs inside WinRE/WinPE)              │
   │                                                              │
-  │  • Initialises network (DHCP + WiFi selector if needed)      │
+  │  • Initializes network (DHCP + WiFi selector if needed)      │
   │  • Launches real-time HTML progress UI (Edge kiosk mode)     │
   │  • Optional M365 sign-in gate (PKCE or Device Code)         │
   │  • Downloads AmpCloud.ps1 from GitHub                       │
@@ -106,7 +106,7 @@ AmpCloud operates in three stages. Each stage hands off to the next automaticall
 | 🔧 | **Autopilot ready** | Registers devices and embeds provisioning JSON |
 | 🏢 | **Intune / ConfigMgr** | First-boot ccmsetup staging built in |
 | 🖥️ | **Bare-metal or in-place** | Works on new hardware or existing Windows |
-| 🌐 | **Multi-language** | Localised UI strings (English, Spanish, French) |
+| 🌐 | **Multi-language** | Localized UI strings (English, Spanish, French) |
 | 📋 | **Task sequence editor** | Browser-based drag-and-drop step builder |
 | 📊 | **Real-time progress UI** | HTML dashboard in Edge kiosk mode during imaging |
 
@@ -127,7 +127,7 @@ AmpCloud/
 │   └── lib/                 # MSAL.js, moment.js (vendored)
 ├── Config/
 │   ├── auth.json            # OAuth / M365 configuration
-│   └── locale/              # UI localisation (en, es, fr)
+│   └── locale/              # UI localization (en, es, fr)
 ├── TaskSequence/
 │   └── default.json         # Default deployment task sequence
 ├── Autopilot/               # Autopilot device import utilities
@@ -168,7 +168,7 @@ AmpCloud/
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `GitHubUser` | `araduti` | GitHub username or organisation |
+| `GitHubUser` | `araduti` | GitHub username or organization |
 | `GitHubRepo` | `AmpCloud` | Repository name |
 | `GitHubBranch` | `main` | Branch to fetch scripts from |
 | `WinPEWorkDir` | `C:\AmpCloud\WinPE` | Working directory for the WinPE build |
@@ -275,7 +275,7 @@ AmpCloud includes a browser-based **Task Sequence Editor** for visually creating
 
 ---
 
-## Customisation
+## Customization
 
 ### Fork-and-own
 

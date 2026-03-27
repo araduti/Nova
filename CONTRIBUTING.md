@@ -113,7 +113,7 @@ When contributing, be especially careful with:
 
 ---
 
-## Localisation
+## Localization
 
 To add a new language:
 

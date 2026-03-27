@@ -24,7 +24,7 @@
 
 AmpCloud is a well-architected, cloud-native Windows OS deployment platform. The three-stage design (Trigger → Bootstrap → Imaging Engine) is clean and effective. Authentication follows modern OAuth 2.0 best practices (PKCE, minimal scopes, ephemeral tokens). The codebase is functional, well-documented internally, and ready for open-source release with the documentation improvements delivered alongside this analysis.
 
-**Overall assessment:** The project is in strong shape for open-sourcing. The findings below are categorised as improvements, not blockers. No critical vulnerabilities were found.
+**Overall assessment:** The project is in strong shape for open-sourcing. The findings below are categorized as improvements, not blockers. No critical vulnerabilities were found.
 
 ### By the numbers
 
@@ -63,7 +63,7 @@ AmpCloud is a well-architected, cloud-native Windows OS deployment platform. The
 │  Full imaging engine streamed from GitHub. Partitions disk,         │
 │  downloads Windows image, applies with DISM, injects drivers,       │
 │  configures Autopilot/Intune/ConfigMgr, applies OOBE               │
-│  customisation, reboots into Windows.                               │
+│  customization, reboots into Windows.                               │
 │                                                                     │
 │  PARALLEL WEB COMPONENTS:                                           │
 │  ─────────────────────────                                           │
@@ -201,7 +201,7 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 **Description:** Windows ESD/WIM files are 4–5 GB. `Invoke-WebRequest` downloads the entire file in one pass. If the connection drops, the download starts over.
 **Recommendation:** Implement HTTP Range header support for resumable downloads. PowerShell's `Start-BitsTransfer` supports resume natively but may not be available in WinPE.
 
-### P-02: DHCP retry timing could be optimised (Low)
+### P-02: DHCP retry timing could be optimized (Low)
 
 **Component:** `Bootstrap.ps1` — state machine
 **Impact:** Low
@@ -273,7 +273,7 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 
 **Component:** `Config/locale/`
 **Impact:** Low
-**Description:** Localisation files exist for English, Spanish, and French. For enterprise adoption, additional languages (German, Chinese, Japanese, Portuguese) would be valuable.
+**Description:** Localization files exist for English, Spanish, and French. For enterprise adoption, additional languages (German, Chinese, Japanese, Portuguese) would be valuable.
 **Recommendation:** Add a contribution guide for locale translations. Consider using a standard i18n format (ICU Message Format) for future-proofing.
 
 ### D-07: Editor lacks syntax highlighting for XML (Low)
