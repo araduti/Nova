@@ -942,8 +942,8 @@
                 elCfgDeviceName.value = configDefaults.ComputerName;
             }
 
-            /* Show autopilot fields if group tag or user email are set */
-            if (configDefaults.AutopilotGroupTag || configDefaults.AutopilotUserEmail) {
+            /* Show autopilot fields when the ImportAutopilot step is enabled */
+            if (configDefaults.HasAutopilotStep) {
                 elCfgApSection.style.display = '';
                 if (configDefaults.AutopilotGroupTag) elCfgApGroupTag.value = configDefaults.AutopilotGroupTag;
                 if (configDefaults.AutopilotUserEmail) elCfgApUserEmail.value = configDefaults.AutopilotUserEmail;
@@ -972,7 +972,9 @@
                 SystemLocale: region,
                 UserLocale:   region,
                 UILanguage:   osLang,
-                ComputerName: elCfgDeviceName.value || ''
+                ComputerName: elCfgDeviceName.value || '',
+                AutopilotGroupTag:  elCfgApGroupTag.value || '',
+                AutopilotUserEmail: elCfgApUserEmail.value || ''
             };
             var xhr = new XMLHttpRequest();
             xhr.open('POST', API_BASE + '/configsubmit', true);
