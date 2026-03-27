@@ -1177,12 +1177,38 @@ function Build-WinPE {
             Write-Warn "Background image generation failed (non-fatal): $_"
         }
 
+        # ── 5d. Embed HTML Progress Dashboard ────────────────────────────────
+        # Stage Progress/index.html into the WinPE image so the batch launcher
+        # can open it in Edge kiosk mode before PowerShell starts.  This covers
+        # the screen immediately and prevents any command-prompt flash.
+        $progressDest = Join-Path $paths.MountDir 'AmpCloud\Progress'
+        $null = New-Item -Path $progressDest -ItemType Directory -Force
+
+        $progressSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'Progress' } else { '' }
+        if ($progressSrc -and (Test-Path (Join-Path $progressSrc 'index.html'))) {
+            Copy-Item -Path "$progressSrc\*" -Destination $progressDest -Recurse -Force
+            Write-Success 'HTML Progress Dashboard embedded from local repo.'
+        } else {
+            $progressUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Progress/index.html"
+            $progressFile = Join-Path $progressDest 'index.html'
+            try {
+                Invoke-WebRequest -Uri $progressUrl -OutFile $progressFile -UseBasicParsing -ErrorAction Stop
+                Write-Success 'HTML Progress Dashboard downloaded and embedded.'
+            } catch {
+                Write-Warn "HTML Progress Dashboard not available (non-fatal): $_"
+            }
+        }
+
         # ── 6. winpeshl.ini + batch launcher → auto-launch Bootstrap.ps1 ───────
         # WinRE ships its own winpeshl.exe which does not reliably handle the
         # comma-separated "<exe>, <args>" format used for direct PowerShell
         # invocation.  Routing through cmd.exe /k avoids that parsing difference:
         # winpeshl.ini always succeeds (cmd.exe is a guaranteed WinPE binary),
         # and the helper batch file handles the PowerShell invocation directly.
+        #
+        # The batch file first launches the HTML Progress Dashboard in Edge
+        # kiosk mode (if both Edge and the HTML file are present), covering the
+        # screen immediately so no command-prompt window is visible at boot.
         #
         # -NoExit keeps the PowerShell host alive after Bootstrap.ps1 exits
         # (normally or via error), preventing an unintended reboot.
@@ -1210,6 +1236,11 @@ function Build-WinPE {
         $launcherPath = Join-Path $paths.MountDir 'Windows\System32\ampcloud-start.cmd'
         @'
 @echo off
+REM ── Launch HTML Progress Dashboard immediately ──────────────────────
+REM Covers the screen before any console window is visible at boot.
+if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\AmpCloud\Progress\index.html" (
+    start "" "X:\WebView2\Edge\msedge.exe" --app="file:///X:/AmpCloud/Progress/index.html" --kiosk --edge-kiosk-type=fullscreen --no-first-run --disable-features=TranslateUI,PrivacySandboxSettings4 --disable-gpu --window-position=0,0 --allow-file-access-from-files
+)
 X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -Command "& X:\Windows\System32\Bootstrap.ps1"
 '@ | Set-Content -Path $launcherPath -Encoding Ascii
 

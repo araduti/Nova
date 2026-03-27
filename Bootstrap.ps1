@@ -94,6 +94,34 @@ $script:MaxDhcpAttempts        = 5
 $script:ConnectCheckIntervalMs = 5000  # 5  seconds
 $script:BulletChar             = [char]0x2022  # '•' used in progress text
 
+# ── HTML Dashboard IPC ──────────────────────────────────────────────────────
+# When the HTML Progress Dashboard is running (launched by ampcloud-start.cmd
+# before PowerShell), Bootstrap.ps1 writes status to the same JSON file that
+# AmpCloud.ps1 uses.  This flag is cleared once AmpCloud.ps1 starts so that
+# Bootstrap.ps1 stops writing and only reads (avoiding write conflicts).
+$script:HtmlDashboardActive = $true
+
+function Update-HtmlDashboard {
+    <#
+    .SYNOPSIS  Write status to the JSON IPC file for the HTML Progress Dashboard.
+    .DESCRIPTION
+        Mirrors status updates to X:\AmpCloud-Status.json so the HTML dashboard
+        (running in Edge kiosk mode) can display real-time progress during the
+        bootstrap phase before AmpCloud.ps1 takes over.
+    #>
+    param(
+        [string]$Message = '',
+        [int]$Step       = 0,
+        [switch]$Done
+    )
+    if (-not $script:HtmlDashboardActive) { return }
+    try {
+        $obj = @{ Message = $Message; Detail = ''; Progress = 0; Step = $Step; Done = [bool]$Done }
+        $obj | ConvertTo-Json -Compress |
+            Set-Content -Path $script:StatusFile -Force -ErrorAction SilentlyContinue
+    } catch {}
+}
+
 #region ── Language System ───────────────────────────────────────────────────
 $script:Lang = 'EN'
 
@@ -2229,6 +2257,7 @@ function ProceedToEngine {
 
     Update-Step 3
     Write-Status $S.Connected 'Green'
+    Update-HtmlDashboard -Message $S.Connected -Step 3
     Invoke-Sound 900 300
     $ringPanel.Visible = $true
     $ringTimer.Start()
@@ -2345,6 +2374,12 @@ function ProceedToEngine {
             $env:AMPCLOUD_GRAPH_TOKEN = $script:GraphAccessToken
         }
 
+        Update-HtmlDashboard -Message $S.Imaging -Step 4
+
+        # Stop writing to the status JSON from Bootstrap — AmpCloud.ps1 takes
+        # over the file from this point to avoid write conflicts.
+        $script:HtmlDashboardActive = $false
+
         $engineProc = Start-Process -FilePath $script:PsBin -ArgumentList $psArgs -WindowStyle Hidden -PassThru
 
         # Start polling the status file so the UI shows real-time progress.
@@ -2419,6 +2454,7 @@ $script:initTimer.Add_Tick({
 
         'INIT' {
             $script:_wait = 0
+            Update-HtmlDashboard -Message $S.StatusInit -Step 1
             try {
                 $script:_proc = Start-Process -FilePath 'wpeinit.exe' `
                     -NoNewWindow -PassThru -ErrorAction Stop
@@ -2443,6 +2479,7 @@ $script:initTimer.Add_Tick({
 
                 Invoke-NetworkTuning
                 Write-Status 'Acquiring network address...' 'Cyan'
+                Update-HtmlDashboard -Message 'Acquiring network address...' -Step 2
                 $script:_wait = 0
                 $script:_initState = 'SETTLE'
             }
@@ -2501,12 +2538,14 @@ $script:initTimer.Add_Tick({
         'CHECK' {
             $script:initTimer.Stop()
             if (Test-InternetConnectivity) {
+                Update-HtmlDashboard -Message $S.Connected -Step 3
                 ProceedToEngine
             } else {
                 Update-Step 2
                 $ringTimer.Stop()
                 $ringPanel.Visible = $false
                 Write-Status $S.StatusNoNet 'Yellow'
+                Update-HtmlDashboard -Message $S.StatusNoNet -Step 2
                 $btnWiFi.Visible = $true
                 $btnWiFi.Add_Click({
                     $script:connectCheckTimer.Stop()
