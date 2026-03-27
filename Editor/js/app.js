@@ -166,6 +166,7 @@ const DRAFT_KEY = 'ampcloud_editor_draft';
 let undoStack = [];
 let redoStack = [];
 const MAX_UNDO = 50;
+let lastSnapshot = null;
 let jsonRawMode = false;
 
 /* ── DOM refs ─────────────────────────────────────────────────────── */
@@ -219,7 +220,16 @@ function scheduleDraftSave() {
 }
 
 function markDirty() {
-    pushUndoState();
+    /* Push the pre-mutation snapshot to the undo stack.
+       lastSnapshot was taken after the previous operation, so it
+       represents the state BEFORE the current mutation. */
+    if (lastSnapshot !== null) {
+        undoStack.push(lastSnapshot);
+        if (undoStack.length > MAX_UNDO) undoStack.shift();
+        redoStack.length = 0;
+    }
+    lastSnapshot = JSON.stringify({ ts: taskSequence, sel: selectedIndex });
+    updateUndoRedoUI();
     dirty = true;
     updateDirtyUI();
     scheduleDraftSave();
@@ -232,24 +242,23 @@ function markClean() {
     clearTimeout(autoSaveTimer);
     try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
     resetUndoRedo();
+    captureSnapshot();
 }
 
 /* ── Undo / Redo ──────────────────────────────────────────────────── */
-function pushUndoState() {
-    undoStack.push(JSON.stringify({ ts: taskSequence, sel: selectedIndex }));
-    if (undoStack.length > MAX_UNDO) undoStack.shift();
-    redoStack.length = 0;
-    updateUndoRedoUI();
+function captureSnapshot() {
+    lastSnapshot = JSON.stringify({ ts: taskSequence, sel: selectedIndex });
 }
 
 function applySnapshot(json) {
-    var snap = JSON.parse(json);
+    const snap = JSON.parse(json);
     taskSequence = snap.ts;
     selectedIndex = snap.sel;
     $tsName.textContent = taskSequence.name || 'Untitled';
     updateBreadcrumb(taskSequence.name || 'Untitled');
     renderStepList();
     selectStep(selectedIndex);
+    lastSnapshot = json;
     dirty = true;
     updateDirtyUI();
     scheduleDraftSave();
@@ -277,6 +286,7 @@ function updateUndoRedoUI() {
 function resetUndoRedo() {
     undoStack.length = 0;
     redoStack.length = 0;
+    lastSnapshot = null;
     updateUndoRedoUI();
 }
 
@@ -646,7 +656,7 @@ $addOk.addEventListener('click', () => {
     $addDialog.style.display = 'none';
     const def = typeMap[addDialogChoice];
     const newStep = {
-        id: addDialogChoice.toLowerCase() + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        id: generateStepId(addDialogChoice),
         name: def.label,
         type: addDialogChoice,
         enabled: true,
@@ -988,6 +998,9 @@ document.getElementById('btnDownload').addEventListener('click', () => {
 });
 
 /* ── Utils ────────────────────────────────────────────────────────── */
+function generateStepId(type) {
+    return (type || 'step').toLowerCase() + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
 function escapeHtml(str) {
     const d = document.createElement('div');
     d.appendChild(document.createTextNode(str));
@@ -1085,11 +1098,11 @@ function setupXmlEditor(container, textarea) {
 /* ── Duplicate step ───────────────────────────────────────────────── */
 function duplicateSelectedStep() {
     if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) return;
-    var original = taskSequence.steps[selectedIndex];
-    var clone = JSON.parse(JSON.stringify(original));
-    clone.id = (clone.type || 'step').toLowerCase() + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const original = taskSequence.steps[selectedIndex];
+    const clone = JSON.parse(JSON.stringify(original));
+    clone.id = generateStepId(clone.type);
     clone.name = (clone.name || 'Step') + ' (Copy)';
-    var insertAt = selectedIndex + 1;
+    const insertAt = selectedIndex + 1;
     taskSequence.steps.splice(insertAt, 0, clone);
     selectedIndex = insertAt;
     markDirty();
@@ -1129,7 +1142,7 @@ function hideJsonRawView() {
 function applyJsonRawEdits() {
     if (selectedIndex < 0 || !$jsonRawTextarea) return true;
     try {
-        var edited = JSON.parse($jsonRawTextarea.value);
+        const edited = JSON.parse($jsonRawTextarea.value);
         if (!edited || typeof edited !== 'object') throw new Error('Must be a JSON object');
         taskSequence.steps[selectedIndex] = edited;
         $jsonRawError.style.display = 'none';
@@ -1389,6 +1402,7 @@ function loadDefault() {
                     selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
                     dirty = true;
                     updateDirtyUI();
+                    captureSnapshot();
                     renderStepList();
                     selectStep(selectedIndex);
                     fetch('../Unattend/unattend.xml')
@@ -1460,6 +1474,7 @@ function loadDefault() {
                             selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
                             renderStepList();
                             selectStep(selectedIndex);
+                            captureSnapshot();
                         });
                     return;
                 }
@@ -1495,6 +1510,7 @@ function loadDefault() {
         selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
         renderStepList();
         selectStep(selectedIndex);
+        captureSnapshot();
     }).catch(() => {
         /* No default file available — start empty */
         renderStepList();
