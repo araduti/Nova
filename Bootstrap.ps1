@@ -498,6 +498,7 @@ $script:actionTimer.Add_Tick({
             $path = $context.Request.Url.LocalPath.ToLower()
             $msg  = 'unknown'
 
+            $handled = $false
             switch ($path) {
                 '/wifi'       { $script:PendingAction = 'SHOW_WIFI'; $msg = 'ok' }
                 '/retry'      { $script:PendingAction = 'RETRY'; $msg = 'ok' }
@@ -514,15 +515,51 @@ $script:actionTimer.Add_Tick({
                     }
                     $msg = 'ok'
                 }
+                '/ui' {
+                    # Serve AmpCloud-UI/index.html so the browser can return
+                    # from an HTTP context (e.g. after OAuth redirect) without
+                    # requiring a blocked http→file:// navigation.
+                    $handled = $true
+                    $uiFile  = 'X:\AmpCloud-UI\index.html'
+                    if (Test-Path $uiFile) {
+                        $uiBytes = [System.IO.File]::ReadAllBytes($uiFile)
+                        $context.Response.ContentType     = 'text/html; charset=utf-8'
+                        $context.Response.ContentLength64 = $uiBytes.Length
+                        $context.Response.OutputStream.Write($uiBytes, 0, $uiBytes.Length)
+                    } else {
+                        $context.Response.StatusCode = 404
+                        $nb = [Text.Encoding]::UTF8.GetBytes('UI not found')
+                        $context.Response.OutputStream.Write($nb, 0, $nb.Length)
+                    }
+                    $context.Response.Close()
+                }
+                '/status' {
+                    # Serve AmpCloud-Status.json for pages loaded via HTTP
+                    # (file:// pages read it directly via XHR).
+                    $handled = $true
+                    if (Test-Path $script:StatusFile) {
+                        $sjBytes = [System.IO.File]::ReadAllBytes($script:StatusFile)
+                        $context.Response.ContentType     = 'application/json; charset=utf-8'
+                        $context.Response.ContentLength64 = $sjBytes.Length
+                        $context.Response.OutputStream.Write($sjBytes, 0, $sjBytes.Length)
+                    } else {
+                        $context.Response.StatusCode = 404
+                        $nb = [Text.Encoding]::UTF8.GetBytes('{}')
+                        $context.Response.OutputStream.Write($nb, 0, $nb.Length)
+                    }
+                    $context.Response.Close()
+                }
                 '/reboot'     { Restart-Computer -Force; $msg = 'rebooting' }
                 '/shutdown'   { Stop-Computer -Force; $msg = 'shutting down' }
                 '/shell'      { Start-Process $script:PsBin -ArgumentList '-NoProfile','-NoExit'; $msg = 'shell opened' }
             }
 
-            $context.Response.StatusCode = 200
-            $buffer = [Text.Encoding]::UTF8.GetBytes($msg)
-            $context.Response.OutputStream.Write($buffer, 0, $buffer.Length)
-            $context.Response.Close()
+            if (-not $handled) {
+                $context.Response.StatusCode = 200
+                $buffer = [Text.Encoding]::UTF8.GetBytes($msg)
+                $context.Response.OutputStream.Write($buffer, 0, $buffer.Length)
+                $context.Response.Close()
+            }
         } catch { Write-Verbose "HTTP handler error: $_" }
 
         # Start waiting for next request
@@ -759,7 +796,7 @@ function Invoke-M365EdgeAuth {
     $script:_authCancelled  = $false
     $asyncResult = $listener.BeginGetContext($null, $null)
 
-    $uiPath = 'file:///X:/AmpCloud-UI/index.html'
+    $uiPath = 'http://localhost:8080/ui'
     # 5-minute timeout — Azure AD sessions are valid for 10 minutes,
     # 5 minutes gives enough time without leaving the kiosk unattended.
     $timeout = [datetime]::UtcNow.AddMinutes(5)

@@ -679,8 +679,10 @@
          *  650ms poll interval matches the existing Progress UI cadence.
          * ──────────────────────────────────────────────────────────── */
 
-        var STATUS_PATH = 'file:///X:/AmpCloud-Status.json';
         var API_BASE    = 'http://localhost:8080';
+        var STATUS_PATH = (window.location.protocol === 'file:')
+            ? 'file:///X:/AmpCloud-Status.json'
+            : API_BASE + '/status';
         var POLL_MS     = 650;
         var lastStep    = 0;
         var isDark      = true;
