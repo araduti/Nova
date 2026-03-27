@@ -1,5 +1,5 @@
 {
-  "name": "Default AmpCloud Task Sequence",
+  "name": "Default AmpCloud Task Sequence (Copy)",
   "version": "1.0",
   "description": "Standard cloud-native Windows deployment via AmpCloud",
   "steps": [
@@ -143,7 +143,7 @@
       "continueOnError": true,
       "parameters": {
         "unattendSource": "default",
-        "unattendContent": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component name=\"Microsoft-Windows-Shell-Setup\"\n               processorArchitecture=\"amd64\"\n               publicKeyToken=\"31bf3856ad364e35\"\n               language=\"neutral\"\n               versionScope=\"nonSxS\"\n               xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\">\n      <OOBE>\n        <HideEULAPage>true</HideEULAPage>\n        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>\n        <HideOnlineAccountScreens>false</HideOnlineAccountScreens>\n        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>\n        <ProtectYourPC>3</ProtectYourPC>\n        <SkipMachineOOBE>false</SkipMachineOOBE>\n        <SkipUserOOBE>false</SkipUserOOBE>\n      </OOBE>\n    </component>\n  </settings>\n</unattend>\n",
+        "unattendContent": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\" name=\"Microsoft-Windows-Shell-Setup\" processorArchitecture=\"amd64\" publicKeyToken=\"31bf3856ad364e35\" language=\"neutral\" versionScope=\"nonSxS\">\n      <OOBE>\n        <HideEULAPage>true</HideEULAPage>\n        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>\n        <HideOnlineAccountScreens>false</HideOnlineAccountScreens>\n        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>\n        <ProtectYourPC>3</ProtectYourPC>\n        <SkipMachineOOBE>false</SkipMachineOOBE>\n        <SkipUserOOBE>false</SkipUserOOBE>\n      </OOBE>\n    </component>\n  </settings>\n</unattend>",
         "unattendUrl": "",
         "unattendPath": ""
       }
