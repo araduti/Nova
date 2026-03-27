@@ -1260,7 +1260,8 @@ if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\AmpCloud-UI\index.html" (
 )
 
 REM Give Edge time to render the initial UI before PowerShell starts.
-timeout /t 2 /nobreak >nul
+REM Use ping instead of timeout because timeout.exe is not available in WinPE.
+ping -n 3 127.0.0.1 >nul
 
 REM ── Launch Bootstrap (no WinForms visible UI) ────────────────────────
 REM Bootstrap.ps1 stays running via its internal DoEvents message pump.
