@@ -783,11 +783,11 @@ function Invoke-M365EdgeAuth {
         '&code_challenge_method=S256' +
         '&prompt=select_account'
 
-    # ── Signal the HTML UI to navigate to the login page ────────────────────
-    # The kiosk Edge browser will navigate to the Azure AD login page.
+    # ── Signal the HTML UI to open the login page in a popup ───────────────
+    # The kiosk Edge browser opens a popup window for Azure AD sign-in.
     # After the user signs in, Azure AD redirects to the localhost listener
-    # which captures the auth code and redirects back to the AmpCloud UI.
-    Write-AuthLog "Navigating kiosk UI to auth URL"
+    # which captures the auth code and closes the popup via window.close().
+    Write-AuthLog "Opening auth popup via kiosk UI"
     Update-HtmlUi -Message $S.AuthSigning -Step 3 -AuthUrl $authorizeUrl
 
     # ── Wait for the redirect callback ──────────────────────────────────────
@@ -796,7 +796,6 @@ function Invoke-M365EdgeAuth {
     $script:_authCancelled  = $false
     $asyncResult = $listener.BeginGetContext($null, $null)
 
-    $uiPath = 'http://localhost:8080/ui'
     # 5-minute timeout — Azure AD sessions are valid for 10 minutes,
     # 5 minutes gives enough time without leaving the kiosk unattended.
     $timeout = [datetime]::UtcNow.AddMinutes(5)
@@ -817,22 +816,22 @@ function Invoke-M365EdgeAuth {
                     }
                 }
 
-                # Clear the auth navigation signal before the page reloads.
+                # Clear the auth signal before the popup closes.
                 Update-HtmlUi -Message $S.AuthSigning -Step 3
 
-                # Send a response page that redirects back to the AmpCloud UI.
+                # Send a response page that closes the auth popup window.
                 $html = if ($script:_edgeAuthCode) {
                     '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
                     'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
                     '<div style="text-align:center"><h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
-                    '<p>Returning to AmpCloud...</p></div>' +
-                    "<script>setTimeout(function(){window.location.href='$uiPath'},1500)</script></body></html>"
+                    '<p>This window will close automatically...</p></div>' +
+                    '<script>setTimeout(function(){window.close()},1500)</script></body></html>'
                 } else {
                     '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
                     'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
                     '<div style="text-align:center"><h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
-                    '<p>Returning to AmpCloud...</p></div>' +
-                    "<script>setTimeout(function(){window.location.href='$uiPath'},2500)</script></body></html>"
+                    '<p>This window will close automatically...</p></div>' +
+                    '<script>setTimeout(function(){window.close()},2500)</script></body></html>'
                 }
                 $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
                 $context.Response.ContentType     = 'text/html; charset=utf-8'
@@ -848,8 +847,8 @@ function Invoke-M365EdgeAuth {
         Start-Sleep -Milliseconds 200
     }
 
-    # ── Always clear auth navigation signal ─────────────────────────────────
-    # Prevents the page from re-navigating to the auth URL on reload
+    # ── Always clear auth signal ────────────────────────────────────────────
+    # Prevents the UI from re-opening the auth popup on the next poll
     # (e.g. if auth timed out or was cancelled before the listener fired).
     Update-HtmlUi -Message $S.AuthSigning -Step 3
 

@@ -1277,7 +1277,8 @@ if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\AmpCloud-UI\index.html" (
         --no-first-run ^
         --disable-fre ^
         --disable-features=msWebOOBE ^
-        --allow-file-access-from-files
+        --allow-file-access-from-files ^
+        --disable-popup-blocking
 )
 
 REM Give Edge time to render the initial UI before PowerShell starts.
