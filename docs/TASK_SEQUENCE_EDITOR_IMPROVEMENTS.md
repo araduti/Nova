@@ -29,15 +29,16 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 ## 2. Editor Design Improvements
 
 ### Visual Hierarchy
-- **Breadcrumb navigation** — show `Dashboard > Task Sequence Name` so users always know where they are and can navigate back.
+- **Breadcrumb navigation** ✅ — show `Dashboard > Task Sequence Name` so users always know where they are and can navigate back.
 - **Step group visual separators** — auto-detect logical groups (Pre-Imaging, Imaging, Post-Imaging) and display section dividers.
 - **Collapsible step groups** — allow grouping steps under a heading that can expand/collapse.
 
 ### Step List Enhancements
 - **Step validation warning icons** ✅ — show ⚠ warning icons on steps that have validation issues (e.g., missing required parameters, NetBIOS length exceeded).
+- **Step search / filter** ✅ — search input in the step list panel filters steps by name or type label as you type. Focus with Ctrl+F or `/`, clear with Escape.
 - **Step dependency lines** — visual connectors showing which steps depend on others (e.g., ApplyImage depends on DownloadImage).
 - **Thumbnail previews** — hover over a step to see a summary tooltip of its key parameters without selecting it.
-- **Multi-select** — allow selecting multiple steps for bulk enable/disable, delete, or move operations.
+- **Multi-select** ✅ — select multiple steps via Ctrl+Click (toggle) and Shift+Click (range) for bulk delete operations. Primary selection shown with accent highlight, secondary selections with subtle highlight.
 - **Copy/paste steps** ✅ — duplicate a step within the same sequence (Ctrl+D or toolbar button).
 - **Step templates** — save commonly-used step configurations as reusable templates.
 
@@ -166,7 +167,7 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 
 ### Accessibility
 - **ARIA labels** — ensure all interactive elements have proper ARIA attributes.
-- **Keyboard navigation** — full keyboard support for all operations (already partial with Delete key).
+- **Keyboard navigation** ✅ — Arrow Up/Down to navigate step list, Ctrl+F or `/` to focus search, Escape to clear search. Full keyboard support for step selection alongside existing Delete and Ctrl+D shortcuts.
 - **Screen reader support** — announce state changes (step selected, saved, etc.).
 - **High contrast mode** — alternative theme for accessibility.
 
@@ -176,14 +177,17 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 
 | Priority | Item | Effort | Impact |
 |----------|------|--------|--------|
-| 🔴 P0 | Dashboard overview page | Medium | High |
-| 🔴 P0 | Breadcrumb navigation | Low | High |
+| ✅ ~~P0~~ | ~~Dashboard overview page~~ | Medium | High |
+| ✅ ~~P0~~ | ~~Breadcrumb navigation~~ | Low | High |
 | ✅ ~~P1~~ | ~~Step validation warnings~~ | Medium | High |
 | ✅ ~~P1~~ | ~~Dirty state / unsaved indicator~~ | Low | Medium |
 | ✅ ~~P1~~ | ~~Auto-save drafts to localStorage~~ | Low | Medium |
 | ✅ ~~P1~~ | ~~Undo / Redo~~ | Medium | Medium |
 | ✅ ~~P1~~ | ~~JSON raw view toggle~~ | Medium | Medium |
 | ✅ ~~P1~~ | ~~Duplicate step~~ | Low | Medium |
+| ✅ ~~P1~~ | ~~Step search / filter~~ | Low | Medium |
+| ✅ ~~P1~~ | ~~Keyboard navigation~~ | Low | Medium |
+| ✅ ~~P1~~ | ~~Multi-select~~ | Medium | Medium |
 | 🟢 P2 | Step groups / folders | High | High |
 | 🟢 P2 | Conditional logic (if/else) | High | High |
 | 🟢 P2 | Visual unattend builder | High | Medium |
