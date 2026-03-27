@@ -1402,6 +1402,149 @@ document.getElementById('btnDownload').addEventListener('click', () => {
     URL.revokeObjectURL(a.href);
 });
 
+/* ── Pre-flight task sequence validation ──────────────────────────── */
+
+/**
+ * Run a full set of pre-flight checks on the task sequence.
+ * Returns an array of { level: 'error'|'warning'|'pass', message: string }.
+ */
+function validateTaskSequence() {
+    var results = [];
+    var steps = taskSequence.steps || [];
+    var enabled = steps.filter(function (s) { return s.enabled !== false; });
+
+    if (steps.length === 0) {
+        results.push({ level: 'warning', message: 'Task sequence has no steps' });
+        return results;
+    }
+
+    /* Helper: find the first enabled step index of a given type */
+    function firstEnabled(type) {
+        for (var i = 0; i < steps.length; i++) {
+            if (steps[i].type === type && steps[i].enabled !== false) return i;
+        }
+        return -1;
+    }
+
+    /* ── Required steps ─────────────────────────────────────────────── */
+    var partIdx   = firstEnabled('PartitionDisk');
+    var applyIdx  = firstEnabled('ApplyImage');
+    var bootIdx   = firstEnabled('SetBootloader');
+    var dlIdx     = firstEnabled('DownloadImage');
+    var cnIdx     = firstEnabled('SetComputerName');
+    var rsIdx     = firstEnabled('SetRegionalSettings');
+    var oobeIdx   = firstEnabled('CustomizeOOBE');
+
+    if (applyIdx >= 0 && partIdx < 0) {
+        results.push({ level: 'error', message: 'ApplyImage is enabled but no PartitionDisk step is enabled — disk must be partitioned first' });
+    }
+    if (bootIdx >= 0 && applyIdx < 0) {
+        results.push({ level: 'warning', message: 'SetBootloader is enabled but no ApplyImage step is enabled' });
+    }
+
+    /* ── Step ordering ──────────────────────────────────────────────── */
+    if (partIdx >= 0 && applyIdx >= 0 && partIdx > applyIdx) {
+        results.push({ level: 'error', message: 'PartitionDisk (step ' + (partIdx + 1) + ') should come before ApplyImage (step ' + (applyIdx + 1) + ')' });
+    }
+    if (dlIdx >= 0 && applyIdx >= 0 && dlIdx > applyIdx) {
+        results.push({ level: 'warning', message: 'DownloadImage (step ' + (dlIdx + 1) + ') should come before ApplyImage (step ' + (applyIdx + 1) + ')' });
+    }
+    if (applyIdx >= 0 && bootIdx >= 0 && bootIdx < applyIdx) {
+        results.push({ level: 'warning', message: 'SetBootloader (step ' + (bootIdx + 1) + ') should come after ApplyImage (step ' + (applyIdx + 1) + ')' });
+    }
+    if (cnIdx >= 0 && oobeIdx >= 0 && cnIdx > oobeIdx) {
+        results.push({ level: 'warning', message: 'SetComputerName (step ' + (cnIdx + 1) + ') should come before CustomizeOOBE (step ' + (oobeIdx + 1) + ') for proper XML sync' });
+    }
+    if (rsIdx >= 0 && oobeIdx >= 0 && rsIdx > oobeIdx) {
+        results.push({ level: 'warning', message: 'SetRegionalSettings (step ' + (rsIdx + 1) + ') should come before CustomizeOOBE (step ' + (oobeIdx + 1) + ') for proper XML sync' });
+    }
+
+    /* ── Duplicate IDs ──────────────────────────────────────────────── */
+    var idsSeen = {};
+    steps.forEach(function (s, i) {
+        if (s.id) {
+            if (idsSeen[s.id] !== undefined) {
+                results.push({ level: 'error', message: 'Duplicate step ID "' + s.id + '" on steps ' + (idsSeen[s.id] + 1) + ' and ' + (i + 1) });
+            } else {
+                idsSeen[s.id] = i;
+            }
+        }
+    });
+
+    /* ── Empty names ────────────────────────────────────────────────── */
+    steps.forEach(function (s, i) {
+        if (!s.name || !s.name.trim()) {
+            results.push({ level: 'warning', message: 'Step ' + (i + 1) + ' has an empty name' });
+        }
+    });
+
+    /* ── Per-step validation warnings ───────────────────────────────── */
+    steps.forEach(function (s, i) {
+        if (s.enabled === false) return;
+        var warnings = validateStep(s);
+        warnings.forEach(function (w) {
+            results.push({ level: 'warning', message: 'Step ' + (i + 1) + ' (' + escapeHtml(s.name || s.type) + '): ' + w });
+        });
+    });
+
+    /* ── All passed ─────────────────────────────────────────────────── */
+    if (results.length === 0) {
+        results.push({ level: 'pass', message: 'All pre-flight checks passed — task sequence is ready for deployment' });
+    }
+
+    return results;
+}
+
+/**
+ * Show the validation report in a modal dialog.
+ */
+function showValidationReport(results) {
+    var overlay = document.createElement('div');
+    overlay.className = 'dialog-overlay';
+    var dialog = document.createElement('div');
+    dialog.className = 'dialog validation-report-dialog';
+
+    var errors   = results.filter(function (r) { return r.level === 'error'; }).length;
+    var warnings = results.filter(function (r) { return r.level === 'warning'; }).length;
+    var passes   = results.filter(function (r) { return r.level === 'pass'; }).length;
+
+    var summaryClass = errors > 0 ? 'vr-summary-error' : (warnings > 0 ? 'vr-summary-warning' : 'vr-summary-pass');
+    var summaryText  = errors > 0
+        ? errors + ' error' + (errors > 1 ? 's' : '') + (warnings ? ', ' + warnings + ' warning' + (warnings > 1 ? 's' : '') : '')
+        : warnings > 0
+            ? warnings + ' warning' + (warnings > 1 ? 's' : '')
+            : 'All checks passed';
+
+    var html = '<h2>&#9989; Validation Report</h2>';
+    html += '<div class="vr-summary ' + summaryClass + '">' + summaryText + '</div>';
+    html += '<ul class="vr-list">';
+    results.forEach(function (r) {
+        var icon = r.level === 'error' ? '\u2717' : (r.level === 'warning' ? '\u26A0' : '\u2713');
+        html += '<li class="vr-item vr-' + r.level + '">' +
+            '<span class="vr-icon">' + icon + '</span>' +
+            '<span class="vr-msg">' + r.message + '</span>' +
+            '</li>';
+    });
+    html += '</ul>';
+    html += '<div class="dialog-actions"><button class="btn btn-primary" id="vrClose">Close</button></div>';
+
+    dialog.innerHTML = html;
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    document.getElementById('vrClose').addEventListener('click', function () {
+        document.body.removeChild(overlay);
+    });
+    overlay.addEventListener('click', function (e) {
+        if (e.target === overlay) document.body.removeChild(overlay);
+    });
+}
+
+document.getElementById('btnValidate').addEventListener('click', function () {
+    var results = validateTaskSequence();
+    showValidationReport(results);
+});
+
 /* ── Utils ────────────────────────────────────────────────────────── */
 function generateStepId(type) {
     return (type || 'step').toLowerCase() + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1516,6 +1659,40 @@ const OOBE_VISUAL_FIELDS = [
         ], defaultVal: '3' },
     { key: 'SkipMachineOOBE',              kind: 'checkbox', label: 'Skip Machine OOBE',              hint: 'Skip the machine-level out-of-box experience', defaultVal: false },
     { key: 'SkipUserOOBE',                 kind: 'checkbox', label: 'Skip User OOBE',                 hint: 'Skip the user-level out-of-box experience', defaultVal: false }
+];
+
+/** Pre-built unattend templates for common deployment scenarios. */
+const UNATTEND_TEMPLATES = [
+    {
+        id: 'default',
+        label: 'Default',
+        description: 'Standard defaults — hide EULA and OEM, use enterprise express settings',
+        values: { HideEULAPage: 'true', HideOEMRegistrationScreen: 'true', HideOnlineAccountScreens: 'false', HideWirelessSetupInOOBE: 'false', ProtectYourPC: '3', SkipMachineOOBE: 'false', SkipUserOOBE: 'false' }
+    },
+    {
+        id: 'autopilot',
+        label: 'Autopilot',
+        description: 'Skip everything — Autopilot / Intune handles the entire OOBE flow',
+        values: { HideEULAPage: 'true', HideOEMRegistrationScreen: 'true', HideOnlineAccountScreens: 'true', HideWirelessSetupInOOBE: 'true', ProtectYourPC: '3', SkipMachineOOBE: 'true', SkipUserOOBE: 'true' }
+    },
+    {
+        id: 'enterprise',
+        label: 'Enterprise',
+        description: 'Enterprise standard — hide EULA, OEM, wireless; skip machine OOBE',
+        values: { HideEULAPage: 'true', HideOEMRegistrationScreen: 'true', HideOnlineAccountScreens: 'false', HideWirelessSetupInOOBE: 'true', ProtectYourPC: '3', SkipMachineOOBE: 'true', SkipUserOOBE: 'false' }
+    },
+    {
+        id: 'kiosk',
+        label: 'Kiosk',
+        description: 'Kiosk / shared device — skip all OOBE screens for unattended setup',
+        values: { HideEULAPage: 'true', HideOEMRegistrationScreen: 'true', HideOnlineAccountScreens: 'true', HideWirelessSetupInOOBE: 'true', ProtectYourPC: '3', SkipMachineOOBE: 'true', SkipUserOOBE: 'true' }
+    },
+    {
+        id: 'minimal',
+        label: 'Minimal',
+        description: 'Minimal intervention — only hide EULA, keep other prompts visible',
+        values: { HideEULAPage: 'true', HideOEMRegistrationScreen: 'false', HideOnlineAccountScreens: 'false', HideWirelessSetupInOOBE: 'false', ProtectYourPC: '1', SkipMachineOOBE: 'false', SkipUserOOBE: 'false' }
+    }
 ];
 
 /**
@@ -1650,6 +1827,17 @@ function renderVisualUnattendForm(builderEl, textarea, step) {
     html += '<div class="vub-pass-header"><span class="vub-pass-badge">oobeSystem</span> OOBE Settings</div>';
     html += '<div class="vub-pass-hint">Microsoft-Windows-Shell-Setup → OOBE</div>';
 
+    /* Template selector */
+    html += '<div class="vub-template-bar">';
+    html += '<label class="vub-template-label">Template</label>';
+    html += '<select class="vub-template-select" data-vub-template>';
+    html += '<option value="">— Select a preset —</option>';
+    UNATTEND_TEMPLATES.forEach(function (t) {
+        html += '<option value="' + escapeHtml(t.id) + '">' + escapeHtml(t.label) + ' — ' + escapeHtml(t.description) + '</option>';
+    });
+    html += '</select>';
+    html += '</div>';
+
     OOBE_VISUAL_FIELDS.forEach(function (f) {
         var rawVal = parsed[f.key];
         var val;
@@ -1719,6 +1907,34 @@ function renderVisualUnattendForm(builderEl, textarea, step) {
             textarea.dispatchEvent(new Event('input')); /* Trigger line numbers + data save */
         });
     });
+
+    /* Wire up template selector */
+    var tplSelect = builderEl.querySelector('[data-vub-template]');
+    if (tplSelect) {
+        tplSelect.addEventListener('change', function () {
+            var tplId = tplSelect.value;
+            if (!tplId) return;
+            var tpl = UNATTEND_TEMPLATES.find(function (t) { return t.id === tplId; });
+            if (!tpl) return;
+            /* Apply template values to the form inputs */
+            OOBE_VISUAL_FIELDS.forEach(function (f) {
+                var inp = builderEl.querySelector('[data-vub="' + f.key + '"]');
+                if (!inp) return;
+                var val = tpl.values[f.key];
+                if (inp.type === 'checkbox') {
+                    inp.checked = val === 'true';
+                } else {
+                    inp.value = val || '';
+                }
+            });
+            /* Update XML from the new values */
+            var updated = updateXmlFromVisualBuilder(textarea.value, tpl.values);
+            textarea.value = updated;
+            textarea.dispatchEvent(new Event('input'));
+            /* Reset template selector back to placeholder */
+            tplSelect.value = '';
+        });
+    }
 }
 
 /**
