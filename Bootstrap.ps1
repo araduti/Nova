@@ -241,7 +241,7 @@ $script:DarkGradientBottom = [System.Drawing.Color]::FromArgb(38, 38, 44)
 $script:CardRadius         = 16
 $script:CardShadowColor    = [System.Drawing.Color]::FromArgb(30, 0, 0, 0)
 
-# Illustration circle colours (used by the completion screen checkmark).
+# Completion-screen checkmark colour.
 $script:IllustGreen  = [System.Drawing.Color]::FromArgb(16, 137, 62)
 
 # ── Icon font + GDI+ fallback helpers ───────────────────────────────────────
@@ -1861,8 +1861,9 @@ function Show-Failure {
     Invoke-Sound 400 600
     Write-Status "Could not connect to the internet.`nPlease check your network." 'Red'
     Update-HtmlUi -Message 'Could not connect to the internet. Please check your network.'
-    # Offer a retry check; if connectivity has appeared, proceed.
-    Start-Sleep -Seconds 3
+    # Brief pause so the error sound is audible before the connectivity
+    # re-check; kept short to avoid unnecessary blocking.
+    Start-Sleep -Seconds 1
     if (Test-InternetConnectivity) {
         ProceedToEngine
     } else {
