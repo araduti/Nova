@@ -30,8 +30,8 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 
 ### Visual Hierarchy
 - **Breadcrumb navigation** ✅ — show `Dashboard > Task Sequence Name` so users always know where they are and can navigate back.
-- **Step group visual separators** — auto-detect logical groups (Pre-Imaging, Imaging, Post-Imaging) and display section dividers.
-- **Collapsible step groups** — allow grouping steps under a heading that can expand/collapse.
+- **Step group visual separators** ✅ — collapsible group headers displayed in the step list when steps have a `group` property. Groups show a chevron, label, and step count.
+- **Collapsible step groups** ✅ — click group headers to collapse/expand. Arrow Left/Right keyboard shortcuts. Collapsed state persists in localStorage.
 
 ### Step List Enhancements
 - **Step validation warning icons** ✅ — show ⚠ warning icons on steps that have validation issues (e.g., missing required parameters, NetBIOS length exceeded).
@@ -102,7 +102,7 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 | Feature | MDT | SCCM | AmpCloud Status |
 |---------|-----|------|-----------------|
 | Task sequence overview | ✅ | ✅ | ✅ Dashboard page |
-| Step groups / folders | ✅ | ✅ | 🔲 Future |
+| Step groups / folders | ✅ | ✅ | ✅ Collapsible groups |
 | Conditional logic (if/else) | ✅ | ✅ | 🔲 Future |
 | Variable substitution | ✅ | ✅ | 🔲 Partial (config modal) |
 | Error handling per step | ✅ | ✅ | ✅ continueOnError |
@@ -130,9 +130,14 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 - **Registry checks** — check for existing software before installing drivers or agents.
 
 ### Step Groups
-- **Logical grouping** — group related steps (e.g., "Driver Injection" containing InjectDrivers + InjectOemDrivers).
-- **Enable/disable groups** — toggle an entire group with one click.
-- **Collapsible groups** — reduce visual clutter in large task sequences.
+
+**Status:** ✅ Implemented
+
+- **Logical grouping** — group related steps (e.g., "Configuration", "Disk & Image", "Drivers", "Provisioning", "Finalization") via an optional `group` property on each step.
+- **Enable/disable groups** — ~~toggle an entire group with one click~~ (future: group-level toggle).
+- **Collapsible groups** — click the group header to collapse/expand all steps in that group. Collapsed state persists in localStorage. Keyboard shortcuts: Arrow Left to collapse, Arrow Right to expand.
+- **Group assignment** — editable "Group" field in the properties panel with autocomplete suggestions from existing group names. New steps inherit the group of the selected step or use a default based on step type.
+- **Drag to group** — drag a step onto a group header to move it into that group.
 
 ### Deployment Profiles
 - **Named profiles** — save combinations of task sequence + config overrides as deployment profiles.
@@ -188,7 +193,7 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 | ✅ ~~P1~~ | ~~Step search / filter~~ | Low | Medium |
 | ✅ ~~P1~~ | ~~Keyboard navigation~~ | Low | Medium |
 | ✅ ~~P1~~ | ~~Multi-select~~ | Medium | Medium |
-| 🟢 P2 | Step groups / folders | High | High |
+| ✅ ~~P2~~ | ~~Step groups / folders~~ | High | High |
 | 🟢 P2 | Conditional logic (if/else) | High | High |
 | 🟢 P2 | Visual unattend builder | High | Medium |
 | 🔵 P3 | Deployment simulation | High | Medium |

@@ -10,6 +10,7 @@
       "enabled": true,
       "description": "Configure the Windows computer name with naming rules",
       "continueOnError": true,
+      "group": "Configuration",
       "parameters": {
         "computerName": "",
         "namingSource": "serialNumber",
@@ -20,27 +21,31 @@
       }
     },
     {
+      "id": "set-regional-settings",
+      "name": "Set Regional Settings",
+      "type": "SetRegionalSettings",
+      "enabled": true,
+      "description": "Configure region, keyboard layout, and display language",
+      "continueOnError": true,
+      "group": "Configuration",
+      "parameters": {
+        "inputLocale": "",
+        "systemLocale": "",
+        "userLocale": "",
+        "uiLanguage": ""
+      }
+    },
+    {
       "id": "partition-disk",
       "name": "Partition Disk 1",
       "type": "PartitionDisk",
       "enabled": true,
       "description": "Create GPT (UEFI) or MBR (BIOS) layout on the target drive",
       "continueOnError": false,
+      "group": "Disk & Image",
       "parameters": {
         "diskNumber": 0,
         "osDriveLetter": "C"
-      }
-    },
-    {
-      "id": "import-autopilot",
-      "name": "Import Autopilot Device",
-      "type": "ImportAutopilot",
-      "enabled": true,
-      "description": "Register this device in Windows Autopilot via Microsoft Graph API",
-      "continueOnError": true,
-      "parameters": {
-        "groupTag": "SE-SH",
-        "userEmail": ""
       }
     },
     {
@@ -50,6 +55,7 @@
       "enabled": false,
       "description": "Fetch the Windows ESD/WIM from Microsoft CDN or a custom URL",
       "continueOnError": false,
+      "group": "Disk & Image",
       "parameters": {
         "imageUrl": "",
         "edition": "Professional",
@@ -64,6 +70,7 @@
       "enabled": true,
       "description": "Expand the Windows image onto the target partition",
       "continueOnError": false,
+      "group": "Disk & Image",
       "parameters": {
         "edition": "Professional"
       }
@@ -75,6 +82,7 @@
       "enabled": true,
       "description": "Write BCD store and EFI/MBR boot entries",
       "continueOnError": false,
+      "group": "Disk & Image",
       "parameters": {}
     },
     {
@@ -84,6 +92,7 @@
       "enabled": true,
       "description": "Add network and storage drivers from a local or network path",
       "continueOnError": true,
+      "group": "Drivers",
       "parameters": {
         "driverPath": ""
       }
@@ -95,7 +104,21 @@
       "enabled": false,
       "description": "Auto-detect manufacturer (Dell/HP/Lenovo) and fetch latest drivers",
       "continueOnError": true,
+      "group": "Drivers",
       "parameters": {}
+    },
+    {
+      "id": "import-autopilot",
+      "name": "Import Autopilot Device",
+      "type": "ImportAutopilot",
+      "enabled": true,
+      "description": "Register this device in Windows Autopilot via Microsoft Graph API",
+      "continueOnError": true,
+      "group": "Provisioning",
+      "parameters": {
+        "groupTag": "SE-SH",
+        "userEmail": ""
+      }
     },
     {
       "id": "apply-autopilot",
@@ -104,6 +127,7 @@
       "enabled": true,
       "description": "Embed the Autopilot/Intune provisioning profile",
       "continueOnError": true,
+      "group": "Provisioning",
       "parameters": {
         "jsonUrl": "",
         "jsonPath": ""
@@ -116,22 +140,9 @@
       "enabled": false,
       "description": "Stage ccmsetup.exe for first-boot ConfigMgr enrollment",
       "continueOnError": true,
+      "group": "Provisioning",
       "parameters": {
         "ccmSetupUrl": ""
-      }
-    },
-    {
-      "id": "set-regional-settings",
-      "name": "Set Regional Settings",
-      "type": "SetRegionalSettings",
-      "enabled": true,
-      "description": "Configure region, keyboard layout, and display language",
-      "continueOnError": true,
-      "parameters": {
-        "inputLocale": "",
-        "systemLocale": "",
-        "userLocale": "",
-        "uiLanguage": ""
       }
     },
     {
@@ -141,6 +152,7 @@
       "enabled": true,
       "description": "Apply unattend.xml for out-of-box experience customization",
       "continueOnError": true,
+      "group": "Finalization",
       "parameters": {
         "unattendSource": "default",
         "unattendContent": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\" name=\"Microsoft-Windows-Shell-Setup\" processorArchitecture=\"amd64\" publicKeyToken=\"31bf3856ad364e35\" language=\"neutral\" versionScope=\"nonSxS\">\n      <OOBE>\n        <HideEULAPage>true</HideEULAPage>\n        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>\n        <HideOnlineAccountScreens>false</HideOnlineAccountScreens>\n        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>\n        <ProtectYourPC>3</ProtectYourPC>\n        <SkipMachineOOBE>false</SkipMachineOOBE>\n        <SkipUserOOBE>false</SkipUserOOBE>\n      </OOBE>\n    </component>\n  </settings>\n</unattend>",
@@ -155,6 +167,7 @@
       "enabled": true,
       "description": "Download and stage PowerShell scripts for first-boot execution",
       "continueOnError": true,
+      "group": "Finalization",
       "parameters": {
         "scriptUrls": []
       }

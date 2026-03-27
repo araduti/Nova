@@ -150,6 +150,23 @@ const STEP_TYPES = [
 
 const typeMap = Object.fromEntries(STEP_TYPES.map(t => [t.type, t]));
 
+/* ── Default step-type → group mapping ─────────────────────────────── */
+const STEP_GROUP_DEFAULTS = {
+    SetComputerName:    'Configuration',
+    SetRegionalSettings:'Configuration',
+    PartitionDisk:      'Disk & Image',
+    DownloadImage:      'Disk & Image',
+    ApplyImage:         'Disk & Image',
+    SetBootloader:      'Disk & Image',
+    InjectDrivers:      'Drivers',
+    InjectOemDrivers:   'Drivers',
+    ImportAutopilot:    'Provisioning',
+    ApplyAutopilot:     'Provisioning',
+    StageCCMSetup:      'Provisioning',
+    CustomizeOOBE:      'Finalization',
+    RunPostScripts:     'Finalization'
+};
+
 /* ── State ────────────────────────────────────────────────────────── */
 let taskSequence = {
     name: 'Default AmpCloud Task Sequence',
@@ -164,11 +181,19 @@ let githubConfig = { owner: '', repo: '', clientId: '', oauthProxy: '' };
 let dirty = false;
 let autoSaveTimer = null;
 const DRAFT_KEY = 'ampcloud_editor_draft';
+const COLLAPSED_KEY = 'ampcloud_collapsed_groups';
 let undoStack = [];
 let redoStack = [];
 const MAX_UNDO = 50;
 let lastSnapshot = null;
 let jsonRawMode = false;
+let collapsedGroups = new Set();
+
+/* Load collapsed-groups state from localStorage */
+try {
+    const stored = localStorage.getItem(COLLAPSED_KEY);
+    if (stored) collapsedGroups = new Set(JSON.parse(stored));
+} catch (_) {}
 
 /* ── DOM refs ─────────────────────────────────────────────────────── */
 const $stepList     = document.getElementById('stepList');
@@ -179,6 +204,8 @@ const $propType     = document.getElementById('propType');
 const $propDesc     = document.getElementById('propDescription');
 const $propEnabled  = document.getElementById('propEnabled');
 const $propContErr  = document.getElementById('propContinueOnError');
+const $propGroup    = document.getElementById('propGroup');
+const $groupSuggestions = document.getElementById('groupSuggestions');
 const $paramFields  = document.getElementById('paramFields');
 const $tsName       = document.getElementById('tsName');
 const $addDialog    = document.getElementById('addStepDialog');
@@ -355,12 +382,25 @@ window.addEventListener('beforeunload', function (e) {
 const STEP_BADGE_LABELS = {
     PartitionDisk: 'P', DownloadImage: 'D', ApplyImage: 'A', SetBootloader: 'B',
     InjectDrivers: 'I', InjectOemDrivers: 'O', ApplyAutopilot: 'AP',
-    StageCCMSetup: 'S', CustomizeOOBE: 'C', RunPostScripts: 'R'
+    StageCCMSetup: 'S', CustomizeOOBE: 'C', RunPostScripts: 'R',
+    SetComputerName: 'CN', SetRegionalSettings: 'RS', ImportAutopilot: 'IA'
 };
+
+function saveCollapsedGroups() {
+    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedGroups])); } catch (_) {}
+}
+
+function toggleGroup(groupName) {
+    if (collapsedGroups.has(groupName)) collapsedGroups.delete(groupName);
+    else collapsedGroups.add(groupName);
+    saveCollapsedGroups();
+    renderStepList();
+}
 
 function renderStepList() {
     $stepList.innerHTML = '';
     const filter = ($stepSearch && $stepSearch.value || '').toLowerCase().trim();
+    let lastGroup = null;
     taskSequence.steps.forEach((step, i) => {
         /* Apply search filter */
         if (filter) {
@@ -370,13 +410,45 @@ function renderStepList() {
             if (!nameMatch && !typeMatch) return;
         }
 
+        /* Render group header when the group changes */
+        const group = step.group || '';
+        if (group && group !== lastGroup && !filter) {
+            const isCollapsed = collapsedGroups.has(group);
+            const header = document.createElement('li');
+            header.className = 'step-group-header' + (isCollapsed ? ' collapsed' : '');
+            header.dataset.group = group;
+            header.innerHTML =
+                '<span class="group-chevron">' + (isCollapsed ? '\u25B6' : '\u25BC') + '</span>' +
+                '<span class="group-label">' + escapeHtml(group) + '</span>' +
+                '<span class="group-count">' + countGroupSteps(group) + '</span>';
+            header.addEventListener('click', () => toggleGroup(group));
+            /* Allow dropping onto group headers to move steps into that group */
+            header.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; header.classList.add('drag-over'); });
+            header.addEventListener('dragleave', () => header.classList.remove('drag-over'));
+            header.addEventListener('drop', (e) => {
+                e.preventDefault();
+                header.classList.remove('drag-over');
+                if (dragSrcIndex >= 0 && dragSrcIndex < taskSequence.steps.length) {
+                    taskSequence.steps[dragSrcIndex].group = group;
+                    markDirty();
+                    renderStepList();
+                }
+            });
+            $stepList.appendChild(header);
+        }
+        lastGroup = group;
+
+        /* Skip rendering if group is collapsed (unless filtered or step is selected) */
+        if (group && collapsedGroups.has(group) && !filter) return;
+
         const isPrimary = i === selectedIndex;
         const isMulti = selectedIndices.has(i) && !isPrimary;
         const li = document.createElement('li');
         li.className = 'step-item' +
             (isPrimary ? ' selected' : '') +
             (isMulti ? ' multi-selected' : '') +
-            (step.enabled === false ? ' disabled' : '');
+            (step.enabled === false ? ' disabled' : '') +
+            (group ? ' in-group' : '');
         li.draggable = true;
         li.dataset.index = i;
 
@@ -404,6 +476,11 @@ function renderStepList() {
 
         $stepList.appendChild(li);
     });
+}
+
+/** Count how many steps belong to a group (by scanning adjacent steps). */
+function countGroupSteps(groupName) {
+    return taskSequence.steps.filter(s => s.group === groupName).length;
 }
 
 function handleStepClick(index, e) {
@@ -451,12 +528,27 @@ function showPropertiesForIndex(index) {
     $propDesc.value = step.description || '';
     $propEnabled.checked = step.enabled !== false;
     $propContErr.checked = step.continueOnError === true;
+    $propGroup.value = step.group || '';
+    updateGroupSuggestions();
     renderValidationWarnings();
     if (jsonRawMode) {
         showJsonRawView();
     } else {
         renderParamFields(step);
     }
+}
+
+/** Populate the group datalist with existing group names. */
+function updateGroupSuggestions() {
+    if (!$groupSuggestions) return;
+    const groups = new Set();
+    taskSequence.steps.forEach(s => { if (s.group) groups.add(s.group); });
+    $groupSuggestions.innerHTML = '';
+    groups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g;
+        $groupSuggestions.appendChild(opt);
+    });
 }
 
 function scrollStepIntoView(index) {
@@ -620,6 +712,13 @@ $propContErr.addEventListener('change', () => {
     taskSequence.steps[selectedIndex].continueOnError = $propContErr.checked;
     markDirty();
 });
+$propGroup.addEventListener('input', () => {
+    if (selectedIndex < 0) return;
+    const val = $propGroup.value.trim();
+    taskSequence.steps[selectedIndex].group = val || undefined;
+    markDirty();
+    renderStepList();
+});
 $tsName.addEventListener('input', () => {
     taskSequence.name = $tsName.textContent.trim();
     updateBreadcrumb(taskSequence.name);
@@ -741,6 +840,12 @@ $addOk.addEventListener('click', () => {
         continueOnError: false,
         parameters: structuredClone(def.defaults)
     };
+    /* Inherit group from the selected step, or use the type default */
+    if (selectedIndex >= 0 && taskSequence.steps[selectedIndex] && taskSequence.steps[selectedIndex].group) {
+        newStep.group = taskSequence.steps[selectedIndex].group;
+    } else if (STEP_GROUP_DEFAULTS[addDialogChoice]) {
+        newStep.group = STEP_GROUP_DEFAULTS[addDialogChoice];
+    }
     const insertAt = selectedIndex >= 0 ? selectedIndex + 1 : taskSequence.steps.length;
     taskSequence.steps.splice(insertAt, 0, newStep);
     selectedIndex = insertAt;
@@ -1291,6 +1396,28 @@ document.addEventListener('keydown', (e) => {
         selectStep(downIdx);
         scrollStepIntoView(downIdx);
         return;
+    }
+    /* Arrow Left — collapse current step's group */
+    if (e.key === 'ArrowLeft' && selectedIndex >= 0) {
+        const group = taskSequence.steps[selectedIndex] && taskSequence.steps[selectedIndex].group;
+        if (group && !collapsedGroups.has(group)) {
+            e.preventDefault();
+            collapsedGroups.add(group);
+            saveCollapsedGroups();
+            renderStepList();
+            return;
+        }
+    }
+    /* Arrow Right — expand current step's group */
+    if (e.key === 'ArrowRight' && selectedIndex >= 0) {
+        const group = taskSequence.steps[selectedIndex] && taskSequence.steps[selectedIndex].group;
+        if (group && collapsedGroups.has(group)) {
+            e.preventDefault();
+            collapsedGroups.delete(group);
+            saveCollapsedGroups();
+            renderStepList();
+            return;
+        }
     }
     /* Escape — clear search filter */
     if (e.key === 'Escape') {
