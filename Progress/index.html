@@ -23,8 +23,6 @@
             --text-muted:   #7b8da6;
             --border:       #2a3a5c;
             --success:      #107c10;
-            --illust-blue:  #0078d4;
-            --illust-violet:#7b2ff7;
             --radius:       16px;
             --font:         'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
         }
@@ -87,49 +85,17 @@
             height: 36px;
             background: linear-gradient(135deg, var(--accent) 0%, #5c7cfa 100%);
             border-radius: 8px;
-            font-size: 18px;
-            color: #fff;
         }
+        .logo-icon svg { width: 20px; height: 20px; }
 
-        /* ── Illustration — three overlapping circles ──────────────── */
-        .illustration {
-            position: relative;
-            height: 90px;
-            margin: 0 auto 28px;
+        /* ── Hero illustration ─────────────────────────────────────── */
+        .hero {
+            margin: 0 auto 32px;
             display: flex;
             align-items: center;
             justify-content: center;
         }
-        .circle {
-            width: 60px;
-            height: 60px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 22px;
-            color: #fff;
-            position: relative;
-        }
-        .circle-left {
-            background: var(--illust-blue);
-            z-index: 1;
-            margin-right: -12px;
-        }
-        .circle-center {
-            background: #ffffff;
-            border: 2px solid var(--illust-blue);
-            color: var(--illust-blue);
-            z-index: 2;
-            width: 72px;
-            height: 72px;
-            font-size: 28px;
-        }
-        .circle-right {
-            background: var(--illust-violet);
-            z-index: 1;
-            margin-left: -12px;
-        }
+        .hero svg { width: 180px; height: 120px; }
 
         /* ── Spinner ring ──────────────────────────────────────────── */
         .spinner-wrap {
@@ -152,10 +118,10 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* ── Step indicators ───────────────────────────────────────── */
+        /* ── Step indicators (Autopilot-style) ─────────────────────── */
         .steps {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: center;
             gap: 0;
             margin-bottom: 28px;
@@ -165,22 +131,30 @@
             flex-direction: column;
             align-items: center;
             gap: 6px;
+            width: 80px;
         }
-        .step-dot {
-            width: 12px;
-            height: 12px;
+        .step-icon {
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
-            background: #ccc;
-            transition: background 0.3s ease, box-shadow 0.3s ease;
+            border: 2px solid #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: border-color 0.3s ease, background 0.3s ease;
+            background: transparent;
         }
-        .dark .step-dot { background: #3a3a4e; }
-        .step.active .step-dot {
-            background: var(--accent);
-            box-shadow: 0 0 8px var(--accent-glow);
+        .step-icon svg { width: 14px; height: 14px; display: none; }
+        .dark .step-icon { border-color: #3a3a4e; }
+        .step.active .step-icon {
+            border-color: var(--accent);
+            background: rgba(15, 122, 229, 0.08);
         }
-        .step.completed .step-dot {
+        .step.completed .step-icon {
+            border-color: var(--success);
             background: var(--success);
         }
+        .step.completed .step-icon svg { display: block; }
         .step-label {
             font-size: 11px;
             color: #999;
@@ -197,7 +171,8 @@
             height: 2px;
             background: #ddd;
             margin: 0 4px;
-            margin-bottom: 20px;
+            margin-top: 13px;
+            flex-shrink: 0;
             transition: background 0.3s ease;
         }
         .dark .step-line { background: #2a3a5c; }
@@ -268,15 +243,40 @@
         <div class="card">
             <!-- Logo -->
             <div class="logo">
-                <span class="logo-icon">&#9729;</span>
+                <span class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M6.5 18.5C3.46 18.5 1 16.04 1 13c0-2.6 1.81-4.77 4.24-5.33A7.5 7.5 0 0 1 19.22 9.5 5.5 5.5 0 0 1 18 20.5H6.5Z" fill="#fff"/>
+                    </svg>
+                </span>
                 <span>AmpCloud</span>
             </div>
 
-            <!-- Illustration — three overlapping icon circles -->
-            <div class="illustration">
-                <div class="circle circle-left">&#127760;</div>
-                <div class="circle circle-center">&#9729;</div>
-                <div class="circle circle-right">&#11015;&#65039;</div>
+            <!-- Hero illustration — device setup scene -->
+            <div class="hero">
+                <svg viewBox="0 0 180 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Monitor -->
+                    <rect x="40" y="16" width="100" height="64" rx="6" fill="#0078d4" opacity="0.12" stroke="#0078d4" stroke-width="2"/>
+                    <rect x="48" y="24" width="84" height="48" rx="2" fill="#0078d4" opacity="0.06"/>
+                    <!-- Screen content: cloud + checkmark -->
+                    <path d="M78 44c0-5.52 4.48-10 10-10 4.25 0 7.88 2.66 9.33 6.4A7 7 0 0 1 96 54H80a6 6 0 0 1-2-11.66Z" fill="#0078d4" opacity="0.35"/>
+                    <circle cx="90" cy="48" r="5" fill="#107c10" opacity="0.9"/>
+                    <path d="M87.5 48l1.8 1.8 3.2-3.6" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    <!-- Stand -->
+                    <rect x="82" y="80" width="16" height="4" rx="1" fill="#0078d4" opacity="0.3"/>
+                    <rect x="87" y="76" width="6" height="8" rx="1" fill="#0078d4" opacity="0.2"/>
+                    <!-- Globe -->
+                    <circle cx="30" cy="38" r="14" fill="#0078d4" opacity="0.10" stroke="#0078d4" stroke-width="1.5"/>
+                    <ellipse cx="30" cy="38" rx="6" ry="14" fill="none" stroke="#0078d4" stroke-width="1" opacity="0.4"/>
+                    <line x1="16" y1="38" x2="44" y2="38" stroke="#0078d4" stroke-width="1" opacity="0.3"/>
+                    <!-- Cloud -->
+                    <path d="M146 30c0-4.42 3.58-8 8-8a8 8 0 0 1 7.46 5.12A5.6 5.6 0 0 1 156 38h-8a6 6 0 0 1-2-11.66Z" fill="#7b2ff7" opacity="0.18" stroke="#7b2ff7" stroke-width="1.5"/>
+                    <!-- Connection arrows -->
+                    <path d="M44 40h8" stroke="#0078d4" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.4"/>
+                    <path d="M136 40h10" stroke="#7b2ff7" stroke-width="1.5" stroke-dasharray="3 2" opacity="0.4"/>
+                    <!-- Wi-Fi waves above monitor -->
+                    <path d="M84 12a12 12 0 0 1 12 0" stroke="#0078d4" stroke-width="1.2" stroke-linecap="round" fill="none" opacity="0.3"/>
+                    <path d="M87 9a8 8 0 0 1 6 0" stroke="#0078d4" stroke-width="1.2" stroke-linecap="round" fill="none" opacity="0.2"/>
+                </svg>
             </div>
 
             <!-- Spinner -->
@@ -284,25 +284,33 @@
                 <div class="spinner" id="spinner"></div>
             </div>
 
-            <!-- Step indicators -->
+            <!-- Step indicators (Autopilot-style with checkmarks) -->
             <div class="steps" id="steps">
                 <div class="step active" data-step="1">
-                    <span class="step-dot"></span>
+                    <span class="step-icon">
+                        <svg viewBox="0 0 14 14" fill="none"><path d="M3 7l2.8 2.8L11 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </span>
                     <span class="step-label">Network</span>
                 </div>
                 <div class="step-line" id="line1"></div>
                 <div class="step" data-step="2">
-                    <span class="step-dot"></span>
+                    <span class="step-icon">
+                        <svg viewBox="0 0 14 14" fill="none"><path d="M3 7l2.8 2.8L11 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </span>
                     <span class="step-label">Connect</span>
                 </div>
                 <div class="step-line" id="line2"></div>
                 <div class="step" data-step="3">
-                    <span class="step-dot"></span>
+                    <span class="step-icon">
+                        <svg viewBox="0 0 14 14" fill="none"><path d="M3 7l2.8 2.8L11 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </span>
                     <span class="step-label">Sign in</span>
                 </div>
                 <div class="step-line" id="line3"></div>
                 <div class="step" data-step="4">
-                    <span class="step-dot"></span>
+                    <span class="step-icon">
+                        <svg viewBox="0 0 14 14" fill="none"><path d="M3 7l2.8 2.8L11 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    </span>
                     <span class="step-label">Deploy</span>
                 </div>
             </div>
@@ -327,7 +335,7 @@
     <span class="hint">Press F8 for command prompt</span>
 
     <script>
-        /* ── HTML Progress Dashboard ──────────────────────────────────
+        /* ── HTML Progress UI ─────────────────────────────────────────
          *  Polls X:\AmpCloud-Status.json (written by Bootstrap.ps1 and
          *  AmpCloud.ps1) and updates the on-screen progress display.
          *  Runs inside Edge in --app / --kiosk mode on WinPE.

@@ -59,7 +59,7 @@ Add-Type -AssemblyName System.Drawing
 
 # ── Hide console window ────────────────────────────────────────────────────
 # WinPE boots into cmd.exe → powershell.exe via winpeshl.ini.  The parent
-# console window is visible behind the WinForms UI and looks unprofessional,
+# console window is visible behind the UI and looks unprofessional,
 # so hide it immediately before any dialog is shown.
 $null = Add-Type -MemberDefinition @'
 [DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow();
@@ -94,18 +94,18 @@ $script:MaxDhcpAttempts        = 5
 $script:ConnectCheckIntervalMs = 5000  # 5  seconds
 $script:BulletChar             = [char]0x2022  # '•' used in progress text
 
-# ── HTML Dashboard IPC ──────────────────────────────────────────────────────
-# When the HTML Progress Dashboard is running (launched by ampcloud-start.cmd
+# ── HTML UI IPC ─────────────────────────────────────────────────────────────
+# When the HTML Progress UI is running (launched by ampcloud-start.cmd
 # before PowerShell), Bootstrap.ps1 writes status to the same JSON file that
 # AmpCloud.ps1 uses.  This flag is cleared once AmpCloud.ps1 starts so that
 # Bootstrap.ps1 stops writing and only reads (avoiding write conflicts).
-$script:HtmlDashboardActive = $true
+$script:HtmlUiActive = $true
 
-function Update-HtmlDashboard {
+function Update-HtmlUi {
     <#
-    .SYNOPSIS  Write status to the JSON IPC file for the HTML Progress Dashboard.
+    .SYNOPSIS  Write status to the JSON IPC file for the HTML Progress UI.
     .DESCRIPTION
-        Mirrors status updates to X:\AmpCloud-Status.json so the HTML dashboard
+        Mirrors status updates to X:\AmpCloud-Status.json so the HTML UI
         (running in Edge kiosk mode) can display real-time progress during the
         bootstrap phase before AmpCloud.ps1 takes over.
     #>
@@ -115,7 +115,7 @@ function Update-HtmlDashboard {
         [int]$Step       = 0,
         [switch]$Done
     )
-    if (-not $script:HtmlDashboardActive) { return }
+    if (-not $script:HtmlUiActive) { return }
     try {
         $obj = @{ Message = $Message; Detail = $Detail; Progress = 0; Step = $Step; Done = [bool]$Done }
         $obj | ConvertTo-Json -Compress |
@@ -2258,7 +2258,7 @@ function ProceedToEngine {
 
     Update-Step 3
     Write-Status $S.Connected 'Green'
-    Update-HtmlDashboard -Message $S.Connected -Step 3
+    Update-HtmlUi -Message $S.Connected -Step 3
     Invoke-Sound 900 300
     $ringPanel.Visible = $true
     $ringTimer.Start()
@@ -2346,7 +2346,7 @@ function ProceedToEngine {
             if ($task.IsFaulted) { throw $task.Exception.InnerException }
         }
 
-        # Run AmpCloud.ps1 in a dedicated process so the WinForms UI thread
+        # Run AmpCloud.ps1 in a dedicated process so the UI thread
         # stays responsive and the spinner keeps animating.
         # Detect firmware type so AmpCloud partitions and configures the
         # bootloader correctly (UEFI → GPT + bcdboot /f UEFI,
@@ -2375,11 +2375,11 @@ function ProceedToEngine {
             $env:AMPCLOUD_GRAPH_TOKEN = $script:GraphAccessToken
         }
 
-        Update-HtmlDashboard -Message $S.Imaging -Step 4
+        Update-HtmlUi -Message $S.Imaging -Step 4
 
         # Stop writing to the status JSON from Bootstrap — AmpCloud.ps1 takes
         # over the file from this point to avoid write conflicts.
-        $script:HtmlDashboardActive = $false
+        $script:HtmlUiActive = $false
 
         $engineProc = Start-Process -FilePath $script:PsBin -ArgumentList $psArgs -WindowStyle Hidden -PassThru
 
@@ -2455,7 +2455,7 @@ $script:initTimer.Add_Tick({
 
         'INIT' {
             $script:_wait = 0
-            Update-HtmlDashboard -Message $S.StatusInit -Step 1
+            Update-HtmlUi -Message $S.StatusInit -Step 1
             try {
                 $script:_proc = Start-Process -FilePath 'wpeinit.exe' `
                     -NoNewWindow -PassThru -ErrorAction Stop
@@ -2480,7 +2480,7 @@ $script:initTimer.Add_Tick({
 
                 Invoke-NetworkTuning
                 Write-Status 'Acquiring network address...' 'Cyan'
-                Update-HtmlDashboard -Message 'Acquiring network address...' -Step 2
+                Update-HtmlUi -Message 'Acquiring network address...' -Step 2
                 $script:_wait = 0
                 $script:_initState = 'SETTLE'
             }
@@ -2539,14 +2539,14 @@ $script:initTimer.Add_Tick({
         'CHECK' {
             $script:initTimer.Stop()
             if (Test-InternetConnectivity) {
-                Update-HtmlDashboard -Message $S.Connected -Step 3
+                Update-HtmlUi -Message $S.Connected -Step 3
                 ProceedToEngine
             } else {
                 Update-Step 2
                 $ringTimer.Stop()
                 $ringPanel.Visible = $false
                 Write-Status $S.StatusNoNet 'Yellow'
-                Update-HtmlDashboard -Message $S.StatusNoNet -Step 2
+                Update-HtmlUi -Message $S.StatusNoNet -Step 2
                 $btnWiFi.Visible = $true
                 $btnWiFi.Add_Click({
                     $script:connectCheckTimer.Stop()
