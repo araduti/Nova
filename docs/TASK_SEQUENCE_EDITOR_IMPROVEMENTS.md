@@ -156,8 +156,11 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 - **Alerting** — email/Teams/Slack notifications on deployment completion or failure.
 
 ### Advanced Unattend.xml Management
-- **Visual unattend builder** — form-based editor for all unattend.xml settings instead of raw XML.
-- **Pass-aware editing** — clearly separate specialize, oobeSystem, and windowsPE pass settings.
+
+**Status:** ✅ Partially Implemented
+
+- **Visual unattend builder** ✅ — form-based editor for OOBE settings (HideEULAPage, HideOEMRegistrationScreen, HideOnlineAccountScreens, HideWirelessSetupInOOBE, ProtectYourPC, SkipMachineOOBE, SkipUserOOBE) with Visual/XML toggle and two-way sync.
+- **Pass-aware editing** ✅ — visual builder shows pass badges (oobeSystem, specialize) and component paths. Managed settings from other steps displayed read-only.
 - **Template library** — pre-built unattend templates for common scenarios (Autopilot, domain join, kiosk mode).
 - **Schema validation** — validate against the official Microsoft unattend schema.
 
@@ -201,7 +204,7 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 | ✅ ~~P1~~ | ~~Multi-select~~ | Medium | Medium |
 | ✅ ~~P2~~ | ~~Step groups / folders~~ | High | High |
 | ✅ ~~P2~~ | ~~Conditional logic (if/else)~~ | High | High |
-| 🟢 P2 | Visual unattend builder | High | Medium |
+| ✅ ~~P2~~ | ~~Visual unattend builder~~ | High | Medium |
 | 🔵 P3 | Deployment simulation | High | Medium |
 | 🔵 P3 | TypeScript migration | High | Medium |
 | 🔵 P3 | Real-time collaboration | Very High | Medium |

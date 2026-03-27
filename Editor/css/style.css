@@ -515,7 +515,7 @@ h3::before {
     align-items: center;
     gap: 6px;
 }
-.param-field-xml label::before {
+.param-field-xml > label::before {
     content: '</>';
     font-family: var(--mono);
     font-size: 10px;
@@ -606,6 +606,165 @@ h3::before {
 }
 .xml-validation.xml-valid { color: #4caf50; }
 .xml-validation.xml-invalid { color: #e03e3e; }
+
+/* ── Visual / XML view toggle ──────────────────────────────────────── */
+.xml-view-toggle {
+    display: flex;
+    gap: 2px;
+    margin: 8px 0;
+    background: rgba(0,0,0,0.2);
+    border-radius: var(--radius);
+    padding: 2px;
+    width: fit-content;
+}
+.xml-view-btn {
+    padding: 5px 14px;
+    font-size: 11px;
+    font-family: inherit;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: calc(var(--radius) - 1px);
+    cursor: pointer;
+    transition: all var(--transition);
+    letter-spacing: 0.3px;
+}
+.xml-view-btn:hover { color: #fff; }
+.xml-view-btn.active {
+    color: #fff;
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 1px 4px rgba(15, 122, 229, 0.35);
+}
+
+/* ── Visual Unattend Builder ───────────────────────────────────────── */
+.visual-unattend-builder {
+    margin-top: 4px;
+}
+.vub-section {
+    background: rgba(0,0,0,0.12);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 14px;
+    margin-bottom: 10px;
+}
+.vub-pass-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    margin-bottom: 4px;
+}
+.vub-pass-badge {
+    font-size: 9px;
+    font-family: var(--mono);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: #1a6b3c;
+    color: #a8f0c6;
+    padding: 2px 7px;
+    border-radius: 3px;
+}
+.vub-badge-managed {
+    background: #5c4b1a;
+    color: #f0d88a;
+}
+.vub-pass-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    font-family: var(--mono);
+}
+.vub-field {
+    margin-bottom: 10px;
+}
+.vub-field:last-child { margin-bottom: 0; }
+.vub-cb-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+}
+.vub-cb-label input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+.vub-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-bottom: 4px;
+}
+.vub-field select {
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+.vub-field select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+    outline: none;
+}
+.vub-hint {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 3px;
+    padding-left: 24px;
+}
+
+/* ── Managed (read-only) settings ──────────────────────────────────── */
+.vub-managed { opacity: 0.85; }
+.vub-managed-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.vub-managed-row:last-child { border-bottom: none; }
+.vub-managed-pass {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.05);
+    padding: 1px 6px;
+    border-radius: 3px;
+    min-width: 70px;
+    text-align: center;
+}
+.vub-managed-label {
+    color: var(--text-muted);
+    min-width: 90px;
+}
+.vub-managed-value {
+    color: var(--accent);
+    font-family: var(--mono);
+    font-weight: 500;
+}
+.vub-managed-source {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-style: italic;
+    margin-left: auto;
+}
 
 /* ── Dialog ────────────────────────────────────────────────────────── */
 .dialog-overlay {

@@ -817,7 +817,13 @@ function renderParamFields(step) {
             const txt = Array.isArray(val) ? val.join('\n') : '';
             inputHtml = '<textarea data-param="' + f.key + '" data-kind="array" rows="3" placeholder="One entry per line">' + escapeHtml(txt) + '</textarea>';
         } else if (f.kind === 'xml') {
-            inputHtml = '<div class="xml-editor-toolbar">' +
+            inputHtml = '<div class="xml-view-toggle">' +
+                '<button type="button" class="xml-view-btn active" data-view="visual" title="Form-based visual editor">&#9998; Visual</button>' +
+                '<button type="button" class="xml-view-btn" data-view="xml" title="Raw XML editor">&lt;/&gt; XML</button>' +
+                '</div>' +
+                '<div class="visual-unattend-builder" data-param-key="' + f.key + '"></div>' +
+                '<div class="xml-editor-raw" style="display:none;">' +
+                '<div class="xml-editor-toolbar">' +
                 '<button type="button" class="xml-tb-btn" data-action="format" title="Format / indent XML">&#9998; Format</button>' +
                 '<button type="button" class="xml-tb-btn" data-action="validate" title="Check XML syntax">&#10003; Validate</button>' +
                 '<button type="button" class="xml-tb-btn" data-action="reset" title="Reset to default unattend.xml">&#8634; Reset</button>' +
@@ -826,7 +832,8 @@ function renderParamFields(step) {
                 '<div class="xml-line-numbers" aria-hidden="true"></div>' +
                 '<textarea data-param="' + f.key + '" data-kind="xml" rows="14" spellcheck="false" wrap="off">' + escapeHtml(String(val)) + '</textarea>' +
                 '</div>' +
-                '<div class="xml-validation"></div>';
+                '<div class="xml-validation"></div>' +
+                '</div>';
         } else if (f.kind === 'checkbox') {
             inputHtml = '<input type="checkbox" data-param="' + f.key + '"' + (val ? ' checked' : '') + '>';
         } else {
@@ -859,8 +866,11 @@ function renderParamFields(step) {
             }
         });
 
-        /* Enhanced XML editor (toolbar, line numbers, tab-indent) */
-        if (f.kind === 'xml') setupXmlEditor(div, input);
+        /* Enhanced XML editor (toolbar, line numbers, tab-indent, visual builder) */
+        if (f.kind === 'xml') {
+            setupXmlEditor(div, input);
+            setupVisualUnattendBuilder(div, input, step);
+        }
 
         fieldWrappers.push({ div: div, field: f });
         $paramFields.appendChild(div);
@@ -1490,6 +1500,267 @@ function setupXmlEditor(container, textarea) {
     });
 }
 
+/* ── Visual Unattend Builder ───────────────────────────────────────── */
+
+/** OOBE settings definition for the visual builder form. */
+const OOBE_VISUAL_FIELDS = [
+    { key: 'HideEULAPage',                kind: 'checkbox', label: 'Hide EULA Page',                 hint: 'Skip the End User License Agreement screen', defaultVal: true },
+    { key: 'HideOEMRegistrationScreen',    kind: 'checkbox', label: 'Hide OEM Registration',          hint: 'Skip the OEM registration screen', defaultVal: true },
+    { key: 'HideOnlineAccountScreens',     kind: 'checkbox', label: 'Hide Online Account Screens',    hint: 'Skip Microsoft account sign-in prompts', defaultVal: false },
+    { key: 'HideWirelessSetupInOOBE',      kind: 'checkbox', label: 'Hide Wireless Setup',            hint: 'Skip the Wi-Fi network selection screen', defaultVal: false },
+    { key: 'ProtectYourPC',                kind: 'select',   label: 'Express Settings (ProtectYourPC)', hint: 'Controls how Windows handles telemetry/privacy',
+        options: [
+            { value: '1', label: '1 — Use recommended settings' },
+            { value: '2', label: '2 — Install updates only' },
+            { value: '3', label: '3 — Skip (enterprise recommended)' }
+        ], defaultVal: '3' },
+    { key: 'SkipMachineOOBE',              kind: 'checkbox', label: 'Skip Machine OOBE',              hint: 'Skip the machine-level out-of-box experience', defaultVal: false },
+    { key: 'SkipUserOOBE',                 kind: 'checkbox', label: 'Skip User OOBE',                 hint: 'Skip the user-level out-of-box experience', defaultVal: false }
+];
+
+/**
+ * Parse OOBE settings from unattend XML string.
+ * Returns an object with setting keys and their current values from the XML.
+ */
+function parseOobeSettingsFromXml(xml) {
+    const result = {};
+    if (!xml || !xml.trim()) return result;
+    try {
+        const doc = new DOMParser().parseFromString(xml, 'application/xml');
+        if (doc.querySelector('parsererror')) return result;
+
+        /* Find the oobeSystem pass → Shell-Setup component → OOBE element */
+        for (let settings = doc.documentElement.firstElementChild; settings; settings = settings.nextElementSibling) {
+            if (settings.localName !== 'settings' || settings.getAttribute('pass') !== 'oobeSystem') continue;
+            for (let comp = settings.firstElementChild; comp; comp = comp.nextElementSibling) {
+                if (comp.localName !== 'component' || comp.getAttribute('name') !== 'Microsoft-Windows-Shell-Setup') continue;
+                for (let oobe = comp.firstElementChild; oobe; oobe = oobe.nextElementSibling) {
+                    if (oobe.localName !== 'OOBE') continue;
+                    for (let el = oobe.firstElementChild; el; el = el.nextElementSibling) {
+                        result[el.localName] = el.textContent.trim();
+                    }
+                }
+            }
+        }
+
+        /* Also read ComputerName from specialize pass (read-only display) */
+        for (let settings = doc.documentElement.firstElementChild; settings; settings = settings.nextElementSibling) {
+            if (settings.localName !== 'settings' || settings.getAttribute('pass') !== 'specialize') continue;
+            for (let comp = settings.firstElementChild; comp; comp = comp.nextElementSibling) {
+                if (comp.localName !== 'component' || comp.getAttribute('name') !== 'Microsoft-Windows-Shell-Setup') continue;
+                for (let el = comp.firstElementChild; el; el = el.nextElementSibling) {
+                    if (el.localName === 'ComputerName') {
+                        result._computerName = el.textContent.trim();
+                    }
+                }
+            }
+        }
+
+        /* Read locale settings from oobeSystem → International-Core (read-only display) */
+        for (let settings = doc.documentElement.firstElementChild; settings; settings = settings.nextElementSibling) {
+            if (settings.localName !== 'settings' || settings.getAttribute('pass') !== 'oobeSystem') continue;
+            for (let comp = settings.firstElementChild; comp; comp = comp.nextElementSibling) {
+                if (comp.localName !== 'component' || comp.getAttribute('name') !== 'Microsoft-Windows-International-Core') continue;
+                for (let el = comp.firstElementChild; el; el = el.nextElementSibling) {
+                    result['_locale_' + el.localName] = el.textContent.trim();
+                }
+            }
+        }
+    } catch (_) { /* Ignore parse errors — fall back to defaults */ }
+    return result;
+}
+
+/**
+ * Update the unattend XML string with values from the visual builder form.
+ * Only touches the OOBE element under oobeSystem → Shell-Setup.
+ */
+function updateXmlFromVisualBuilder(xml, values) {
+    if (!xml || !xml.trim()) xml = defaultUnattendXml || '';
+    if (!xml) return xml;
+
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(xml, 'application/xml');
+    if (doc.querySelector('parsererror')) return xml; /* Don't corrupt invalid XML */
+
+    var NS = 'urn:schemas-microsoft-com:unattend';
+
+    function ensureEl(parent, localName, attrs) {
+        for (var c = parent.firstElementChild; c; c = c.nextElementSibling) {
+            if (c.localName !== localName) continue;
+            var match = true;
+            if (attrs) {
+                for (var k in attrs) {
+                    if (c.getAttribute(k) !== attrs[k]) { match = false; break; }
+                }
+            }
+            if (match) return c;
+        }
+        var el = doc.createElementNS(NS, localName);
+        if (attrs) { for (var k in attrs) el.setAttribute(k, attrs[k]); }
+        parent.appendChild(el);
+        return el;
+    }
+
+    /* Find or create oobeSystem → Shell-Setup → OOBE */
+    var oobePass = ensureEl(doc.documentElement, 'settings', { pass: 'oobeSystem' });
+    var shellComp = ensureEl(oobePass, 'component', { name: 'Microsoft-Windows-Shell-Setup' });
+    if (!shellComp.getAttribute('processorArchitecture')) {
+        shellComp.setAttribute('processorArchitecture', 'amd64');
+        shellComp.setAttribute('publicKeyToken', '31bf3856ad364e35');
+        shellComp.setAttribute('language', 'neutral');
+        shellComp.setAttribute('versionScope', 'nonSxS');
+        shellComp.setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:wcm', 'http://schemas.microsoft.com/WMIConfig/2002/State');
+    }
+    var oobeEl = ensureEl(shellComp, 'OOBE');
+
+    /* Update each OOBE field */
+    OOBE_VISUAL_FIELDS.forEach(function (f) {
+        var val = values[f.key];
+        if (val === undefined || val === null) val = f.defaultVal;
+        /* Ensure value is a string for XML */
+        var strVal = String(val);
+        var existing = null;
+        for (var c = oobeEl.firstElementChild; c; c = c.nextElementSibling) {
+            if (c.localName === f.key) { existing = c; break; }
+        }
+        if (existing) {
+            existing.textContent = strVal;
+        } else {
+            var node = doc.createElementNS(NS, f.key);
+            node.textContent = strVal;
+            oobeEl.appendChild(node);
+        }
+    });
+
+    var serializer = new XMLSerializer();
+    return formatXml(serializer.serializeToString(doc));
+}
+
+/**
+ * Render the visual builder form inside the container and wire up events.
+ */
+function renderVisualUnattendForm(builderEl, textarea, step) {
+    var xml = textarea.value || defaultUnattendXml || '';
+    var parsed = parseOobeSettingsFromXml(xml);
+
+    var html = '';
+
+    /* ── oobeSystem pass: OOBE Settings section ──────────────────────── */
+    html += '<div class="vub-section">';
+    html += '<div class="vub-pass-header"><span class="vub-pass-badge">oobeSystem</span> OOBE Settings</div>';
+    html += '<div class="vub-pass-hint">Microsoft-Windows-Shell-Setup → OOBE</div>';
+
+    OOBE_VISUAL_FIELDS.forEach(function (f) {
+        var rawVal = parsed[f.key];
+        var val;
+        if (f.kind === 'checkbox') {
+            val = rawVal !== undefined ? rawVal === 'true' : f.defaultVal;
+        } else {
+            val = rawVal !== undefined ? rawVal : String(f.defaultVal);
+        }
+
+        html += '<div class="vub-field">';
+        if (f.kind === 'checkbox') {
+            html += '<label class="vub-cb-label">' +
+                '<input type="checkbox" data-vub="' + f.key + '"' + (val ? ' checked' : '') + '> ' +
+                escapeHtml(f.label) + '</label>';
+        } else if (f.kind === 'select') {
+            html += '<label class="vub-label">' + escapeHtml(f.label) + '</label>';
+            html += '<select data-vub="' + f.key + '">';
+            f.options.forEach(function (o) {
+                html += '<option value="' + escapeHtml(o.value) + '"' + (val === o.value ? ' selected' : '') + '>' + escapeHtml(o.label) + '</option>';
+            });
+            html += '</select>';
+        }
+        if (f.hint) html += '<div class="vub-hint">' + escapeHtml(f.hint) + '</div>';
+        html += '</div>';
+    });
+    html += '</div>';
+
+    /* ── Read-only managed settings ──────────────────────────────────── */
+    var managedItems = [];
+    if (parsed._computerName) {
+        managedItems.push({ pass: 'specialize', label: 'Computer Name', value: parsed._computerName, source: 'SetComputerName step' });
+    }
+    var localeKeys = ['InputLocale', 'SystemLocale', 'UserLocale', 'UILanguage'];
+    localeKeys.forEach(function (k) {
+        var v = parsed['_locale_' + k];
+        if (v) managedItems.push({ pass: 'oobeSystem', label: k.replace(/([A-Z])/g, ' $1').trim(), value: v, source: 'SetRegionalSettings step' });
+    });
+
+    if (managedItems.length) {
+        html += '<div class="vub-section vub-managed">';
+        html += '<div class="vub-pass-header"><span class="vub-pass-badge vub-badge-managed">&#128274;</span> Managed by Other Steps</div>';
+        html += '<div class="vub-pass-hint">These values are synced automatically and cannot be edited here</div>';
+        managedItems.forEach(function (item) {
+            html += '<div class="vub-managed-row">' +
+                '<span class="vub-managed-pass">' + escapeHtml(item.pass) + '</span>' +
+                '<span class="vub-managed-label">' + escapeHtml(item.label) + '</span>' +
+                '<span class="vub-managed-value">' + escapeHtml(item.value) + '</span>' +
+                '<span class="vub-managed-source">' + escapeHtml(item.source) + '</span>' +
+                '</div>';
+        });
+        html += '</div>';
+    }
+
+    builderEl.innerHTML = html;
+
+    /* Wire up change events — update XML on each change */
+    builderEl.querySelectorAll('[data-vub]').forEach(function (input) {
+        var event = (input.type === 'checkbox' || input.tagName === 'SELECT') ? 'change' : 'input';
+        input.addEventListener(event, function () {
+            var newValues = {};
+            builderEl.querySelectorAll('[data-vub]').forEach(function (inp) {
+                var key = inp.getAttribute('data-vub');
+                newValues[key] = inp.type === 'checkbox' ? String(inp.checked) : inp.value;
+            });
+            var updated = updateXmlFromVisualBuilder(textarea.value, newValues);
+            textarea.value = updated;
+            textarea.dispatchEvent(new Event('input')); /* Trigger line numbers + data save */
+        });
+    });
+}
+
+/**
+ * Set up the Visual/XML view toggle and render the visual builder.
+ */
+function setupVisualUnattendBuilder(container, textarea, step) {
+    var builderEl = container.querySelector('.visual-unattend-builder');
+    var rawEl = container.querySelector('.xml-editor-raw');
+    var toggleBtns = container.querySelectorAll('.xml-view-btn');
+    if (!builderEl || !rawEl || !toggleBtns.length) return;
+
+    /* Render visual builder form */
+    renderVisualUnattendForm(builderEl, textarea, step);
+
+    /* Toggle handler */
+    toggleBtns.forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var view = btn.getAttribute('data-view');
+            toggleBtns.forEach(function (b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+            if (view === 'visual') {
+                rawEl.style.display = 'none';
+                builderEl.style.display = '';
+                /* Re-render visual form from current XML */
+                renderVisualUnattendForm(builderEl, textarea, step);
+            } else {
+                builderEl.style.display = 'none';
+                rawEl.style.display = '';
+            }
+        });
+    });
+
+    /* When the XML textarea changes externally (e.g. via syncUnattendContent),
+       refresh the visual builder if it's visible */
+    var origDispatch = textarea.dispatchEvent.bind(textarea);
+    textarea.addEventListener('vub-refresh', function () {
+        if (builderEl.style.display !== 'none') {
+            renderVisualUnattendForm(builderEl, textarea, step);
+        }
+    });
+}
+
 /* ── Duplicate step ───────────────────────────────────────────────── */
 function duplicateSelectedStep() {
     if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) return;
@@ -1833,6 +2104,7 @@ function syncUnattendContent() {
         if (ta) {
             ta.value = oobeStep.parameters.unattendContent;
             ta.dispatchEvent(new Event('input'));  /* Update line numbers */
+            ta.dispatchEvent(new Event('vub-refresh'));  /* Update visual builder */
         }
     }
 }
