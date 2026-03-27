@@ -788,9 +788,9 @@
                 if (eds[i] === 'Professional') { pref = eds[i]; break; }
             }
             if (pref !== 'Professional') {
-                for (var i = 0; i < eds.length; i++) {
-                    if (eds[i].indexOf('Pro') >= 0 && eds[i].indexOf('Education') < 0 && eds[i].indexOf('Workstation') < 0) {
-                        pref = eds[i]; break;
+                for (var j = 0; j < eds.length; j++) {
+                    if (eds[j].indexOf('Pro') >= 0 && eds[j].indexOf('Education') < 0 && eds[j].indexOf('Workstation') < 0) {
+                        pref = eds[j]; break;
                     }
                 }
             }

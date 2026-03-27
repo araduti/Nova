@@ -620,7 +620,7 @@ function Show-ConfigurationMenu {
     $allFiles = @(
         $catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File | ForEach-Object {
             $activation = if ($_.FileName -match 'CLIENTBUSINESS_VOL') { 'Volume' } else { 'Retail' }
-            @{
+            [PSCustomObject]@{
                 LanguageCode = $_.LanguageCode
                 Language     = $_.Language
                 Architecture = $_.Architecture
