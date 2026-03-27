@@ -613,6 +613,8 @@ function Show-ConfigurationMenu {
 
     # ── Build the unified dialog ─────────────────────────────────────────────
     $accentBlue = [System.Drawing.Color]::FromArgb(0, 120, 212)
+    # Gradient colours (inlined — the script-level gradient variables were removed
+    # along with the main WinForms form; only dialog colours are kept).
     $edGradTop  = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(25, 25, 30) }    else { [System.Drawing.Color]::FromArgb(218, 232, 252) }
     $edGradBot  = if ($script:IsDarkMode) { [System.Drawing.Color]::FromArgb(38, 38, 44) } else { [System.Drawing.Color]::FromArgb(234, 240, 250) }
     $edCardBg   = if ($script:IsDarkMode) { $DarkCard }     else { $LightCard }
@@ -1636,9 +1638,8 @@ function ProceedToEngine {
         }
         if ($engineProc.ExitCode -ne 0) { $engineFailed = $true }
     } catch {
-        # Engine already printed diagnostics; the -NoExit PowerShell host
-        # from ampcloud-start.cmd provides the interactive prompt for
-        # troubleshooting.
+        # Engine already printed diagnostics.  The Bootstrap message pump
+        # keeps running so interactive troubleshooting is possible.
         $engineFailed = $true
     }
 
@@ -1794,10 +1795,14 @@ $script:initTimer.Start()
 # ── Main message pump ──────────────────────────────────────────────────────
 # Replaces the old $form.ShowDialog().  The DoEvents loop keeps WinForms
 # timers and modal dialogs functional without a visible form.
+# The loop exits when $script:ExitMainLoop is set (e.g. after imaging
+# completes or a fatal error occurs).
+$script:ExitMainLoop = $false
 [System.Windows.Forms.Application]::EnableVisualStyles()
-while ($true) {
+while (-not $script:ExitMainLoop) {
     [System.Windows.Forms.Application]::DoEvents()
     Start-Sleep -Milliseconds 50
 }
+try { $script:HttpListener.Stop() } catch {}
 Stop-Transcript -ErrorAction SilentlyContinue
 #endregion

@@ -1259,9 +1259,11 @@ if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\AmpCloud-UI\index.html" (
         --allow-file-access-from-files
 )
 
+REM Give Edge time to render the initial UI before PowerShell starts.
 timeout /t 2 /nobreak >nul
 
 REM ── Launch Bootstrap (no WinForms visible UI) ────────────────────────
+REM Bootstrap.ps1 stays running via its internal DoEvents message pump.
 X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File "X:\Windows\System32\Bootstrap.ps1"
 '@ | Set-Content -Path $launcherPath -Encoding Ascii
 

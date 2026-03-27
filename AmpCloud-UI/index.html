@@ -459,6 +459,9 @@
          *  AmpCloud.ps1) and updates the on-screen progress display.
          *  Sends user actions to Bootstrap.ps1 via HTTP on localhost:8080.
          *  Runs inside Edge in kiosk mode on WinPE.
+         *
+         *  X: is the standard WinPE ramdisk drive letter.
+         *  650ms poll interval matches the existing Progress UI cadence.
          * ──────────────────────────────────────────────────────────── */
 
         var STATUS_PATH = 'file:///X:/AmpCloud-Status.json';
