@@ -1087,9 +1087,16 @@ function Set-OOBECustomization {
                         $xd.DocumentElement.AppendChild($oobeSetting) | Out-Null
                     }
 
-                    # Find or create Shell-Setup component for ComputerName
+                    # ComputerName must be in the specialize pass (not oobeSystem)
+                    # so that Windows applies it before OOBE runs.
                     if ($ComputerName) {
-                        $shellComp = $oobeSetting.SelectSingleNode(
+                        $specSetting = $xd.SelectSingleNode('//u:settings[@pass="specialize"]', (New-XmlNsManager $xd $ns))
+                        if (-not $specSetting) {
+                            $specSetting = $xd.CreateElement('settings', 'urn:schemas-microsoft-com:unattend')
+                            $specSetting.SetAttribute('pass', 'specialize')
+                            $xd.DocumentElement.AppendChild($specSetting) | Out-Null
+                        }
+                        $shellComp = $specSetting.SelectSingleNode(
                             'u:component[@name="Microsoft-Windows-Shell-Setup"]',
                             (New-XmlNsManager $xd $ns))
                         if (-not $shellComp) {
@@ -1099,7 +1106,7 @@ function Set-OOBECustomization {
                             $shellComp.SetAttribute('publicKeyToken', '31bf3856ad364e35')
                             $shellComp.SetAttribute('language', 'neutral')
                             $shellComp.SetAttribute('versionScope', 'nonSxS')
-                            $oobeSetting.AppendChild($shellComp) | Out-Null
+                            $specSetting.AppendChild($shellComp) | Out-Null
                         }
                         $cnNode = $shellComp.SelectSingleNode(
                             'u:ComputerName', (New-XmlNsManager $xd $ns))
@@ -1190,15 +1197,27 @@ $($intlParts -join "`n")
 "@
         }
 
-        # Build ComputerName element if specified
-        $computerNameElement = ''
+        # Build specialize pass with ComputerName if specified
+        $specializePass = ''
         if ($ComputerName) {
-            $computerNameElement = "      <ComputerName>$(EncodeXml $ComputerName)</ComputerName>"
+            $specializePass = @"
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <ComputerName>$(EncodeXml $ComputerName)</ComputerName>
+    </component>
+  </settings>
+"@
         }
 
     $defaultUnattend = @"
 <?xml version="1.0" encoding="utf-8"?>
 <unattend xmlns="urn:schemas-microsoft-com:unattend">
+$(if ($specializePass) { $specializePass })
   <settings pass="oobeSystem">
     <component name="Microsoft-Windows-Shell-Setup"
                processorArchitecture="amd64"
@@ -1215,7 +1234,6 @@ $($intlParts -join "`n")
         <SkipMachineOOBE>false</SkipMachineOOBE>
         <SkipUserOOBE>false</SkipUserOOBE>
       </OOBE>
-$(if ($computerNameElement) { $computerNameElement })
     </component>
 $(if ($intlComponent) { $intlComponent })
   </settings>
