@@ -158,6 +158,7 @@ let taskSequence = {
     steps: []
 };
 let selectedIndex = -1;
+let selectedIndices = new Set();
 let dragSrcIndex = -1;
 let githubConfig = { owner: '', repo: '', clientId: '', oauthProxy: '' };
 let dirty = false;
@@ -192,6 +193,7 @@ const $jsonToggle   = document.getElementById('jsonToggle');
 const $jsonRawEditor = document.getElementById('jsonRawEditor');
 const $jsonRawTextarea = document.getElementById('jsonRawTextarea');
 const $jsonRawError = document.getElementById('jsonRawError');
+const $stepSearch   = document.getElementById('stepSearch');
 
 /* ── Populate type <select> ───────────────────────────────────────── */
 STEP_TYPES.forEach(t => {
@@ -254,6 +256,8 @@ function applySnapshot(json) {
     const snap = JSON.parse(json);
     taskSequence = snap.ts;
     selectedIndex = snap.sel;
+    selectedIndices.clear();
+    if (selectedIndex >= 0) selectedIndices.add(selectedIndex);
     $tsName.textContent = taskSequence.name || 'Untitled';
     updateBreadcrumb(taskSequence.name || 'Untitled');
     renderStepList();
@@ -356,9 +360,23 @@ const STEP_BADGE_LABELS = {
 
 function renderStepList() {
     $stepList.innerHTML = '';
+    var filter = ($stepSearch && $stepSearch.value || '').toLowerCase().trim();
     taskSequence.steps.forEach((step, i) => {
+        /* Apply search filter */
+        if (filter) {
+            var nameMatch = (step.name || '').toLowerCase().indexOf(filter) >= 0;
+            var typeLabel = typeMap[step.type] ? typeMap[step.type].label : step.type;
+            var typeMatch = typeLabel.toLowerCase().indexOf(filter) >= 0;
+            if (!nameMatch && !typeMatch) return;
+        }
+
+        const isPrimary = i === selectedIndex;
+        const isMulti = selectedIndices.has(i) && !isPrimary;
         const li = document.createElement('li');
-        li.className = 'step-item' + (i === selectedIndex ? ' selected' : '') + (step.enabled === false ? ' disabled' : '');
+        li.className = 'step-item' +
+            (isPrimary ? ' selected' : '') +
+            (isMulti ? ' multi-selected' : '') +
+            (step.enabled === false ? ' disabled' : '');
         li.draggable = true;
         li.dataset.index = i;
 
@@ -375,7 +393,7 @@ function renderStepList() {
                 '<div class="step-type-label">' + escapeHtml(typeMap[step.type] ? typeMap[step.type].label : step.type) + '</div>' +
             '</div>' + warnHtml;
 
-        li.addEventListener('click', () => selectStep(i));
+        li.addEventListener('click', (e) => handleStepClick(i, e));
 
         /* Drag events */
         li.addEventListener('dragstart', onDragStart);
@@ -388,10 +406,37 @@ function renderStepList() {
     });
 }
 
-/* ── Select step ──────────────────────────────────────────────────── */
-function selectStep(index) {
-    selectedIndex = index;
-    renderStepList();
+function handleStepClick(index, e) {
+    if (e.ctrlKey || e.metaKey) {
+        /* Toggle individual step in multi-selection */
+        if (selectedIndices.has(index)) {
+            selectedIndices.delete(index);
+            if (selectedIndex === index) {
+                selectedIndex = selectedIndices.size > 0 ? Math.min(...selectedIndices) : -1;
+            }
+        } else {
+            selectedIndices.add(index);
+            selectedIndex = index;
+        }
+        renderStepList();
+        showPropertiesForIndex(selectedIndex);
+    } else if (e.shiftKey && selectedIndex >= 0) {
+        /* Range selection from current selectedIndex to clicked index */
+        const from = Math.min(selectedIndex, index);
+        const to = Math.max(selectedIndex, index);
+        selectedIndices.clear();
+        for (let k = from; k <= to; k++) {
+            selectedIndices.add(k);
+        }
+        renderStepList();
+        showPropertiesForIndex(selectedIndex);
+    } else {
+        /* Normal click — single selection */
+        selectStep(index);
+    }
+}
+
+function showPropertiesForIndex(index) {
     if (index < 0 || index >= taskSequence.steps.length) {
         $propsEmpty.style.display = '';
         $propsEditor.style.display = 'none';
@@ -412,6 +457,25 @@ function selectStep(index) {
     } else {
         renderParamFields(step);
     }
+}
+
+function scrollStepIntoView(index) {
+    const items = $stepList.querySelectorAll('.step-item');
+    for (let j = 0; j < items.length; j++) {
+        if (parseInt(items[j].dataset.index, 10) === index) {
+            items[j].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            break;
+        }
+    }
+}
+
+/* ── Select step ──────────────────────────────────────────────────── */
+function selectStep(index) {
+    selectedIndex = index;
+    selectedIndices.clear();
+    if (index >= 0) selectedIndices.add(index);
+    renderStepList();
+    showPropertiesForIndex(index);
 }
 
 /* ── Render parameter fields dynamically ──────────────────────────── */
@@ -618,15 +682,28 @@ document.getElementById('btnMoveDown').addEventListener('click', () => {
 /* ── Remove step ──────────────────────────────────────────────────── */
 document.getElementById('btnRemoveStep').addEventListener('click', () => {
     if (selectedIndex < 0) return;
-    const removedType = taskSequence.steps[selectedIndex].type;
-    taskSequence.steps.splice(selectedIndex, 1);
-    if (selectedIndex >= taskSequence.steps.length) selectedIndex = taskSequence.steps.length - 1;
+    let needSync = false;
+    if (selectedIndices.size > 1) {
+        /* Bulk delete — remove all selected steps (iterate in reverse to preserve indices) */
+        const sorted = Array.from(selectedIndices).sort((a, b) => b - a);
+        sorted.forEach(function (idx) {
+            if (idx >= 0 && idx < taskSequence.steps.length) {
+                const t = taskSequence.steps[idx].type;
+                if (t === 'SetComputerName' || t === 'SetRegionalSettings') needSync = true;
+                taskSequence.steps.splice(idx, 1);
+            }
+        });
+        selectedIndex = Math.min(sorted[sorted.length - 1], taskSequence.steps.length - 1);
+    } else {
+        const removedType = taskSequence.steps[selectedIndex].type;
+        if (removedType === 'SetComputerName' || removedType === 'SetRegionalSettings') needSync = true;
+        taskSequence.steps.splice(selectedIndex, 1);
+        if (selectedIndex >= taskSequence.steps.length) selectedIndex = taskSequence.steps.length - 1;
+    }
     markDirty();
     renderStepList();
     selectStep(selectedIndex);
-    if (removedType === 'SetComputerName' || removedType === 'SetRegionalSettings') {
-        syncUnattendContent();
-    }
+    if (needSync) syncUnattendContent();
 });
 
 /* ── Add step dialog ──────────────────────────────────────────────── */
@@ -1115,6 +1192,13 @@ function duplicateSelectedStep() {
 
 document.getElementById('btnDuplicateStep').addEventListener('click', duplicateSelectedStep);
 
+/* ── Step search filter ───────────────────────────────────────────── */
+if ($stepSearch) {
+    $stepSearch.addEventListener('input', function () {
+        renderStepList();
+    });
+}
+
 /* ── Undo / Redo toolbar buttons ──────────────────────────────────── */
 if ($btnUndo) $btnUndo.addEventListener('click', undo);
 if ($btnRedo) $btnRedo.addEventListener('click', redo);
@@ -1184,7 +1268,47 @@ document.addEventListener('keydown', (e) => {
     }
 
     /* Skip remaining shortcuts when inside an editable field */
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) {
+        /* Allow Escape to blur search and refocus step list */
+        if (e.key === 'Escape' && e.target === $stepSearch) {
+            e.target.blur();
+        }
+        return;
+    }
+    /* Arrow Up — navigate to previous step */
+    if (e.key === 'ArrowUp' && taskSequence.steps.length > 0) {
+        e.preventDefault();
+        const upIdx = selectedIndex <= 0 ? 0 : selectedIndex - 1;
+        selectStep(upIdx);
+        scrollStepIntoView(upIdx);
+        return;
+    }
+    /* Arrow Down — navigate to next step */
+    if (e.key === 'ArrowDown' && taskSequence.steps.length > 0) {
+        e.preventDefault();
+        const maxIdx = taskSequence.steps.length - 1;
+        const downIdx = selectedIndex < 0 ? 0 : (selectedIndex >= maxIdx ? maxIdx : selectedIndex + 1);
+        selectStep(downIdx);
+        scrollStepIntoView(downIdx);
+        return;
+    }
+    /* Escape — clear search filter */
+    if (e.key === 'Escape') {
+        if ($stepSearch && $stepSearch.value) {
+            $stepSearch.value = '';
+            renderStepList();
+        }
+        return;
+    }
+    /* Ctrl+F or / — focus search input */
+    if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key === 'f')) {
+        if ($stepSearch) {
+            e.preventDefault();
+            $stepSearch.focus();
+            $stepSearch.select();
+        }
+        return;
+    }
     if (e.key === 'Delete' && selectedIndex >= 0) {
         document.getElementById('btnRemoveStep').click();
     }
