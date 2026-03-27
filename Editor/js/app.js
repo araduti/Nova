@@ -360,13 +360,13 @@ const STEP_BADGE_LABELS = {
 
 function renderStepList() {
     $stepList.innerHTML = '';
-    var filter = ($stepSearch && $stepSearch.value || '').toLowerCase().trim();
+    const filter = ($stepSearch && $stepSearch.value || '').toLowerCase().trim();
     taskSequence.steps.forEach((step, i) => {
         /* Apply search filter */
         if (filter) {
-            var nameMatch = (step.name || '').toLowerCase().indexOf(filter) >= 0;
-            var typeLabel = typeMap[step.type] ? typeMap[step.type].label : step.type;
-            var typeMatch = typeLabel.toLowerCase().indexOf(filter) >= 0;
+            const nameMatch = (step.name || '').toLowerCase().indexOf(filter) >= 0;
+            const typeLabel = typeMap[step.type] ? typeMap[step.type].label : step.type;
+            const typeMatch = typeLabel.toLowerCase().indexOf(filter) >= 0;
             if (!nameMatch && !typeMatch) return;
         }
 
@@ -686,7 +686,7 @@ document.getElementById('btnRemoveStep').addEventListener('click', () => {
     if (selectedIndices.size > 1) {
         /* Bulk delete — remove all selected steps (iterate in reverse to preserve indices) */
         const sorted = Array.from(selectedIndices).sort((a, b) => b - a);
-        sorted.forEach(function (idx) {
+        sorted.forEach((idx) => {
             if (idx >= 0 && idx < taskSequence.steps.length) {
                 const t = taskSequence.steps[idx].type;
                 if (t === 'SetComputerName' || t === 'SetRegionalSettings') needSync = true;
