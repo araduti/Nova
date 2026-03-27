@@ -4,10 +4,11 @@
     AmpCloud - Full cloud imaging engine for GitHub-native OS deployment.
 
 .DESCRIPTION
-    Runs inside WinPE. Partitions disks, downloads and applies the latest
-    Windows WIM/ESD from Microsoft or a custom cloud source, injects drivers,
-    applies Autopilot/Intune/ConfigMgr configuration, customizes OOBE, and
-    runs post-provisioning scripts. All updates are instant via GitHub - no
+    Runs inside WinPE. Reads a task sequence JSON file produced by the
+    web-based Editor, then executes each enabled step in order: partitions
+    disks, downloads and applies Windows, injects drivers, applies
+    Autopilot/Intune/ConfigMgr configuration, customizes OOBE, and runs
+    post-provisioning scripts. All updates are instant via GitHub - no
     rebuilds needed.
 
 .NOTES
@@ -31,46 +32,6 @@ param(
     [ValidateSet('UEFI','BIOS')]
     [string]$FirmwareType  = 'UEFI',
 
-    # Windows image source
-    # Set to a direct URL to a .wim/.esd, or leave empty to use products.xml from the repository
-    [string]$WindowsImageUrl = '',
-    [ValidateNotNullOrEmpty()]
-    [string]$WindowsEdition      = 'Professional',
-    [ValidateNotNullOrEmpty()]
-    [string]$WindowsLanguage     = 'en-us',
-    [ValidateSet('x64','ARM64')]
-    [string]$WindowsArchitecture = 'x64',
-
-    # Driver injection
-    # Folder path (inside WinPE or on a share) containing driver .inf files
-    [string]$DriverPath = '',
-    # Automatically detect the system manufacturer (Dell, HP, Lenovo) and use
-    # their official PowerShell modules to fetch and inject the latest drivers.
-    # Requires internet access from WinPE. Mutually compatible with -DriverPath.
-    [switch]$UseOemDrivers,
-
-    # Autopilot / Intune
-    [string]$AutopilotJsonUrl = '',   # URL to AutopilotConfigurationFile.json
-    [string]$AutopilotJsonPath = '',  # OR local path inside WinPE
-    [string]$AutopilotGroupTag = '',  # Group tag for Autopilot device import
-    [string]$AutopilotUserEmail = '', # User email for Autopilot device assignment
-
-    # ConfigMgr (SCCM)
-    [string]$CCMSetupUrl = '',        # URL to ccmsetup.exe
-
-    # OOBE customization
-    [string]$UnattendUrl     = '',       # URL to unattend.xml
-    [string]$UnattendPath    = '',       # OR local path
-    [string]$UnattendContent = '',       # OR inline XML content from the editor
-    [string]$InputLocale     = '',       # Keyboard layout (e.g. en-US, 0409:00000409)
-    [string]$SystemLocale    = '',       # System/region locale (e.g. en-US)
-    [string]$UserLocale      = '',       # User/format locale (e.g. en-US)
-    [string]$UILanguage      = '',       # Windows display language (e.g. en-US)
-    [string]$ComputerName    = '',       # Device name (max 15 chars)
-
-    # Post-provisioning scripts
-    [string[]]$PostScriptUrls = @(),  # URLs to PS1 scripts to run after imaging
-
     # Scratch / temp directory inside WinPE
     [ValidateNotNullOrEmpty()]
     [string]$ScratchDir = 'X:\AmpCloud',
@@ -83,11 +44,13 @@ param(
     # in the UI.  Leave empty to disable status reporting.
     [string]$StatusFile = '',
 
-    # Task sequence JSON — when specified, the engine reads the step list from
-    # this file instead of running the default hardcoded sequence.  The file is
-    # produced by the web-based Task Sequence Editor (Editor/index.html) and
-    # follows the schema defined in TaskSequence/default.json.
-    [string]$TaskSequencePath = ''
+    # Task sequence JSON — the engine reads the step list from this file and
+    # executes each enabled step in order.  The file is produced by the
+    # web-based Task Sequence Editor (Editor/index.html) and follows the
+    # schema defined in TaskSequence/default.json.
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
+    [string]$TaskSequencePath
 )
 
 Set-StrictMode -Version Latest
@@ -1292,8 +1255,8 @@ function Invoke-TaskSequenceStep {
     .SYNOPSIS  Executes a single task sequence step by dispatching to the matching engine function.
     .DESCRIPTION
         Maps each step type string to the corresponding AmpCloud engine function,
-        passing the step's parameters.  Uses the same functions that the hardcoded
-        path calls, so behaviour is identical.
+        passing the step's parameters.  All parameter values come from the task
+        sequence JSON — no script-level fallbacks.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1322,23 +1285,23 @@ function Invoke-TaskSequenceStep {
             Initialize-TargetDisk -DiskNumber $disk -FirmwareType $CurrentFirmwareType -OSDriveLetter $drv
         }
         'ImportAutopilot' {
-            $tag   = if ($p -and $p.groupTag)  { $p.groupTag }  else { $AutopilotGroupTag }
-            $email = if ($p -and $p.userEmail) { $p.userEmail } else { $AutopilotUserEmail }
+            $tag   = if ($p -and $p.groupTag)  { $p.groupTag }  else { '' }
+            $email = if ($p -and $p.userEmail) { $p.userEmail } else { '' }
             Update-BootstrapStatus -Message "Importing Autopilot device..." -Detail "Registering device in Windows Autopilot" -Step $uiStep -Progress $pct
             Invoke-AutopilotImport -GroupTag $tag -UserEmail $email
         }
         'DownloadImage' {
-            $url  = if ($p -and $p.imageUrl)      { $p.imageUrl }      else { $WindowsImageUrl }
-            $ed   = if ($p -and $p.edition)        { $p.edition }       else { $WindowsEdition }
-            $lang = if ($p -and $p.language)        { $p.language }      else { $WindowsLanguage }
-            $arch = if ($p -and $p.architecture)    { $p.architecture }  else { $WindowsArchitecture }
+            $url  = if ($p -and $p.imageUrl)      { $p.imageUrl }      else { '' }
+            $ed   = if ($p -and $p.edition)        { $p.edition }       else { 'Professional' }
+            $lang = if ($p -and $p.language)        { $p.language }      else { 'en-us' }
+            $arch = if ($p -and $p.architecture)    { $p.architecture }  else { 'x64' }
             Update-BootstrapStatus -Message "Downloading Windows image..." -Detail "Fetching $ed $lang $arch" -Step $uiStep -Progress $pct
             $script:TsImagePath = Get-WindowsImageSource `
                 -ImageUrl $url -Edition $ed -Language $lang -Architecture $arch `
                 -FirmwareType $CurrentFirmwareType -ScratchDir $CurrentScratchDir
         }
         'ApplyImage' {
-            $ed = if ($p -and $p.edition) { $p.edition } else { $WindowsEdition }
+            $ed = if ($p -and $p.edition) { $p.edition } else { 'Professional' }
             Update-BootstrapStatus -Message "Applying Windows image..." -Detail "Expanding Windows files" -Step $uiStep -Progress $pct
             Install-WindowsImage -ImagePath $script:TsImagePath -Edition $ed -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
@@ -1347,7 +1310,7 @@ function Invoke-TaskSequenceStep {
             Set-Bootloader -OSDriveLetter $CurrentOSDrive -FirmwareType $CurrentFirmwareType -DiskNumber $CurrentDiskNumber
         }
         'InjectDrivers' {
-            $dp = if ($p -and $p.driverPath) { $p.driverPath } else { $DriverPath }
+            $dp = if ($p -and $p.driverPath) { $p.driverPath } else { '' }
             Update-BootstrapStatus -Message "Injecting drivers..." -Detail "Adding drivers" -Step $uiStep -Progress $pct
             Add-Driver -DriverPath $dp -OSDriveLetter $CurrentOSDrive
         }
@@ -1356,19 +1319,19 @@ function Invoke-TaskSequenceStep {
             Invoke-OemDriverInjection -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
         'ApplyAutopilot' {
-            $jUrl  = if ($p -and $p.jsonUrl)  { $p.jsonUrl }  else { $AutopilotJsonUrl }
-            $jPath = if ($p -and $p.jsonPath) { $p.jsonPath } else { $AutopilotJsonPath }
+            $jUrl  = if ($p -and $p.jsonUrl)  { $p.jsonUrl }  else { '' }
+            $jPath = if ($p -and $p.jsonPath) { $p.jsonPath } else { '' }
             Update-BootstrapStatus -Message "Applying Autopilot configuration..." -Detail "Embedding provisioning profile" -Step $uiStep -Progress $pct
             Set-AutopilotConfig -JsonUrl $jUrl -JsonPath $jPath -OSDriveLetter $CurrentOSDrive
         }
         'StageCCMSetup' {
-            $url = if ($p -and $p.ccmSetupUrl) { $p.ccmSetupUrl } else { $CCMSetupUrl }
+            $url = if ($p -and $p.ccmSetupUrl) { $p.ccmSetupUrl } else { '' }
             Update-BootstrapStatus -Message "Staging ConfigMgr setup..." -Detail "Preparing ccmsetup.exe" -Step $uiStep -Progress $pct
             Install-CCMSetup -CCMSetupUrl $url -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
         'SetComputerName' {
             # Resolve computer name from naming rules or use the static value
-            $cName = if ($p -and $p.computerName) { $p.computerName } else { $ComputerName }
+            $cName = if ($p -and $p.computerName) { $p.computerName } else { '' }
             if (-not $cName -and $p) {
                 # Generate from naming rules (prefix + serial/random + suffix)
                 $base = ''
@@ -1386,8 +1349,7 @@ function Invoke-TaskSequenceStep {
             # Strip invalid characters (letters, digits, hyphens only; no leading/trailing hyphens)
             $cName = ($cName -replace '[^A-Za-z0-9\-]','').Trim('-')
             if ($cName) {
-                $script:ComputerName = $cName
-                $ComputerName = $cName
+                $script:TsComputerName = $cName
                 Update-BootstrapStatus -Message "Setting computer name..." -Detail "Name: $cName" -Step $uiStep -Progress $pct
                 Write-Success "Computer name resolved: $cName"
             } else {
@@ -1396,36 +1358,36 @@ function Invoke-TaskSequenceStep {
             }
         }
         'SetRegionalSettings' {
-            # Store locale values for use by the CustomizeOOBE step
-            if ($p -and $p.inputLocale)  { $InputLocale  = $p.inputLocale }
-            if ($p -and $p.systemLocale) { $SystemLocale = $p.systemLocale }
-            if ($p -and $p.userLocale)   { $UserLocale   = $p.userLocale }
-            if ($p -and $p.uiLanguage)   { $UILanguage   = $p.uiLanguage }
+            # Store locale values in script scope for use by the CustomizeOOBE step
+            if ($p -and $p.inputLocale)  { $script:TsInputLocale  = $p.inputLocale }
+            if ($p -and $p.systemLocale) { $script:TsSystemLocale = $p.systemLocale }
+            if ($p -and $p.userLocale)   { $script:TsUserLocale   = $p.userLocale }
+            if ($p -and $p.uiLanguage)   { $script:TsUILanguage   = $p.uiLanguage }
             $detail = @()
-            if ($InputLocale)  { $detail += "Keyboard: $InputLocale" }
-            if ($SystemLocale) { $detail += "Region: $SystemLocale" }
-            if ($UILanguage)   { $detail += "Language: $UILanguage" }
+            if ($script:TsInputLocale)  { $detail += "Keyboard: $($script:TsInputLocale)" }
+            if ($script:TsSystemLocale) { $detail += "Region: $($script:TsSystemLocale)" }
+            if ($script:TsUILanguage)   { $detail += "Language: $($script:TsUILanguage)" }
             $detailStr = if ($detail.Count -gt 0) { $detail -join ', ' } else { 'No regional settings specified' }
             Update-BootstrapStatus -Message "Setting regional settings..." -Detail $detailStr -Step $uiStep -Progress $pct
             Write-Success "Regional settings applied: $detailStr"
         }
         'CustomizeOOBE' {
-            $uUrl     = if ($p -and $p.unattendUrl)  { $p.unattendUrl }  else { $UnattendUrl }
-            $uPath    = if ($p -and $p.unattendPath)  { $p.unattendPath }  else { $UnattendPath }
-            $uContent = if ($p -and $p.unattendSource -eq 'default' -and $p.unattendContent) { $p.unattendContent } elseif (-not $p -or $p.unattendSource -ne 'cloud') { $UnattendContent } else { '' }
+            $uUrl     = if ($p -and $p.unattendUrl)  { $p.unattendUrl }  else { '' }
+            $uPath    = if ($p -and $p.unattendPath)  { $p.unattendPath }  else { '' }
+            $uContent = if ($p -and $p.unattendSource -eq 'default' -and $p.unattendContent) { $p.unattendContent } else { '' }
             # Locale and computer name come from SetRegionalSettings/SetComputerName
-            # steps (which update script-scope variables), falling back to script parameters
-            $iLocale  = $InputLocale
-            $sLocale  = $SystemLocale
-            $uLocale  = $UserLocale
-            $uiLang   = $UILanguage
-            $cName    = $ComputerName
+            # steps which store values in script-scope variables
+            $iLocale  = $script:TsInputLocale
+            $sLocale  = $script:TsSystemLocale
+            $uLocale  = $script:TsUserLocale
+            $uiLang   = $script:TsUILanguage
+            $cName    = $script:TsComputerName
             Update-BootstrapStatus -Message "Customizing OOBE..." -Detail "Applying unattend.xml" -Step $uiStep -Progress $pct
             Set-OOBECustomization -UnattendUrl $uUrl -UnattendPath $uPath -UnattendContent $uContent -OSDriveLetter $CurrentOSDrive `
                 -InputLocale $iLocale -SystemLocale $sLocale -UserLocale $uLocale -UILanguage $uiLang -ComputerName $cName
         }
         'RunPostScripts' {
-            $urls = if ($p -and $p.scriptUrls) { @($p.scriptUrls) } else { $PostScriptUrls }
+            $urls = if ($p -and $p.scriptUrls) { @($p.scriptUrls) } else { @() }
             Update-BootstrapStatus -Message "Staging post-scripts..." -Detail "Downloading post-provisioning scripts" -Step $uiStep -Progress $pct
             Invoke-PostScript -ScriptUrls $urls -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
@@ -1461,155 +1423,56 @@ if (-not $PSBoundParameters.ContainsKey('FirmwareType')) {
 $stepName = ''
 try {
 
-    # ── Task-sequence-driven execution path ─────────────────────────
-    # When a JSON task sequence file is supplied, execute only the
-    # enabled steps in the order defined by the editor.  This path
-    # replaces the default hardcoded sequence below.
-    if ($TaskSequencePath) {
-        $ts = Read-TaskSequence -Path $TaskSequencePath
-        Write-Step "Firmware type: $FirmwareType"
-        New-ScratchDirectory -Path $ScratchDir
+    # ── Task-sequence-driven execution ──────────────────────────────
+    # Read the step list from the JSON task sequence file and execute
+    # each enabled step in the order defined by the editor.
+    $ts = Read-TaskSequence -Path $TaskSequencePath
+    Write-Step "Firmware type: $FirmwareType"
+    New-ScratchDirectory -Path $ScratchDir
 
-        $enabledSteps = @($ts.steps | Where-Object { $_.enabled -ne $false })
-        Write-Step "Executing $($enabledSteps.Count) enabled steps"
+    $enabledSteps = @($ts.steps | Where-Object { $_.enabled -ne $false })
+    Write-Step "Executing $($enabledSteps.Count) enabled steps"
 
-        $script:TsImagePath = ''
-        for ($i = 0; $i -lt $enabledSteps.Count; $i++) {
-            $s = $enabledSteps[$i]
-            $stepName = $s.name
-            Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type))"
+    # Inter-step state: initialise script-scope variables that earlier steps
+    # (SetComputerName, SetRegionalSettings) populate for later steps
+    # (CustomizeOOBE) to consume.
+    $script:TsImagePath    = ''
+    $script:TsComputerName = ''
+    $script:TsInputLocale  = ''
+    $script:TsSystemLocale = ''
+    $script:TsUserLocale   = ''
+    $script:TsUILanguage   = ''
 
-            # After PartitionDisk, redirect scratch to OS drive
-            if ($s.type -eq 'PartitionDisk') {
+    for ($i = 0; $i -lt $enabledSteps.Count; $i++) {
+        $s = $enabledSteps[$i]
+        $stepName = $s.name
+        Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type))"
+
+        # After PartitionDisk, redirect scratch to OS drive
+        if ($s.type -eq 'PartitionDisk') {
+            Invoke-TaskSequenceStep -Step $s -Index ($i+1) -TotalSteps $enabledSteps.Count `
+                -CurrentScratchDir $ScratchDir `
+                -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
+                -CurrentDiskNumber $TargetDiskNumber
+            $ScratchDir = Join-Path "${OSDrive}:" 'AmpCloud'
+            New-ScratchDirectory -Path $ScratchDir
+        } else {
+            try {
                 Invoke-TaskSequenceStep -Step $s -Index ($i+1) -TotalSteps $enabledSteps.Count `
                     -CurrentScratchDir $ScratchDir `
                     -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
                     -CurrentDiskNumber $TargetDiskNumber
-                $ScratchDir = Join-Path "${OSDrive}:" 'AmpCloud'
-                New-ScratchDirectory -Path $ScratchDir
-            } else {
-                try {
-                    Invoke-TaskSequenceStep -Step $s -Index ($i+1) -TotalSteps $enabledSteps.Count `
-                        -CurrentScratchDir $ScratchDir `
-                        -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
-                        -CurrentDiskNumber $TargetDiskNumber
-                } catch {
-                    if ($s.continueOnError) {
-                        Write-Warn "Step '$($s.name)' failed but continueOnError is set — continuing: $_"
-                    } else {
-                        throw
-                    }
+            } catch {
+                if ($s.continueOnError) {
+                    Write-Warn "Step '$($s.name)' failed but continueOnError is set — continuing: $_"
+                } else {
+                    throw
                 }
             }
         }
-
-        Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Detail 'Windows installation finished successfully' -Step 4 -Progress 100 -Done
-
-    } else {
-
-    # ── Default hardcoded execution path (backward compatible) ──────
-    Write-Step "Firmware type: $FirmwareType"
-
-    # Ensure scratch directory exists
-    $stepName = 'Create scratch directory'
-    New-ScratchDirectory -Path $ScratchDir
-
-    # Step 1: Partition the disk
-    $stepName = 'Partition disk'
-    Update-BootstrapStatus -Message 'Partitioning disk...' -Detail 'Creating GPT layout on target drive' -Step 4 -Progress 10
-    Initialize-TargetDisk `
-        -DiskNumber    $TargetDiskNumber `
-        -FirmwareType  $FirmwareType `
-        -OSDriveLetter $OSDrive
-
-    # Redirect scratch to the OS drive so large downloads (ESD images) do not
-    # fill the size-limited WinPE ramdisk on X:.
-    $stepName = 'Redirect scratch directory to OS drive'
-    $ScratchDir = Join-Path "${OSDrive}:" 'AmpCloud'
-    New-ScratchDirectory -Path $ScratchDir
-
-    # Step 2: Download Windows image
-    $stepName = 'Download Windows image'
-    Update-BootstrapStatus -Message 'Downloading Windows image...' -Detail 'Fetching ESD image from Microsoft CDN' -Step 4 -Progress 20
-    $imagePath = Get-WindowsImageSource `
-        -ImageUrl      $WindowsImageUrl `
-        -Edition       $WindowsEdition `
-        -Language      $WindowsLanguage `
-        -Architecture  $WindowsArchitecture `
-        -FirmwareType  $FirmwareType `
-        -ScratchDir    $ScratchDir
-
-    # Step 3: Apply Windows image
-    $stepName = 'Apply Windows image'
-    Update-BootstrapStatus -Message 'Applying Windows image...' -Detail 'Expanding Windows files to target partition' -Step 4 -Progress 50
-    Install-WindowsImage `
-        -ImagePath     $imagePath `
-        -Edition       $WindowsEdition `
-        -OSDriveLetter $OSDrive `
-        -ScratchDir    $ScratchDir
-
-    # Step 4: Configure bootloader
-    $stepName = 'Configure bootloader'
-    Update-BootstrapStatus -Message 'Configuring bootloader...' -Detail 'Writing BCD store and EFI boot entries' -Step 4 -Progress 65
-    Set-Bootloader `
-        -OSDriveLetter $OSDrive `
-        -FirmwareType  $FirmwareType `
-        -DiskNumber    $TargetDiskNumber
-
-    # Step 5: Inject drivers
-    $stepName = 'Inject drivers'
-    Update-BootstrapStatus -Message 'Injecting drivers...' -Detail 'Adding network and storage drivers' -Step 4 -Progress 75
-    Add-Driver `
-        -DriverPath    $DriverPath `
-        -OSDriveLetter $OSDrive
-
-    if ($UseOemDrivers) {
-        $stepName = 'Inject OEM drivers'
-        Update-BootstrapStatus -Message 'Injecting OEM drivers...' -Detail 'Adding manufacturer-specific drivers' -Step 4 -Progress 80
-        Invoke-OemDriverInjection `
-            -OSDriveLetter $OSDrive `
-            -ScratchDir    $ScratchDir
     }
 
-    # Step 6: Apply Autopilot/Intune configuration
-    $stepName = 'Apply Autopilot configuration'
-    Update-BootstrapStatus -Message 'Applying Autopilot configuration...' -Detail 'Embedding Autopilot provisioning profile' -Step 4 -Progress 85
-    Set-AutopilotConfig `
-        -JsonUrl       $AutopilotJsonUrl `
-        -JsonPath      $AutopilotJsonPath `
-        -OSDriveLetter $OSDrive
-
-    # Step 7: Stage ConfigMgr setup
-    $stepName = 'Stage ConfigMgr setup'
-    Install-CCMSetup `
-        -CCMSetupUrl   $CCMSetupUrl `
-        -OSDriveLetter $OSDrive `
-        -ScratchDir    $ScratchDir
-
-    # Step 8: Customize OOBE
-    $stepName = 'Customize OOBE'
-    Update-BootstrapStatus -Message 'Customizing OOBE...' -Detail 'Setting out-of-box experience preferences' -Step 4 -Progress 90
-    Set-OOBECustomization `
-        -UnattendUrl     $UnattendUrl `
-        -UnattendPath    $UnattendPath `
-        -UnattendContent $UnattendContent `
-        -OSDriveLetter   $OSDrive `
-        -InputLocale     $InputLocale `
-        -SystemLocale    $SystemLocale `
-        -UserLocale      $UserLocale `
-        -UILanguage      $UILanguage `
-        -ComputerName    $ComputerName
-
-    # Step 9: Stage post-provisioning scripts
-    $stepName = 'Stage post-provisioning scripts'
-    Invoke-PostScript `
-        -ScriptUrls    $PostScriptUrls `
-        -OSDriveLetter $OSDrive `
-        -ScratchDir    $ScratchDir
-
     Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Detail 'Windows installation finished successfully' -Step 4 -Progress 100 -Done
-
-    } # end if/else TaskSequencePath
 
     Write-Host @"
 
