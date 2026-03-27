@@ -454,7 +454,8 @@
             margin-bottom: 6px;
         }
         .dark .config-field label { color: var(--text-dark); }
-        .config-field select {
+        .config-field select,
+        .config-field input[type="text"] {
             width: 100%;
             padding: 10px 12px;
             font-family: var(--font);
@@ -467,14 +468,19 @@
             appearance: auto;
             outline: none;
             transition: border-color 0.2s ease;
+            box-sizing: border-box;
         }
-        .config-field select:focus { border-color: var(--accent); }
-        .dark .config-field select {
+        .config-field input[type="text"] { cursor: text; }
+        .config-field select:focus,
+        .config-field input[type="text"]:focus { border-color: var(--accent); }
+        .dark .config-field select,
+        .dark .config-field input[type="text"] {
             background: rgba(255, 255, 255, 0.06);
             border-color: rgba(255, 255, 255, 0.10);
             color: var(--text-dark);
         }
-        .dark .config-field select:focus { border-color: var(--accent); }
+        .dark .config-field select:focus,
+        .dark .config-field input[type="text"]:focus { border-color: var(--accent); }
         .config-actions {
             text-align: center;
             margin-top: 24px;
@@ -629,34 +635,52 @@
 
             <div class="config-row">
                 <div class="config-field">
-                    <label id="cfgLangLabel">Language</label>
-                    <select id="cfgLang">
-                        <option value="EN">English (EN)</option>
-                        <option value="FR">Fran&#231;ais (FR)</option>
-                        <option value="ES">Espa&#241;ol (ES)</option>
-                    </select>
-                </div>
-                <div class="config-field">
                     <label id="cfgOsLangLabel">OS Language</label>
                     <select id="cfgOsLang"></select>
+                </div>
+                <div class="config-field">
+                    <label id="cfgArchLabel">Architecture</label>
+                    <select id="cfgArch"></select>
                 </div>
             </div>
 
             <div class="config-row">
                 <div class="config-field">
-                    <label id="cfgArchLabel">Architecture</label>
-                    <select id="cfgArch"></select>
-                </div>
-                <div class="config-field">
                     <label id="cfgActLabel">Activation</label>
                     <select id="cfgAct"></select>
+                </div>
+                <div class="config-field">
+                    <label id="cfgEdLabel">Windows Edition</label>
+                    <select id="cfgEd"></select>
+                </div>
+            </div>
+
+            <div class="config-row">
+                <div class="config-field">
+                    <label id="cfgRegionLabel">Region</label>
+                    <select id="cfgRegion"></select>
+                </div>
+                <div class="config-field">
+                    <label id="cfgKeyboardLabel">Keyboard layout</label>
+                    <select id="cfgKeyboard"></select>
                 </div>
             </div>
 
             <div class="config-row">
                 <div class="config-field full">
-                    <label id="cfgEdLabel">Windows Edition</label>
-                    <select id="cfgEd"></select>
+                    <label id="cfgDeviceNameLabel">Device name</label>
+                    <input type="text" id="cfgDeviceName" maxlength="15" placeholder="e.g. PC-001" pattern="[A-Za-z0-9\-]+" title="Letters, numbers, and hyphens only (max 15 characters)" />
+                </div>
+            </div>
+
+            <div id="cfgAutopilotSection" class="config-row" style="display:none">
+                <div class="config-field">
+                    <label>Autopilot Group Tag</label>
+                    <input type="text" id="cfgApGroupTag" />
+                </div>
+                <div class="config-field">
+                    <label>Autopilot User</label>
+                    <input type="text" id="cfgApUserEmail" />
                 </div>
             </div>
 
@@ -722,14 +746,20 @@
 
         /* ── Configuration menu logic ────────────────────────────── */
         var configCatalog = null;   /* flat array of catalog entries */
+        var configDefaults = null;  /* task sequence defaults */
         var configShowing = false;
 
         var elConfigOverlay = document.getElementById('configOverlay');
-        var elCfgLang    = document.getElementById('cfgLang');
         var elCfgOsLang  = document.getElementById('cfgOsLang');
         var elCfgArch    = document.getElementById('cfgArch');
         var elCfgAct     = document.getElementById('cfgAct');
         var elCfgEd      = document.getElementById('cfgEd');
+        var elCfgRegion  = document.getElementById('cfgRegion');
+        var elCfgKeyboard = document.getElementById('cfgKeyboard');
+        var elCfgDeviceName = document.getElementById('cfgDeviceName');
+        var elCfgApGroupTag = document.getElementById('cfgApGroupTag');
+        var elCfgApUserEmail = document.getElementById('cfgApUserEmail');
+        var elCfgApSection = document.getElementById('cfgAutopilotSection');
 
         /* Locale label map — updated from ConfigData.Labels */
         var cfgLabels = {};
@@ -738,11 +768,13 @@
             if (!cfgLabels.ConfigSubtitle) return;
             var el;
             el = document.getElementById('cfgSubtitle'); if (el) el.textContent = cfgLabels.ConfigSubtitle;
-            el = document.getElementById('cfgLangLabel'); if (el) el.textContent = cfgLabels.ConfigLang;
             el = document.getElementById('cfgOsLangLabel'); if (el) el.textContent = cfgLabels.ConfigOsLang;
             el = document.getElementById('cfgArchLabel'); if (el) el.textContent = cfgLabels.ConfigArch;
             el = document.getElementById('cfgActLabel'); if (el) el.textContent = cfgLabels.ConfigActivation;
             el = document.getElementById('cfgEdLabel'); if (el) el.textContent = cfgLabels.ConfigEdition;
+            el = document.getElementById('cfgRegionLabel'); if (el) el.textContent = cfgLabels.ConfigRegion;
+            el = document.getElementById('cfgKeyboardLabel'); if (el) el.textContent = cfgLabels.ConfigKeyboard;
+            el = document.getElementById('cfgDeviceNameLabel'); if (el) el.textContent = cfgLabels.ConfigDeviceName;
             var btn = document.getElementById('cfgBtn');
             if (btn && cfgLabels.ConfigBtn) btn.textContent = cfgLabels.ConfigBtn + ' \u2192';
         }
@@ -764,13 +796,19 @@
             sel.innerHTML = '';
             for (var i = 0; i < items.length; i++) {
                 var o = document.createElement('option');
-                o.value = items[i]; o.textContent = items[i];
+                if (typeof items[i] === 'object') {
+                    o.value = items[i].value; o.textContent = items[i].text;
+                } else {
+                    o.value = items[i]; o.textContent = items[i];
+                }
                 sel.appendChild(o);
             }
             /* Restore previous or use preferred default */
-            if (items.indexOf(prev) >= 0) { sel.value = prev; }
-            else if (preferred && items.indexOf(preferred) >= 0) { sel.value = preferred; }
-            else if (items.length > 0) { sel.selectedIndex = 0; }
+            var allValues = [];
+            for (var j = 0; j < sel.options.length; j++) allValues.push(sel.options[j].value);
+            if (allValues.indexOf(prev) >= 0) { sel.value = prev; }
+            else if (preferred && allValues.indexOf(preferred) >= 0) { sel.value = preferred; }
+            else if (sel.options.length > 0) { sel.selectedIndex = 0; }
         }
 
         function cfgGetOsLang() {
@@ -778,25 +816,27 @@
             return v ? v.split(' ')[0] : 'en-us';
         }
 
+        /* Build combined edition labels like "Windows 11 24H2 — Professional" */
         function cfgRefreshEditions() {
             if (!configCatalog) return;
             var lang = cfgGetOsLang(), arch = elCfgArch.value, act = elCfgAct.value;
-            var eds = cfgUnique(configCatalog, 'Edition', function (f) {
-                return f.LanguageCode === lang && f.Architecture === arch && f.Activation === act;
-            });
-            /* Prefer Professional > any Pro-like > first */
-            var pref = eds[0] || '';
-            for (var i = 0; i < eds.length; i++) {
-                if (eds[i] === 'Professional') { pref = eds[i]; break; }
+            var seen = {}, items = [];
+            for (var i = 0; i < configCatalog.length; i++) {
+                var f = configCatalog[i];
+                if (f.LanguageCode !== lang || f.Architecture !== arch || f.Activation !== act) continue;
+                var key = (f.WindowsVersion || '') + '|' + f.Edition;
+                if (seen[key]) continue;
+                seen[key] = true;
+                var label = f.WindowsVersion ? f.WindowsVersion + ' \u2014 ' + f.Edition : f.Edition;
+                items.push({ value: f.Edition, text: label });
             }
-            if (pref !== 'Professional') {
-                for (var j = 0; j < eds.length; j++) {
-                    if (eds[j].indexOf('Pro') >= 0 && eds[j].indexOf('Education') < 0 && eds[j].indexOf('Workstation') < 0) {
-                        pref = eds[j]; break;
-                    }
-                }
+            items.sort(function (a, b) { return a.text < b.text ? -1 : a.text > b.text ? 1 : 0; });
+            /* Prefer Professional */
+            var pref = items.length > 0 ? items[0].value : '';
+            for (var j = 0; j < items.length; j++) {
+                if (items[j].value === 'Professional') { pref = 'Professional'; break; }
             }
-            cfgPopulate(elCfgEd, eds, pref);
+            cfgPopulate(elCfgEd, items, pref);
         }
 
         function cfgRefreshActivations() {
@@ -821,7 +861,7 @@
 
         function cfgRefreshOsLanguages() {
             if (!configCatalog) return;
-            /* Build "code — Name" entries */
+            /* Build "code — Name" entries from all available catalog languages */
             var seen = {}, items = [];
             for (var i = 0; i < configCatalog.length; i++) {
                 var c = configCatalog[i].LanguageCode;
@@ -831,29 +871,86 @@
                 }
             }
             items.sort();
-            /* Map UI language to default OS language */
-            var langMap = { EN: 'en-us', FR: 'fr-fr', ES: 'es-es' };
-            var uiLang = elCfgLang.value || 'EN';
-            var pref = langMap[uiLang] || 'en-us';
+            /* Default to en-us */
             var prefItem = '';
             for (var i = 0; i < items.length; i++) {
-                if (items[i].indexOf(pref) === 0) { prefItem = items[i]; break; }
+                if (items[i].indexOf('en-us') === 0) { prefItem = items[i]; break; }
             }
             cfgPopulate(elCfgOsLang, items, prefItem);
             cfgRefreshArchitectures();
         }
 
+        /* Populate region and keyboard dropdowns based on catalog languages */
+        function cfgRefreshRegionAndKeyboard() {
+            if (!configCatalog) return;
+            var seen = {}, items = [];
+            for (var i = 0; i < configCatalog.length; i++) {
+                var c = configCatalog[i].LanguageCode;
+                if (!seen[c]) {
+                    seen[c] = true;
+                    items.push(c + ' \u2014 ' + configCatalog[i].Language);
+                }
+            }
+            items.sort();
+            /* Default region/keyboard to the selected OS language */
+            var osLang = cfgGetOsLang();
+            var prefItem = '';
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].indexOf(osLang) === 0) { prefItem = items[i]; break; }
+            }
+            if (!prefItem) {
+                for (var j = 0; j < items.length; j++) {
+                    if (items[j].indexOf('en-us') === 0) { prefItem = items[j]; break; }
+                }
+            }
+            cfgPopulate(elCfgRegion, items, prefItem);
+            cfgPopulate(elCfgKeyboard, items, prefItem);
+        }
+
         /* Wire cascade change events */
-        elCfgLang.addEventListener('change', cfgRefreshOsLanguages);
-        elCfgOsLang.addEventListener('change', cfgRefreshArchitectures);
+        elCfgOsLang.addEventListener('change', function () {
+            cfgRefreshArchitectures();
+            cfgRefreshRegionAndKeyboard();
+        });
         elCfgArch.addEventListener('change', cfgRefreshActivations);
         elCfgAct.addEventListener('change', cfgRefreshEditions);
 
         function showConfigModal(data) {
             if (!data || !data.CatalogEntries) return;
             configCatalog = data.CatalogEntries;
+            configDefaults = data.Defaults || {};
             if (data.Labels) { cfgLabels = data.Labels; cfgUpdateLabels(); }
             cfgRefreshOsLanguages();
+            cfgRefreshRegionAndKeyboard();
+
+            /* Pre-populate from task sequence defaults */
+            if (configDefaults.InputLocale && elCfgKeyboard) {
+                for (var i = 0; i < elCfgKeyboard.options.length; i++) {
+                    if (elCfgKeyboard.options[i].value.indexOf(configDefaults.InputLocale) === 0) {
+                        elCfgKeyboard.selectedIndex = i; break;
+                    }
+                }
+            }
+            if (configDefaults.SystemLocale && elCfgRegion) {
+                for (var i = 0; i < elCfgRegion.options.length; i++) {
+                    if (elCfgRegion.options[i].value.indexOf(configDefaults.SystemLocale) === 0) {
+                        elCfgRegion.selectedIndex = i; break;
+                    }
+                }
+            }
+            if (configDefaults.ComputerName && elCfgDeviceName) {
+                elCfgDeviceName.value = configDefaults.ComputerName;
+            }
+
+            /* Show autopilot fields if group tag or user email are set */
+            if (configDefaults.AutopilotGroupTag || configDefaults.AutopilotUserEmail) {
+                elCfgApSection.style.display = '';
+                if (configDefaults.AutopilotGroupTag) elCfgApGroupTag.value = configDefaults.AutopilotGroupTag;
+                if (configDefaults.AutopilotUserEmail) elCfgApUserEmail.value = configDefaults.AutopilotUserEmail;
+            } else {
+                elCfgApSection.style.display = 'none';
+            }
+
             configShowing = true;
             elConfigOverlay.classList.add('visible');
         }
@@ -861,12 +958,21 @@
         function submitConfig() {
             var osLangRaw = elCfgOsLang.value || '';
             var osLang = osLangRaw.split(' ')[0] || 'en-us';
+            var regionRaw = elCfgRegion.value || '';
+            var region = regionRaw.split(' ')[0] || osLang;
+            var keyboardRaw = elCfgKeyboard.value || '';
+            var keyboard = keyboardRaw.split(' ')[0] || osLang;
             var payload = {
-                Language:    elCfgLang.value || 'EN',
-                OsLanguage:  osLang,
+                Language:     'EN',
+                OsLanguage:   osLang,
                 Architecture: elCfgArch.value || 'x64',
-                Activation:  elCfgAct.value || 'Retail',
-                Edition:     elCfgEd.value || ''
+                Activation:   elCfgAct.value || 'Retail',
+                Edition:      elCfgEd.value || '',
+                InputLocale:  keyboard,
+                SystemLocale: region,
+                UserLocale:   region,
+                UILanguage:   osLang,
+                ComputerName: elCfgDeviceName.value || ''
             };
             var xhr = new XMLHttpRequest();
             xhr.open('POST', API_BASE + '/configsubmit', true);
