@@ -605,7 +605,7 @@ function Show-ConfigurationMenu {
         (/configsubmit) instead of using a blocking WinForms dialog.
     .OUTPUTS   A hashtable with Language, OsLanguage, Architecture, Activation,
                Edition, InputLocale, SystemLocale, UserLocale, UILanguage,
-               and ComputerName keys.
+               ComputerName, and TaskSequencePath keys.
     #>
     $defaultResult = @{ Language = 'EN'; OsLanguage = 'en-us';
                         Architecture = 'x64'; Activation = 'Retail';
@@ -709,13 +709,41 @@ function Show-ConfigurationMenu {
         if (Test-Path $tsPath) {
             $tsJson = Get-Content $tsPath -Raw | ConvertFrom-Json
             foreach ($step in $tsJson.steps) {
-                if ($step.type -eq 'CustomizeOOBE' -and $step.enabled -ne $false -and $step.parameters) {
+                if ($step.type -eq 'SetComputerName' -and $step.enabled -ne $false -and $step.parameters) {
+                    $sp = $step.parameters
+                    if ($sp.computerName) {
+                        $tsDefaults.ComputerName = $sp.computerName
+                    } elseif ($sp.prefix -or $sp.suffix -or $sp.useSerialNumber) {
+                        # Generate a preview name from naming rules
+                        $base = ''
+                        if ($sp.useSerialNumber) {
+                            try { $base = (Get-WmiObject Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch { $base = '' }
+                        }
+                        if (-not $base) { $base = 'PC' + (Get-Random -Minimum 1000 -Maximum 9999).ToString() }
+                        $pfx = if ($sp.prefix) { $sp.prefix } else { '' }
+                        $sfx = if ($sp.suffix) { $sp.suffix } else { '' }
+                        $preview = $pfx + $base + $sfx
+                        $maxLen = if ($sp.maxLength -gt 0) { [math]::Min($sp.maxLength, 15) } else { 15 }
+                        if ($preview.Length -gt $maxLen) { $preview = $preview.Substring(0, $maxLen) }
+                        $preview = ($preview -replace '[^A-Za-z0-9\-]','').Trim('-')
+                        if ($preview) { $tsDefaults.ComputerName = $preview }
+                    }
+                }
+                if ($step.type -eq 'SetRegionalSettings' -and $step.enabled -ne $false -and $step.parameters) {
                     $sp = $step.parameters
                     if ($sp.inputLocale)  { $tsDefaults.InputLocale  = $sp.inputLocale }
                     if ($sp.systemLocale) { $tsDefaults.SystemLocale = $sp.systemLocale }
                     if ($sp.userLocale)   { $tsDefaults.UserLocale   = $sp.userLocale }
                     if ($sp.uiLanguage)   { $tsDefaults.UILanguage   = $sp.uiLanguage }
-                    if ($sp.computerName) { $tsDefaults.ComputerName = $sp.computerName }
+                }
+                # Legacy: also read from CustomizeOOBE for backward compatibility
+                if ($step.type -eq 'CustomizeOOBE' -and $step.enabled -ne $false -and $step.parameters) {
+                    $sp = $step.parameters
+                    if ($sp.inputLocale -and -not $tsDefaults.InputLocale)   { $tsDefaults.InputLocale  = $sp.inputLocale }
+                    if ($sp.systemLocale -and -not $tsDefaults.SystemLocale) { $tsDefaults.SystemLocale = $sp.systemLocale }
+                    if ($sp.userLocale -and -not $tsDefaults.UserLocale)     { $tsDefaults.UserLocale   = $sp.userLocale }
+                    if ($sp.uiLanguage -and -not $tsDefaults.UILanguage)     { $tsDefaults.UILanguage   = $sp.uiLanguage }
+                    if ($sp.computerName -and -not $tsDefaults.ComputerName) { $tsDefaults.ComputerName = $sp.computerName }
                 }
                 if ($step.type -eq 'ImportAutopilot' -and $step.enabled -ne $false -and $step.parameters) {
                     $sp = $step.parameters
@@ -773,6 +801,7 @@ function Show-ConfigurationMenu {
         UserLocale   = if ($r.UserLocale)   { $r.UserLocale }   else { '' }
         UILanguage   = if ($r.UILanguage)   { $r.UILanguage }   else { '' }
         ComputerName = if ($r.ComputerName) { $r.ComputerName } else { '' }
+        TaskSequencePath = if (Test-Path $tsPath) { $tsPath } else { '' }
     }
 }
 
@@ -1224,6 +1253,7 @@ function ProceedToEngine {
     $script:SelectedUserLocale   = $config.UserLocale
     $script:SelectedUILanguage   = $config.UILanguage
     $script:SelectedComputerName = $config.ComputerName
+    $script:TaskSequencePath     = $config.TaskSequencePath
 
     # Clean up any stale status file from a previous run.
     if (Test-Path $script:StatusFile) { Remove-Item $script:StatusFile -Force }
@@ -1275,6 +1305,7 @@ function ProceedToEngine {
         if ($script:SelectedUserLocale)   { $psArgs += @('-UserLocale',      $script:SelectedUserLocale)   }
         if ($script:SelectedUILanguage)   { $psArgs += @('-UILanguage',      $script:SelectedUILanguage)   }
         if ($script:SelectedComputerName) { $psArgs += @('-ComputerName',    $script:SelectedComputerName) }
+        if ($script:TaskSequencePath)     { $psArgs += @('-TaskSequencePath', $script:TaskSequencePath) }
 
         # Pass the Graph access token to the engine via an environment variable
         # so the ImportAutopilot task sequence step can register the device in
