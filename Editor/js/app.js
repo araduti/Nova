@@ -193,7 +193,7 @@ let collapsedGroups = new Set();
 try {
     const stored = localStorage.getItem(COLLAPSED_KEY);
     if (stored) collapsedGroups = new Set(JSON.parse(stored));
-} catch (_) {}
+} catch (e) { console.warn('[AmpCloud] Failed to load collapsed groups:', e.message); }
 
 /* ── DOM refs ─────────────────────────────────────────────────────── */
 const $stepList     = document.getElementById('stepList');
@@ -387,7 +387,7 @@ const STEP_BADGE_LABELS = {
 };
 
 function saveCollapsedGroups() {
-    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedGroups])); } catch (_) {}
+    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedGroups])); } catch (e) { console.warn('[AmpCloud] Failed to save collapsed groups:', e.message); }
 }
 
 function toggleGroup(groupName) {
@@ -478,7 +478,7 @@ function renderStepList() {
     });
 }
 
-/** Count how many steps belong to a group (by scanning adjacent steps). */
+/** Count how many steps belong to a group. */
 function countGroupSteps(groupName) {
     return taskSequence.steps.filter(s => s.group === groupName).length;
 }
@@ -715,7 +715,11 @@ $propContErr.addEventListener('change', () => {
 $propGroup.addEventListener('input', () => {
     if (selectedIndex < 0) return;
     const val = $propGroup.value.trim();
-    taskSequence.steps[selectedIndex].group = val || undefined;
+    if (val) {
+        taskSequence.steps[selectedIndex].group = val;
+    } else {
+        delete taskSequence.steps[selectedIndex].group;
+    }
     markDirty();
     renderStepList();
 });
