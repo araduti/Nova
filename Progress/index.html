@@ -171,7 +171,7 @@
             height: 2px;
             background: #ddd;
             margin: 0 4px;
-            margin-top: 13px;
+            margin-top: 13px; /* centre with step-icon (28px + 2px border) / 2 - line height */
             flex-shrink: 0;
             transition: background 0.3s ease;
         }
@@ -239,6 +239,11 @@
     </style>
 </head>
 <body>
+    <!-- Shared SVG symbol for step checkmarks -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+        <symbol id="checkmark" viewBox="0 0 14 14"><path d="M3 7l2.8 2.8L11 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    </svg>
+
     <div class="backdrop dark" id="backdrop">
         <div class="card">
             <!-- Logo -->
@@ -288,28 +293,28 @@
             <div class="steps" id="steps">
                 <div class="step active" data-step="1">
                     <span class="step-icon">
-                        <svg viewBox="0 0 14 14" fill="none"><path d="M3 7l2.8 2.8L11 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <svg viewBox="0 0 14 14" fill="none"><use href="#checkmark"/></svg>
                     </span>
                     <span class="step-label">Network</span>
                 </div>
                 <div class="step-line" id="line1"></div>
                 <div class="step" data-step="2">
                     <span class="step-icon">
-                        <svg viewBox="0 0 14 14" fill="none"><path d="M3 7l2.8 2.8L11 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <svg viewBox="0 0 14 14" fill="none"><use href="#checkmark"/></svg>
                     </span>
                     <span class="step-label">Connect</span>
                 </div>
                 <div class="step-line" id="line2"></div>
                 <div class="step" data-step="3">
                     <span class="step-icon">
-                        <svg viewBox="0 0 14 14" fill="none"><path d="M3 7l2.8 2.8L11 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <svg viewBox="0 0 14 14" fill="none"><use href="#checkmark"/></svg>
                     </span>
                     <span class="step-label">Sign in</span>
                 </div>
                 <div class="step-line" id="line3"></div>
                 <div class="step" data-step="4">
                     <span class="step-icon">
-                        <svg viewBox="0 0 14 14" fill="none"><path d="M3 7l2.8 2.8L11 4.2" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <svg viewBox="0 0 14 14" fill="none"><use href="#checkmark"/></svg>
                     </span>
                     <span class="step-label">Deploy</span>
                 </div>
