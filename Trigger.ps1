@@ -1266,7 +1266,6 @@ if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\AmpCloud-UI\index.html" (
     start "" "X:\WebView2\Edge\msedge.exe" ^
         --kiosk "file:///X:/AmpCloud-UI/index.html" ^
         --kiosk-type=fullscreen ^
-        --edge-kiosk-type=public-browsing ^
         --allow-run-as-system ^
         --user-data-dir="X:\Temp\EdgeKiosk" ^
         --disable-gpu ^
