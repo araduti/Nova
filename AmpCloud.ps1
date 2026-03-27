@@ -205,7 +205,9 @@ function Invoke-DownloadWithProgress {
     param(
         [string]$Uri,
         [string]$OutFile,
-        [string]$Description = 'Downloading'
+        [string]$Description = 'Downloading',
+        [int]$BaseProgress   = 0,
+        [int]$ProgressRange  = 0
     )
     Write-Step "$Description"
     Write-Host "  Source : $Uri"
@@ -233,8 +235,14 @@ function Invoke-DownloadWithProgress {
                 if ($sw.ElapsedMilliseconds -gt $script:ProgressIntervalMs) {
                     $pct = if ($totalBytes -gt 0) { [int]($downloaded * 100 / $totalBytes) } else { 0 }
                     $speed = if ($sw.Elapsed.TotalSeconds -gt 0) { [long]($downloaded / $sw.Elapsed.TotalSeconds) } else { 0 }
-                    Write-Host "  Progress: $pct% ($(Get-FileSizeReadable $downloaded) / $(Get-FileSizeReadable $totalBytes)) @ $(Get-FileSizeReadable $speed)/s" -NoNewline
+                    $detail = "$pct% — $(Get-FileSizeReadable $downloaded) of $(Get-FileSizeReadable $totalBytes) @ $(Get-FileSizeReadable $speed)/s"
+                    Write-Host "  Progress: $detail" -NoNewline
                     Write-Host "`r" -NoNewline
+                    if ($ProgressRange -gt 0) {
+                        $overallPct = [Math]::Min($BaseProgress + $ProgressRange, $BaseProgress + [int]($pct * $ProgressRange / 100))
+                        Update-BootstrapStatus -Message $Description -Detail $detail -Step 4 -Progress $overallPct
+                    }
+                    $sw.Restart()
                 }
             }
         } while ($read -gt 0)
@@ -454,7 +462,8 @@ function Get-WindowsImageSource {
         # User-supplied image URL
         $ext = [System.IO.Path]::GetExtension($ImageUrl).ToLower()
         $imagePath = Join-Path $ScratchDir "windows$ext"
-        Invoke-DownloadWithProgress -Uri $ImageUrl -OutFile $imagePath -Description 'Downloading Windows image'
+        Invoke-DownloadWithProgress -Uri $ImageUrl -OutFile $imagePath -Description 'Downloading Windows image' `
+            -BaseProgress 20 -ProgressRange 30
         return $imagePath
     }
 
@@ -477,7 +486,8 @@ function Get-WindowsImageSource {
 
         $stepName = 'Download ESD'
         $esdPath = Join-Path $ScratchDir $esd.FileName
-        Invoke-DownloadWithProgress -Uri $esd.FilePath -OutFile $esdPath -Description "Downloading Windows ESD: $Edition"
+        Invoke-DownloadWithProgress -Uri $esd.FilePath -OutFile $esdPath -Description "Downloading Windows ESD: $Edition" `
+            -BaseProgress 20 -ProgressRange 30
 
         return $esdPath
     } catch {
