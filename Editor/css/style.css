@@ -289,6 +289,59 @@ html, body {
 .step-badge[data-type="StageCCMSetup"]   { background: #5f3dc4; }
 .step-badge[data-type="CustomizeOOBE"]   { background: #d6336c; }
 .step-badge[data-type="RunPostScripts"]  { background: #5c940d; }
+.step-badge[data-type="SetComputerName"] { background: #1098ad; }
+.step-badge[data-type="SetRegionalSettings"]{ background: #ae3ec9; }
+.step-badge[data-type="ImportAutopilot"] { background: #2b8a3e; }
+
+/* ── Step group headers ───────────────────────────────────────────── */
+.step-group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    margin-top: 6px;
+    margin-bottom: 2px;
+    cursor: pointer;
+    user-select: none;
+    border-radius: var(--radius);
+    background: rgba(15, 122, 229, 0.06);
+    border-left: 3px solid var(--accent);
+    transition: background var(--transition);
+}
+.step-group-header:first-child { margin-top: 0; }
+.step-group-header:hover { background: rgba(15, 122, 229, 0.12); }
+.step-group-header.drag-over { border-top: 2px solid var(--accent); }
+.group-chevron {
+    font-size: 9px;
+    color: var(--accent);
+    flex-shrink: 0;
+    width: 14px;
+    text-align: center;
+    transition: transform var(--transition);
+}
+.group-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--accent);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.group-count {
+    font-size: 10px;
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.2);
+    padding: 1px 7px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+.step-item.in-group {
+    padding-left: 24px;
+}
 
 /* ── Properties panel (right) ─────────────────────────────────────── */
 .properties-panel {
