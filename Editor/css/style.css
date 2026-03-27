@@ -139,6 +139,44 @@ html, body {
 .panel-actions { display: flex; align-items: center; gap: 2px; }
 .panel-sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
 
+/* ── Step search/filter ────────────────────────────────────────────── */
+.step-search-wrap {
+    padding: 6px 8px 4px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+}
+.step-search-input {
+    width: 100%;
+    padding: 6px 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 12px;
+    font-family: var(--font);
+    outline: none;
+    transition: border-color var(--transition);
+    box-sizing: border-box;
+}
+.step-search-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+}
+.step-search-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.6;
+}
+
+/* ── Multi-select step highlight ───────────────────────────────────── */
+.step-item.multi-selected {
+    background: rgba(15, 122, 229, 0.10);
+    border-left-color: rgba(15, 122, 229, 0.4);
+}
+.step-item.multi-selected .step-number {
+    background: rgba(15, 122, 229, 0.3);
+    color: var(--text);
+}
+
 .icon-btn {
     width: 28px; height: 28px;
     display: flex; align-items: center; justify-content: center;
