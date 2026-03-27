@@ -873,7 +873,6 @@
             xhr.setRequestHeader('Content-Type', 'application/json');
             xhr.onerror = function () {};
             try { xhr.send(JSON.stringify(payload)); } catch (e) {}
-            configShowing = false;
             elConfigOverlay.classList.remove('visible');
         }
 
