@@ -1199,6 +1199,28 @@ function Build-WinPE {
             }
         }
 
+        # ── 5e. Embed AmpCloud-UI (main HTML UI) ──────────────────────────────
+        # Stage AmpCloud-UI/index.html into the WinPE image so the batch
+        # launcher (ampcloud-start.cmd) can open it in Edge kiosk mode at
+        # boot, covering the screen before any console window is visible.
+        $uiDest = Join-Path $paths.MountDir 'AmpCloud-UI'
+        $null = New-Item -Path $uiDest -ItemType Directory -Force
+
+        $uiSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'AmpCloud-UI' } else { '' }
+        if ($uiSrc -and (Test-Path (Join-Path $uiSrc 'index.html'))) {
+            Copy-Item -Path "$uiSrc\*" -Destination $uiDest -Recurse -Force
+            Write-Success 'AmpCloud-UI embedded from local repo.'
+        } else {
+            $uiUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud-UI/index.html"
+            $uiFile = Join-Path $uiDest 'index.html'
+            try {
+                Invoke-WebRequest -Uri $uiUrl -OutFile $uiFile -UseBasicParsing -ErrorAction Stop
+                Write-Success 'AmpCloud-UI downloaded and embedded.'
+            } catch {
+                Write-Warn "AmpCloud-UI not available (non-fatal): $_"
+            }
+        }
+
         # ── 6. winpeshl.ini + batch launcher → auto-launch Bootstrap.ps1 ───────
         # WinRE ships its own winpeshl.exe which does not reliably handle the
         # comma-separated "<exe>, <args>" format used for direct PowerShell
