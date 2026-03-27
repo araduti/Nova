@@ -1193,3 +1193,83 @@ h3::before {
     box-shadow: 0 0 0 3px var(--accent-glow);
     outline: none;
 }
+
+/* ── Help link ─────────────────────────────────────────────────────── */
+.help-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 3px 8px;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    transition: all var(--transition);
+    margin-left: auto;
+    margin-right: 6px;
+}
+.help-link:hover {
+    color: var(--accent);
+    border-color: var(--border);
+    background: var(--surface-alt);
+}
+
+/* ── Dialog tabs ───────────────────────────────────────────────────── */
+.dialog-wide { width: 500px; }
+.dialog-tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0;
+}
+.dialog-tab {
+    padding: 7px 16px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all var(--transition);
+    margin-bottom: -1px;
+}
+.dialog-tab:hover { color: var(--text); }
+.dialog-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+.dialog-tab-content p { margin-bottom: 10px; }
+
+/* ── Step templates ────────────────────────────────────────────────── */
+.st-badge-inline {
+    width: 18px;
+    height: 18px;
+    font-size: 9px;
+    border-radius: 4px;
+    display: inline-flex;
+    vertical-align: -3px;
+    margin-right: 4px;
+}
+.tpl-delete-btn {
+    float: right;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0 2px;
+    line-height: 1;
+    transition: color var(--transition);
+}
+.tpl-delete-btn:hover { color: var(--danger); }
+.no-templates {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 24px 16px;
+}

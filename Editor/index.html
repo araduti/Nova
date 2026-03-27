@@ -152,6 +152,7 @@
                 <div class="panel-actions">
                     <button id="btnAddStep" class="icon-btn" title="Add step">&#43;</button>
                     <button id="btnDuplicateStep" class="icon-btn" title="Duplicate selected step (Ctrl+D)">&#9112;</button>
+                    <button id="btnSaveTemplate" class="icon-btn" title="Save selected step as template">&#128278;</button>
                     <button id="btnRemoveStep" class="icon-btn danger" title="Remove selected step">&#8722;</button>
                     <span class="panel-sep"></span>
                     <button id="btnMoveUp" class="icon-btn" title="Move up">&#9650;</button>
@@ -221,6 +222,7 @@
                 <div id="validationWarnings" class="validation-warnings" style="display:none;"></div>
                 <div class="param-header">
                     <h3>Parameters</h3>
+                    <a id="helpLink" class="help-link" href="#" target="_blank" rel="noopener noreferrer" title="Open documentation" style="display:none;">&#63; Docs</a>
                     <button id="jsonToggle" class="json-toggle-btn" title="Switch to raw JSON view">{ } JSON</button>
                 </div>
                 <div id="paramFields"></div>
@@ -234,10 +236,21 @@
 
     <!-- ── Add-step dialog ──────────────────────────────────────────── -->
     <div id="addStepDialog" class="dialog-overlay" style="display:none;">
-        <div class="dialog">
+        <div class="dialog dialog-wide">
             <h2>Add Step</h2>
-            <p>Choose a step type to add to the task sequence:</p>
-            <ul id="stepTypeList" class="step-type-list"></ul>
+            <div class="dialog-tabs">
+                <button class="dialog-tab active" data-tab="types">Step Types</button>
+                <button class="dialog-tab" data-tab="templates">Templates</button>
+            </div>
+            <div id="tabTypes" class="dialog-tab-content">
+                <p>Choose a step type to add to the task sequence:</p>
+                <ul id="stepTypeList" class="step-type-list"></ul>
+            </div>
+            <div id="tabTemplates" class="dialog-tab-content" style="display:none;">
+                <p>Select a pre-configured step template:</p>
+                <ul id="templateList" class="step-type-list"></ul>
+                <p id="noTemplates" class="no-templates" style="display:none;">No templates available. Save a step as a template using the <strong>&#128278;</strong> button in the step list panel.</p>
+            </div>
             <div class="dialog-actions">
                 <button id="btnAddStepCancel" class="btn">Cancel</button>
                 <button id="btnAddStepOk" class="btn btn-primary" disabled>Add</button>
