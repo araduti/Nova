@@ -154,7 +154,8 @@ function Save-DeploymentReport {
         [string]$ReportPath     = ''
     )
     if (-not $ReportPath) {
-        $ReportPath = Join-Path $ScratchDir 'deployment-report.json'
+        $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
+        $ReportPath = Join-Path $ScratchDir "deployment-report-$safeName.json"
     }
     try {
         $duration = [math]::Round(((Get-Date) - $StartTime).TotalMilliseconds)
@@ -201,7 +202,8 @@ function Update-ActiveDeploymentReport {
         [switch]$Clear
     )
     if (-not $ReportPath) {
-        $ReportPath = Join-Path $ScratchDir 'active-deployment.json'
+        $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
+        $ReportPath = Join-Path $ScratchDir "active-deployment-$safeName.json"
     }
     try {
         if ($Clear) {
