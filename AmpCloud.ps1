@@ -239,7 +239,7 @@ function Invoke-DownloadWithProgress {
                     Write-Host "  Progress: $detail" -NoNewline
                     Write-Host "`r" -NoNewline
                     if ($ProgressRange -gt 0) {
-                        $overallPct = $BaseProgress + [int]($pct * $ProgressRange / 100)
+                        $overallPct = [Math]::Min($BaseProgress + $ProgressRange, $BaseProgress + [int]($pct * $ProgressRange / 100))
                         Update-BootstrapStatus -Message $Description -Detail $detail -Step 4 -Progress $overallPct
                     }
                     $sw.Restart()
