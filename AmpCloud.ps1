@@ -1001,6 +1001,12 @@ function Install-CCMSetup {
 
 #region ── OOBE Customization ───────────────────────────────────────────────────
 
+function New-XmlNsManager([xml]$doc, [hashtable]$namespaces) {
+    $mgr = New-Object System.Xml.XmlNamespaceManager($doc.NameTable)
+    foreach ($kv in $namespaces.GetEnumerator()) { [void]$mgr.AddNamespace($kv.Key, $kv.Value) }
+    return , $mgr
+}
+
 function Set-OOBECustomization {
     param(
         [string]$UnattendUrl,
@@ -1039,7 +1045,93 @@ function Set-OOBECustomization {
 
         if ($UnattendContent) {
             $stepName = 'Apply editor unattend.xml'
-            Set-Content -Path $unattendDest -Value $UnattendContent -Encoding UTF8
+            # Inject ComputerName and locale settings into the provided XML
+            # so that task sequence content doesn't silently discard them.
+            $xmlDoc = $UnattendContent
+            if ($ComputerName -or $InputLocale -or $SystemLocale -or $UserLocale -or $UILanguage) {
+                try {
+                    [xml]$xd = $xmlDoc
+                    $ns = @{ u = 'urn:schemas-microsoft-com:unattend' }
+
+                    # Find or create the oobeSystem settings pass
+                    $oobeSetting = $xd.SelectSingleNode('//u:settings[@pass="oobeSystem"]', (New-XmlNsManager $xd $ns))
+                    if (-not $oobeSetting) {
+                        $oobeSetting = $xd.CreateElement('settings', 'urn:schemas-microsoft-com:unattend')
+                        $oobeSetting.SetAttribute('pass', 'oobeSystem')
+                        $xd.DocumentElement.AppendChild($oobeSetting) | Out-Null
+                    }
+
+                    # Find or create Shell-Setup component for ComputerName
+                    if ($ComputerName) {
+                        $shellComp = $oobeSetting.SelectSingleNode(
+                            'u:component[@name="Microsoft-Windows-Shell-Setup"]',
+                            (New-XmlNsManager $xd $ns))
+                        if (-not $shellComp) {
+                            $shellComp = $xd.CreateElement('component', 'urn:schemas-microsoft-com:unattend')
+                            $shellComp.SetAttribute('name', 'Microsoft-Windows-Shell-Setup')
+                            $shellComp.SetAttribute('processorArchitecture', 'amd64')
+                            $shellComp.SetAttribute('publicKeyToken', '31bf3856ad364e35')
+                            $shellComp.SetAttribute('language', 'neutral')
+                            $shellComp.SetAttribute('versionScope', 'nonSxS')
+                            $oobeSetting.AppendChild($shellComp) | Out-Null
+                        }
+                        $cnNode = $shellComp.SelectSingleNode(
+                            'u:ComputerName', (New-XmlNsManager $xd $ns))
+                        if ($cnNode) {
+                            $cnNode.InnerText = $ComputerName
+                        } else {
+                            $cnNode = $xd.CreateElement('ComputerName', 'urn:schemas-microsoft-com:unattend')
+                            $cnNode.InnerText = $ComputerName
+                            $shellComp.AppendChild($cnNode) | Out-Null
+                        }
+                    }
+
+                    # Find or create International-Core component for locale settings
+                    if ($InputLocale -or $SystemLocale -or $UserLocale -or $UILanguage) {
+                        $intlComp = $oobeSetting.SelectSingleNode(
+                            'u:component[@name="Microsoft-Windows-International-Core"]',
+                            (New-XmlNsManager $xd $ns))
+                        if (-not $intlComp) {
+                            $intlComp = $xd.CreateElement('component', 'urn:schemas-microsoft-com:unattend')
+                            $intlComp.SetAttribute('name', 'Microsoft-Windows-International-Core')
+                            $intlComp.SetAttribute('processorArchitecture', 'amd64')
+                            $intlComp.SetAttribute('publicKeyToken', '31bf3856ad364e35')
+                            $intlComp.SetAttribute('language', 'neutral')
+                            $intlComp.SetAttribute('versionScope', 'nonSxS')
+                            $oobeSetting.AppendChild($intlComp) | Out-Null
+                        }
+                        foreach ($pair in @(
+                            @('InputLocale',  $InputLocale),
+                            @('SystemLocale', $SystemLocale),
+                            @('UserLocale',   $UserLocale),
+                            @('UILanguage',   $UILanguage)
+                        )) {
+                            if ($pair[1]) {
+                                $node = $intlComp.SelectSingleNode(
+                                    "u:$($pair[0])", (New-XmlNsManager $xd $ns))
+                                if ($node) {
+                                    $node.InnerText = $pair[1]
+                                } else {
+                                    $node = $xd.CreateElement($pair[0], 'urn:schemas-microsoft-com:unattend')
+                                    $node.InnerText = $pair[1]
+                                    $intlComp.AppendChild($node) | Out-Null
+                                }
+                            }
+                        }
+                    }
+
+                    $sw = New-Object System.IO.StringWriter
+                    $xw = [System.Xml.XmlTextWriter]::new($sw)
+                    $xw.Formatting = [System.Xml.Formatting]::Indented
+                    $xw.Indentation = 2
+                    $xd.WriteTo($xw)
+                    $xw.Flush()
+                    $xmlDoc = $sw.ToString()
+                } catch {
+                    Write-Warn "Could not inject settings into provided unattend.xml — writing as-is: $_"
+                }
+            }
+            Set-Content -Path $unattendDest -Value $xmlDoc -Encoding UTF8
             Write-Success 'Custom unattend.xml applied from task sequence content.'
             return
         }
@@ -1274,15 +1366,60 @@ function Invoke-TaskSequenceStep {
             Update-BootstrapStatus -Message "Staging ConfigMgr setup..." -Detail "Preparing ccmsetup.exe" -Step $uiStep -Progress $pct
             Install-CCMSetup -CCMSetupUrl $url -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
+        'SetComputerName' {
+            # Resolve computer name from naming rules or use the static value
+            $cName = if ($p -and $p.computerName) { $p.computerName } else { $ComputerName }
+            if (-not $cName -and $p) {
+                # Generate from naming rules (prefix + serial/random + suffix)
+                $base = ''
+                if ($p.useSerialNumber) {
+                    try { $base = (Get-WmiObject Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch {}
+                }
+                if (-not $base) { $base = 'PC' + (Get-Random -Minimum 1000 -Maximum 9999).ToString() }
+                $pfx = if ($p.prefix) { $p.prefix } else { '' }
+                $sfx = if ($p.suffix) { $p.suffix } else { '' }
+                $cName = $pfx + $base + $sfx
+            }
+            # Enforce max length (NetBIOS limit is 15)
+            $maxLen = if ($p -and $p.maxLength -gt 0) { [math]::Min($p.maxLength, 15) } else { 15 }
+            if ($cName.Length -gt $maxLen) { $cName = $cName.Substring(0, $maxLen) }
+            # Strip invalid characters (letters, digits, hyphens only; no leading/trailing hyphens)
+            $cName = ($cName -replace '[^A-Za-z0-9\-]','').Trim('-')
+            if ($cName) {
+                $script:ComputerName = $cName
+                $ComputerName = $cName
+                Update-BootstrapStatus -Message "Setting computer name..." -Detail "Name: $cName" -Step $uiStep -Progress $pct
+                Write-Success "Computer name resolved: $cName"
+            } else {
+                Update-BootstrapStatus -Message "Setting computer name..." -Detail "No name specified — Windows will assign a random name" -Step $uiStep -Progress $pct
+                Write-Warn "No computer name resolved — Windows will assign a random name"
+            }
+        }
+        'SetRegionalSettings' {
+            # Store locale values for use by the CustomizeOOBE step
+            if ($p -and $p.inputLocale)  { $InputLocale  = $p.inputLocale }
+            if ($p -and $p.systemLocale) { $SystemLocale = $p.systemLocale }
+            if ($p -and $p.userLocale)   { $UserLocale   = $p.userLocale }
+            if ($p -and $p.uiLanguage)   { $UILanguage   = $p.uiLanguage }
+            $detail = @()
+            if ($InputLocale)  { $detail += "Keyboard: $InputLocale" }
+            if ($SystemLocale) { $detail += "Region: $SystemLocale" }
+            if ($UILanguage)   { $detail += "Language: $UILanguage" }
+            $detailStr = if ($detail.Count -gt 0) { $detail -join ', ' } else { 'No regional settings specified' }
+            Update-BootstrapStatus -Message "Setting regional settings..." -Detail $detailStr -Step $uiStep -Progress $pct
+            Write-Success "Regional settings applied: $detailStr"
+        }
         'CustomizeOOBE' {
             $uUrl     = if ($p -and $p.unattendUrl)  { $p.unattendUrl }  else { $UnattendUrl }
             $uPath    = if ($p -and $p.unattendPath)  { $p.unattendPath }  else { $UnattendPath }
             $uContent = if ($p -and $p.unattendSource -eq 'default' -and $p.unattendContent) { $p.unattendContent } elseif (-not $p -or $p.unattendSource -ne 'cloud') { $UnattendContent } else { '' }
-            $iLocale  = if ($p -and $p.inputLocale)   { $p.inputLocale }   else { $InputLocale }
-            $sLocale  = if ($p -and $p.systemLocale)   { $p.systemLocale }  else { $SystemLocale }
-            $uLocale  = if ($p -and $p.userLocale)     { $p.userLocale }    else { $UserLocale }
-            $uiLang   = if ($p -and $p.uiLanguage)     { $p.uiLanguage }   else { $UILanguage }
-            $cName    = if ($p -and $p.computerName)    { $p.computerName }  else { $ComputerName }
+            # Locale and computer name come from SetRegionalSettings/SetComputerName
+            # steps (which update script-scope variables), falling back to script parameters
+            $iLocale  = $InputLocale
+            $sLocale  = $SystemLocale
+            $uLocale  = $UserLocale
+            $uiLang   = $UILanguage
+            $cName    = $ComputerName
             Update-BootstrapStatus -Message "Customizing OOBE..." -Detail "Applying unattend.xml" -Step $uiStep -Progress $pct
             Set-OOBECustomization -UnattendUrl $uUrl -UnattendPath $uPath -UnattendContent $uContent -OSDriveLetter $CurrentOSDrive `
                 -InputLocale $iLocale -SystemLocale $sLocale -UserLocale $uLocale -UILanguage $uiLang -ComputerName $cName

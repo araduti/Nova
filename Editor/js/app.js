@@ -92,20 +92,40 @@ const STEP_TYPES = [
         ]
     },
     {
+        type: 'SetComputerName',
+        label: 'Set Computer Name',
+        description: 'Configure the Windows computer name with naming rules (prefix, suffix, serial number)',
+        defaults: { computerName: '', prefix: '', suffix: '', maxLength: 15, useSerialNumber: false },
+        fields: [
+            { key: 'computerName', label: 'Computer name', kind: 'text', hint: 'Static computer name (e.g. PC-001). If set, prefix/suffix/serial rules are ignored. Shown in config menu for editing.' },
+            { key: 'prefix', label: 'Prefix', kind: 'text', hint: 'Prefix prepended to the generated name (e.g. AMP-)' },
+            { key: 'suffix', label: 'Suffix', kind: 'text', hint: 'Suffix appended to the generated name (e.g. -PC)' },
+            { key: 'maxLength', label: 'Max length', kind: 'number', hint: 'Maximum computer name length (NetBIOS limit is 15)' },
+            { key: 'useSerialNumber', label: 'Use serial number', kind: 'checkbox', hint: 'Use the device serial number as the base name (prefix + serial + suffix)' }
+        ]
+    },
+    {
+        type: 'SetRegionalSettings',
+        label: 'Set Regional Settings',
+        description: 'Configure region, keyboard layout, and display language for the Windows installation',
+        defaults: { inputLocale: '', systemLocale: '', userLocale: '', uiLanguage: '' },
+        fields: [
+            { key: 'inputLocale', label: 'Keyboard layout', kind: 'text', hint: 'Keyboard input locale (e.g. en-US, fr-FR, 0409:00000409). Shown in config menu.' },
+            { key: 'systemLocale', label: 'System locale', kind: 'text', hint: 'System/region locale (e.g. en-US, fr-FR). Shown in config menu.' },
+            { key: 'userLocale', label: 'User locale', kind: 'text', hint: 'User/format locale (e.g. en-US, fr-FR). Applied to unattend.xml.' },
+            { key: 'uiLanguage', label: 'UI Language', kind: 'text', hint: 'Windows display language (e.g. en-US, fr-FR). Applied to unattend.xml.' }
+        ]
+    },
+    {
         type: 'CustomizeOOBE',
         label: 'Customize OOBE',
         description: 'Apply unattend.xml for out-of-box experience customization',
-        defaults: { unattendSource: 'default', unattendContent: '', unattendUrl: '', unattendPath: '', inputLocale: '', systemLocale: '', userLocale: '', uiLanguage: '', computerName: '' },
+        defaults: { unattendSource: 'default', unattendContent: '', unattendUrl: '', unattendPath: '' },
         fields: [
             { key: 'unattendSource', label: 'Unattend source', kind: 'select', options: ['default', 'cloud'], hint: 'Use the built-in default editor or provide a cloud URL / local path' },
             { key: 'unattendContent', label: 'Unattend XML', kind: 'xml', hint: 'Edit the default unattend.xml content applied during OOBE', showWhen: { key: 'unattendSource', value: 'default' } },
             { key: 'unattendUrl', label: 'Unattend URL', kind: 'text', hint: 'URL to unattend.xml', showWhen: { key: 'unattendSource', value: 'cloud' } },
-            { key: 'unattendPath', label: 'Unattend path', kind: 'text', hint: 'Or local path inside WinPE (takes precedence)', showWhen: { key: 'unattendSource', value: 'cloud' } },
-            { key: 'inputLocale', label: 'Keyboard layout', kind: 'text', hint: 'Keyboard input locale (e.g. en-US, fr-FR, 0409:00000409). Applied to unattend.xml and shown in config menu.' },
-            { key: 'systemLocale', label: 'System locale', kind: 'text', hint: 'System/region locale (e.g. en-US, fr-FR). Applied to unattend.xml and shown in config menu.' },
-            { key: 'userLocale', label: 'User locale', kind: 'text', hint: 'User/format locale (e.g. en-US, fr-FR). Applied to unattend.xml and shown in config menu.' },
-            { key: 'uiLanguage', label: 'UI Language', kind: 'text', hint: 'Windows display language (e.g. en-US, fr-FR). Applied to unattend.xml and shown in config menu.' },
-            { key: 'computerName', label: 'Device name', kind: 'text', hint: 'Computer name for Windows (e.g. PC-001). Shown in config menu. Max 15 characters.' }
+            { key: 'unattendPath', label: 'Unattend path', kind: 'text', hint: 'Or local path inside WinPE (takes precedence)', showWhen: { key: 'unattendSource', value: 'cloud' } }
         ]
     },
     {
@@ -253,6 +273,8 @@ function renderParamFields(step) {
                 '<textarea data-param="' + f.key + '" data-kind="xml" rows="14" spellcheck="false" wrap="off">' + escapeHtml(String(val)) + '</textarea>' +
                 '</div>' +
                 '<div class="xml-validation"></div>';
+        } else if (f.kind === 'checkbox') {
+            inputHtml = '<input type="checkbox" data-param="' + f.key + '"' + (val ? ' checked' : '') + '>';
         } else {
             inputHtml = '<input type="text" data-param="' + f.key + '" value="' + escapeHtml(String(val)) + '">';
         }
@@ -262,13 +284,14 @@ function renderParamFields(step) {
 
         /* Live bind */
         const input = div.querySelector('[data-param]');
-        const changeEvent = (f.kind === 'select') ? 'change' : 'input';
+        const changeEvent = (f.kind === 'select' || f.kind === 'checkbox') ? 'change' : 'input';
         input.addEventListener(changeEvent, () => {
             if (!taskSequence.steps[selectedIndex]) return;
             if (!taskSequence.steps[selectedIndex].parameters) taskSequence.steps[selectedIndex].parameters = {};
             let v = input.value;
             if (f.kind === 'number') v = parseInt(v, 10) || 0;
             if (f.kind === 'array') v = input.value.split('\n').map(s => s.trim()).filter(Boolean);
+            if (f.kind === 'checkbox') v = input.checked;
             taskSequence.steps[selectedIndex].parameters[f.key] = v;
 
             /* Re-evaluate showWhen visibility when a select changes */
