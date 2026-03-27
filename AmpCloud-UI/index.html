@@ -870,7 +870,6 @@
             };
             var xhr = new XMLHttpRequest();
             xhr.open('POST', API_BASE + '/configsubmit', true);
-            xhr.setRequestHeader('Content-Type', 'application/json');
             xhr.onerror = function () {};
             try { xhr.send(JSON.stringify(payload)); } catch (e) {}
             elConfigOverlay.classList.remove('visible');
