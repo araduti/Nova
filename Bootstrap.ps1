@@ -957,6 +957,10 @@ function Update-TaskSequenceFromConfig {
         the relevant step parameters in the task sequence JSON file so that
         the engine reads all values from the task sequence — no separate
         command-line parameters needed.
+
+        ComputerName and locale settings are also injected into the
+        CustomizeOOBE step's unattendContent XML, keeping the task sequence
+        as the single source of truth for unattend.xml content.
     #>
     param(
         [Parameter(Mandatory)]
@@ -996,6 +1000,124 @@ function Update-TaskSequenceFromConfig {
             'ImportAutopilot' {
                 if ($Config.ContainsKey('AutopilotGroupTag'))  { $step.parameters | Add-Member -NotePropertyName groupTag  -NotePropertyValue $Config.AutopilotGroupTag  -Force }
                 if ($Config.ContainsKey('AutopilotUserEmail')) { $step.parameters | Add-Member -NotePropertyName userEmail -NotePropertyValue $Config.AutopilotUserEmail -Force }
+            }
+        }
+    }
+
+    # ── Update unattendContent in CustomizeOOBE with ComputerName / locale ──
+    # This connects the config-modal choices directly to the unattend.xml
+    # stored in the task sequence so the engine writes it as-is.
+    $hasUnattendChanges = $Config.ComputerName -or $Config.InputLocale -or
+                          $Config.SystemLocale -or $Config.UserLocale -or
+                          $Config.UILanguage
+    if ($hasUnattendChanges) {
+        $oobeStep = $ts.steps | Where-Object { $_.type -eq 'CustomizeOOBE' } | Select-Object -First 1
+        if ($oobeStep -and $oobeStep.parameters) {
+            $src = $oobeStep.parameters.unattendSource
+            if (-not $src -or $src -eq 'default') {
+                $defaultXml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<unattend xmlns="urn:schemas-microsoft-com:unattend">
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup"
+               processorArchitecture="amd64"
+               publicKeyToken="31bf3856ad364e35"
+               language="neutral"
+               versionScope="nonSxS"
+               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>false</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipMachineOOBE>false</SkipMachineOOBE>
+        <SkipUserOOBE>false</SkipUserOOBE>
+      </OOBE>
+    </component>
+  </settings>
+</unattend>
+"@
+                $xml = if ($oobeStep.parameters.unattendContent) { $oobeStep.parameters.unattendContent } else { $defaultXml }
+                try {
+                    [xml]$xd = $xml
+                    $nsMgr = New-Object System.Xml.XmlNamespaceManager($xd.NameTable)
+                    $nsMgr.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
+
+                    # ComputerName → specialize pass
+                    if ($Config.ComputerName) {
+                        $specSetting = $xd.SelectSingleNode('//u:settings[@pass="specialize"]', $nsMgr)
+                        if (-not $specSetting) {
+                            $specSetting = $xd.CreateElement('settings', 'urn:schemas-microsoft-com:unattend')
+                            $specSetting.SetAttribute('pass', 'specialize')
+                            $xd.DocumentElement.AppendChild($specSetting) | Out-Null
+                        }
+                        $shellComp = $specSetting.SelectSingleNode('u:component[@name="Microsoft-Windows-Shell-Setup"]', $nsMgr)
+                        if (-not $shellComp) {
+                            $shellComp = $xd.CreateElement('component', 'urn:schemas-microsoft-com:unattend')
+                            $shellComp.SetAttribute('name', 'Microsoft-Windows-Shell-Setup')
+                            $shellComp.SetAttribute('processorArchitecture', 'amd64')
+                            $shellComp.SetAttribute('publicKeyToken', '31bf3856ad364e35')
+                            $shellComp.SetAttribute('language', 'neutral')
+                            $shellComp.SetAttribute('versionScope', 'nonSxS')
+                            $specSetting.AppendChild($shellComp) | Out-Null
+                        }
+                        $cnNode = $shellComp.SelectSingleNode('u:ComputerName', $nsMgr)
+                        if ($cnNode) { $cnNode.InnerText = $Config.ComputerName }
+                        else {
+                            $cnNode = $xd.CreateElement('ComputerName', 'urn:schemas-microsoft-com:unattend')
+                            $cnNode.InnerText = $Config.ComputerName
+                            $shellComp.AppendChild($cnNode) | Out-Null
+                        }
+                    }
+
+                    # Locale → oobeSystem pass
+                    $iL = $Config.InputLocale; $sL = $Config.SystemLocale
+                    $uL = $Config.UserLocale;  $uiL = $Config.UILanguage
+                    if ($iL -or $sL -or $uL -or $uiL) {
+                        $oobeSetting = $xd.SelectSingleNode('//u:settings[@pass="oobeSystem"]', $nsMgr)
+                        if (-not $oobeSetting) {
+                            $oobeSetting = $xd.CreateElement('settings', 'urn:schemas-microsoft-com:unattend')
+                            $oobeSetting.SetAttribute('pass', 'oobeSystem')
+                            $xd.DocumentElement.AppendChild($oobeSetting) | Out-Null
+                        }
+                        $intlComp = $oobeSetting.SelectSingleNode('u:component[@name="Microsoft-Windows-International-Core"]', $nsMgr)
+                        if (-not $intlComp) {
+                            $intlComp = $xd.CreateElement('component', 'urn:schemas-microsoft-com:unattend')
+                            $intlComp.SetAttribute('name', 'Microsoft-Windows-International-Core')
+                            $intlComp.SetAttribute('processorArchitecture', 'amd64')
+                            $intlComp.SetAttribute('publicKeyToken', '31bf3856ad364e35')
+                            $intlComp.SetAttribute('language', 'neutral')
+                            $intlComp.SetAttribute('versionScope', 'nonSxS')
+                            $oobeSetting.AppendChild($intlComp) | Out-Null
+                        }
+                        foreach ($pair in @(
+                            @('InputLocale',  $iL),
+                            @('SystemLocale', $sL),
+                            @('UserLocale',   $uL),
+                            @('UILanguage',   $uiL)
+                        )) {
+                            if ($pair[1]) {
+                                $node = $intlComp.SelectSingleNode("u:$($pair[0])", $nsMgr)
+                                if ($node) { $node.InnerText = $pair[1] }
+                                else {
+                                    $node = $xd.CreateElement($pair[0], 'urn:schemas-microsoft-com:unattend')
+                                    $node.InnerText = $pair[1]
+                                    $intlComp.AppendChild($node) | Out-Null
+                                }
+                            }
+                        }
+                    }
+
+                    $sw = New-Object System.IO.StringWriter
+                    $xw = [System.Xml.XmlTextWriter]::new($sw)
+                    $xw.Formatting = [System.Xml.Formatting]::Indented
+                    $xw.Indentation = 2
+                    $xd.WriteTo($xw); $xw.Flush()
+                    $oobeStep.parameters | Add-Member -NotePropertyName unattendContent -NotePropertyValue $sw.ToString() -Force
+                } catch {
+                    Write-Warning "Could not update unattendContent from config: $_"
+                }
             }
         }
     }
