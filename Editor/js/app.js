@@ -1112,6 +1112,7 @@ function loadDefault() {
     var params = new URLSearchParams(window.location.search);
     var tsParam = params.get('ts');
     var isNew = params.get('new');
+    var SESSION_PREFIX = 'session:';
 
     if (isNew) {
         /* Start with an empty task sequence */
@@ -1133,9 +1134,9 @@ function loadDefault() {
         return;
     }
 
-    if (tsParam && tsParam.indexOf('session:') === 0) {
+    if (tsParam && tsParam.indexOf(SESSION_PREFIX) === 0) {
         /* Load from sessionStorage (imported / duplicated from dashboard) */
-        var sessionKey = tsParam.slice(8);
+        var sessionKey = tsParam.slice(SESSION_PREFIX.length);
         var stored = sessionStorage.getItem(sessionKey);
         if (stored) {
             try {
