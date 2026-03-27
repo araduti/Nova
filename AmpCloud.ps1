@@ -180,6 +180,51 @@ function Save-DeploymentReport {
     }
 }
 
+function Update-ActiveDeploymentReport {
+    <#
+    .SYNOPSIS  Writes or clears an active-deployment progress file.
+    .DESCRIPTION
+        Maintains a JSON file that mirrors the schema expected by the
+        Monitoring dashboard's "Active Deployments" panel (id, deviceName,
+        taskSequence, status, progress, currentStep, startedAt).
+
+        Call with -Clear to remove the file after the deployment finishes or
+        fails, signalling that the device is no longer actively deploying.
+    #>
+    param(
+        [string]$DeviceName   = $env:COMPUTERNAME,
+        [string]$TaskSequence = '',
+        [string]$CurrentStep  = '',
+        [int]$Progress        = 0,
+        [datetime]$StartTime  = (Get-Date),
+        [string]$ReportPath   = '',
+        [switch]$Clear
+    )
+    if (-not $ReportPath) {
+        $ReportPath = Join-Path $ScratchDir 'active-deployment.json'
+    }
+    try {
+        if ($Clear) {
+            if (Test-Path $ReportPath) { Remove-Item $ReportPath -Force -ErrorAction SilentlyContinue }
+            return
+        }
+        $report = @{
+            id            = 'active_' + $DeviceName
+            deviceName    = $DeviceName
+            taskSequence  = $TaskSequence
+            status        = 'running'
+            progress      = $Progress
+            currentStep   = $CurrentStep
+            startedAt     = [DateTimeOffset]::new($StartTime).ToUnixTimeMilliseconds()
+        }
+        $dir = Split-Path $ReportPath
+        if ($dir -and -not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
+        $report | ConvertTo-Json -Compress | Set-Content -Path $ReportPath -Force -ErrorAction SilentlyContinue
+    } catch {
+        Write-Verbose "Active deployment report update suppressed: $_"
+    }
+}
+
 function Send-DeploymentAlert {
     <#
     .SYNOPSIS  Sends deployment notifications via Teams, Slack, or email.
@@ -1655,6 +1700,7 @@ try {
     # into unattendContent by the Editor and Bootstrap config modal — the
     # engine just writes what's in the task sequence.
     $script:TsImagePath = ''
+    $tsName = if ($ts.name) { $ts.name } else { 'Unknown' }
 
     for ($i = 0; $i -lt $enabledSteps.Count; $i++) {
         $s = $enabledSteps[$i]
@@ -1669,6 +1715,13 @@ try {
         }
 
         Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type))"
+
+        # Update active deployment report so the Monitoring dashboard can
+        # display in-progress status for this device.
+        $stepPct = [math]::Min(100, [math]::Round(($i / $enabledSteps.Count) * 100))
+        Update-ActiveDeploymentReport -TaskSequence $tsName `
+            -CurrentStep "$($s.name)..." -Progress $stepPct `
+            -StartTime $script:DeploymentStartTime
 
         # After PartitionDisk, redirect scratch to OS drive
         if ($s.type -eq 'PartitionDisk') {
@@ -1696,9 +1749,11 @@ try {
     }
 
     # ── Deployment reporting & alerting ─────────────────────────────
-    $tsName    = if ($ts.name) { $ts.name } else { 'Unknown' }
     $elapsed   = (Get-Date) - $script:DeploymentStartTime
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
+
+    # Clear active deployment file — device is no longer deploying
+    Update-ActiveDeploymentReport -Clear
 
     Save-DeploymentReport -Status 'success' -TaskSequence $tsName `
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count `
@@ -1739,6 +1794,9 @@ try {
     $totalSteps = if ($enabledSteps) { $enabledSteps.Count } else { 0 }
     $elapsed   = (Get-Date) - $script:DeploymentStartTime
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
+
+    # Clear active deployment file — device is no longer deploying
+    Update-ActiveDeploymentReport -Clear
 
     Save-DeploymentReport -Status 'failed' -TaskSequence $tsName `
         -StepsCompleted $script:CompletedStepCount -StepsTotal $totalSteps `

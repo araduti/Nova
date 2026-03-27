@@ -1223,7 +1223,8 @@
 
         history.forEach(function (r) {
             if (r.status === 'failed' && r.error) {
-                var key = r.error.length > 80 ? r.error.substring(0, 80) + '…' : r.error;
+                var label = r.failedStep ? r.failedStep + ': ' + r.error : r.error;
+                var key = label.length > 80 ? label.substring(0, 80) + '…' : label;
                 errorMap[key] = (errorMap[key] || 0) + 1;
             }
         });
@@ -1326,6 +1327,10 @@
                 ? '<span class="history-status-badge success">&#10003; Success</span>'
                 : '<span class="history-status-badge failed">&#10007; Failed</span>';
 
+            var errorDisplay = r.failedStep && r.error
+                ? r.failedStep + ': ' + r.error
+                : (r.error || '—');
+
             html += '<tr>' +
                 '<td>' + escapeHtml(r.deviceName || '—') + '</td>' +
                 '<td>' + escapeHtml(r.taskSequence || '—') + '</td>' +
@@ -1333,7 +1338,7 @@
                 '<td>' + formatDuration(r.duration) + '</td>' +
                 '<td>' + (r.stepsCompleted || 0) + '/' + (r.stepsTotal || 0) + '</td>' +
                 '<td>' + formatDate(r.startedAt) + '</td>' +
-                '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(r.error || '') + '">' + escapeHtml(r.error || '—') + '</td>' +
+                '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(errorDisplay) + '">' + escapeHtml(errorDisplay) + '</td>' +
                 '</tr>';
         });
 
@@ -1355,7 +1360,7 @@
         var history = getHistory();
         if (history.length === 0) { alert('No deployment history to export.'); return; }
 
-        var csvRows = ['Device,Task Sequence,Status,Duration (s),Steps Completed,Steps Total,Started,Error'];
+        var csvRows = ['Device,Task Sequence,Status,Duration (s),Steps Completed,Steps Total,Started,Completed,Failed Step,Error'];
         history.forEach(function (r) {
             var row = [
                 '"' + (r.deviceName || '').replace(/"/g, '""') + '"',
@@ -1365,6 +1370,8 @@
                 r.stepsCompleted || 0,
                 r.stepsTotal || 0,
                 r.startedAt ? new Date(r.startedAt).toISOString() : '',
+                r.completedAt ? new Date(r.completedAt).toISOString() : '',
+                '"' + (r.failedStep || '').replace(/"/g, '""') + '"',
                 '"' + (r.error || '').replace(/"/g, '""') + '"'
             ];
             csvRows.push(row.join(','));
