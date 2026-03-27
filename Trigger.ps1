@@ -1239,7 +1239,14 @@ function Build-WinPE {
 REM ── Launch HTML Progress Dashboard immediately ──────────────────────
 REM Covers the screen before any console window is visible at boot.
 if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\AmpCloud\Progress\index.html" (
-    start "" "X:\WebView2\Edge\msedge.exe" --app="file:///X:/AmpCloud/Progress/index.html" --kiosk --edge-kiosk-type=fullscreen --no-first-run --disable-features=TranslateUI,PrivacySandboxSettings4 --disable-gpu --window-position=0,0 --allow-file-access-from-files
+    start "" "X:\WebView2\Edge\msedge.exe" ^
+        --app="file:///X:/AmpCloud/Progress/index.html" ^
+        --kiosk --edge-kiosk-type=fullscreen ^
+        --no-first-run ^
+        --disable-features=TranslateUI,PrivacySandboxSettings4 ^
+        --disable-gpu ^
+        --window-position=0,0 ^
+        --allow-file-access-from-files
 )
 X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -Command "& X:\Windows\System32\Bootstrap.ps1"
 '@ | Set-Content -Path $launcherPath -Encoding Ascii

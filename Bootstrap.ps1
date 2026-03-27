@@ -111,12 +111,13 @@ function Update-HtmlDashboard {
     #>
     param(
         [string]$Message = '',
+        [string]$Detail  = '',
         [int]$Step       = 0,
         [switch]$Done
     )
     if (-not $script:HtmlDashboardActive) { return }
     try {
-        $obj = @{ Message = $Message; Detail = ''; Progress = 0; Step = $Step; Done = [bool]$Done }
+        $obj = @{ Message = $Message; Detail = $Detail; Progress = 0; Step = $Step; Done = [bool]$Done }
         $obj | ConvertTo-Json -Compress |
             Set-Content -Path $script:StatusFile -Force -ErrorAction SilentlyContinue
     } catch {}
