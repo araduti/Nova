@@ -1718,7 +1718,7 @@ try {
 
         # Update active deployment report so the Monitoring dashboard can
         # display in-progress status for this device.
-        $stepPct = [math]::Min(100, [math]::Round(($i / $enabledSteps.Count) * 100))
+        $stepPct = if ($enabledSteps.Count -gt 0) { [math]::Min(100, [math]::Round(($i / $enabledSteps.Count) * 100)) } else { 0 }
         Update-ActiveDeploymentReport -TaskSequence $tsName `
             -CurrentStep "$($s.name)..." -Progress $stepPct `
             -StartTime $script:DeploymentStartTime
