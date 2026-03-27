@@ -585,7 +585,11 @@
         function updateUI(data) {
             if (!data) return;
 
-            /* Auth URL — navigate the kiosk browser to the login page */
+            /* Auth URL — navigate the kiosk browser to the login page.
+             * authNavigating prevents duplicate navigation; it resets
+             * naturally when the page reloads after auth completes.
+             * Bootstrap.ps1 clears AuthUrl from the status JSON before
+             * the redirect back, so the reload won't re-trigger. */
             if (data.AuthUrl && !authNavigating) {
                 authNavigating = true;
                 window.location.href = data.AuthUrl;

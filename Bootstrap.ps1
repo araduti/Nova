@@ -1063,6 +1063,8 @@ function Invoke-M365EdgeAuth {
     $asyncResult = $listener.BeginGetContext($null, $null)
 
     $uiPath = 'file:///X:/AmpCloud-UI/index.html'
+    # 5-minute timeout — Azure AD sessions are valid for 10 minutes,
+    # 5 minutes gives enough time without leaving the kiosk unattended.
     $timeout = [datetime]::UtcNow.AddMinutes(5)
 
     while (-not $script:_edgeAuthCode -and -not $script:_edgeAuthError `
@@ -1111,6 +1113,11 @@ function Invoke-M365EdgeAuth {
         [System.Windows.Forms.Application]::DoEvents()
         Start-Sleep -Milliseconds 200
     }
+
+    # ── Always clear auth navigation signal ─────────────────────────────────
+    # Prevents the page from re-navigating to the auth URL on reload
+    # (e.g. if auth timed out or was cancelled before the listener fired).
+    Update-HtmlUi -Message $S.AuthSigning -Step 3
 
     } finally {
         try { $listener.Stop(); $listener.Close() } catch {}
