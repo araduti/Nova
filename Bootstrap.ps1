@@ -650,7 +650,18 @@ public class AmpCloudHotkeyWindow : NativeWindow, IDisposable {
 # process terminated).  When this happens the user is stranded on Edge's
 # error page with no way to interact with the deployment.
 #
-# The watchdog tracks two signals:
+# Prevention:
+#   --disable-renderer-backgrounding      Keeps the renderer process active
+#   --disable-background-timer-throttling  Prevents JS timer throttling
+#   --disable-backgrounding-occluded-windows  No backgrounding for hidden windows
+#   --disable-hang-monitor                 Stops the browser from killing
+#                                          "unresponsive" renderers during
+#                                          long operations (ESD downloads)
+#   The HTML UI also runs a requestAnimationFrame keep-alive loop that
+#   forces continuous compositor repaints.
+#
+# Recovery (if crash still occurs):
+#   The watchdog tracks two signals:
 #   1. Process exit  — all msedge.exe processes have terminated.
 #   2. Heartbeat loss — the HTML UI sends a /heartbeat every 10 s.
 #      If no heartbeat arrives for 30+ seconds the renderer has likely
@@ -676,7 +687,11 @@ $script:EdgeArgs = @(
     '--disable-fre',
     '--disable-features=msWebOOBE',
     '--allow-file-access-from-files',
-    '--disable-popup-blocking'
+    '--disable-popup-blocking',
+    '--disable-renderer-backgrounding',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-hang-monitor'
 )
 
 $script:_lastHeartbeat        = [DateTime]::UtcNow
