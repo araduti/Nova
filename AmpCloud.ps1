@@ -132,6 +132,161 @@ function Update-BootstrapStatus {
     } catch { Write-Verbose "Status update suppressed: $_" }
 }
 
+function Save-DeploymentReport {
+    <#
+    .SYNOPSIS  Writes a deployment result report to a JSON file.
+    .DESCRIPTION
+        Records the outcome of a deployment (success or failure) along with
+        timing, device, and error details.  The report is saved to the scratch
+        directory so it can be collected by downstream tooling or the monitoring
+        dashboard.
+    #>
+    param(
+        [ValidateSet('success','failed')]
+        [string]$Status,
+        [string]$DeviceName     = $env:COMPUTERNAME,
+        [string]$TaskSequence   = '',
+        [int]$StepsCompleted    = 0,
+        [int]$StepsTotal        = 0,
+        [datetime]$StartTime    = (Get-Date),
+        [string]$ErrorMessage   = '',
+        [string]$FailedStep     = '',
+        [string]$ReportPath     = ''
+    )
+    if (-not $ReportPath) {
+        $ReportPath = Join-Path $ScratchDir 'deployment-report.json'
+    }
+    try {
+        $duration = [math]::Round(((Get-Date) - $StartTime).TotalMilliseconds)
+        $report = @{
+            id             = 'dep_' + [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+            deviceName     = $DeviceName
+            taskSequence   = $TaskSequence
+            status         = $Status
+            duration       = $duration
+            stepsTotal     = $StepsTotal
+            stepsCompleted = $StepsCompleted
+            startedAt      = [DateTimeOffset]::new($StartTime).ToUnixTimeMilliseconds()
+            completedAt    = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+            error          = $ErrorMessage
+            failedStep     = $FailedStep
+        }
+        $dir = Split-Path $ReportPath
+        if ($dir -and -not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
+        $report | ConvertTo-Json | Set-Content -Path $ReportPath -Force
+        Write-Success "Deployment report saved to $ReportPath"
+    } catch {
+        Write-Warn "Failed to save deployment report: $_"
+    }
+}
+
+function Send-DeploymentAlert {
+    <#
+    .SYNOPSIS  Sends deployment notifications via Teams, Slack, or email.
+    .DESCRIPTION
+        Reads Config/alerts.json from the GitHub repository (or local path)
+        and sends a notification for the given deployment event.  Supports
+        Microsoft Teams (Incoming Webhook), Slack (Incoming Webhook), and
+        email via SMTP (Send-MailMessage).
+
+        Silently skips channels that are disabled or misconfigured so that
+        a notification failure never blocks the imaging pipeline.
+    #>
+    param(
+        [ValidateSet('success','failed')]
+        [string]$Status,
+        [string]$DeviceName     = $env:COMPUTERNAME,
+        [string]$TaskSequence   = '',
+        [string]$Duration       = '',
+        [int]$StepsCompleted    = 0,
+        [int]$StepsTotal        = 0,
+        [string]$ErrorMessage   = '',
+        [string]$FailedStep     = '',
+        [string]$AlertConfigPath = ''
+    )
+
+    # ── Resolve alert config ────────────────────────────────────────
+    $cfg = $null
+    try {
+        if ($AlertConfigPath -and (Test-Path $AlertConfigPath)) {
+            $cfg = Get-Content $AlertConfigPath -Raw | ConvertFrom-Json
+        } else {
+            # Try fetching from GitHub repo
+            $cfgUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/alerts.json"
+            $cfgJson = Invoke-RestMethod -Uri $cfgUrl -UseBasicParsing -ErrorAction Stop
+            $cfg = $cfgJson
+        }
+    } catch {
+        Write-Verbose "Alert config not available — skipping notifications: $_"
+        return
+    }
+    if (-not $cfg) { return }
+
+    $eventType = if ($Status -eq 'success') { 'onSuccess' } else { 'onFailure' }
+    $emoji     = if ($Status -eq 'success') { '✅' } else { '❌' }
+    $color     = if ($Status -eq 'success') { '2b8a3e' } else { 'e03e3e' }
+    $title     = "$emoji AmpCloud Deployment $(if ($Status -eq 'success') { 'Succeeded' } else { 'Failed' })"
+
+    $details = "**Device:** $DeviceName`n**Task Sequence:** $TaskSequence`n**Status:** $Status`n**Steps:** $StepsCompleted/$StepsTotal"
+    if ($Duration) { $details += "`n**Duration:** $Duration" }
+    if ($ErrorMessage) { $details += "`n**Error:** $ErrorMessage" }
+    if ($FailedStep)   { $details += "`n**Failed Step:** $FailedStep" }
+
+    # ── Microsoft Teams ─────────────────────────────────────────────
+    if ($cfg.teams -and $cfg.teams.enabled -and $cfg.teams.webhook -and $cfg.teams.$eventType) {
+        try {
+            $teamsBody = @{
+                '@type'      = 'MessageCard'
+                '@context'   = 'http://schema.org/extensions'
+                themeColor   = $color
+                summary      = $title
+                sections     = @(@{
+                    activityTitle = $title
+                    text          = $details.Replace("`n", "<br>")
+                    markdown      = $true
+                })
+            } | ConvertTo-Json -Depth 5
+            Invoke-RestMethod -Uri $cfg.teams.webhook -Method Post -ContentType 'application/json' -Body $teamsBody -ErrorAction Stop | Out-Null
+            Write-Success "Teams notification sent"
+        } catch {
+            Write-Warn "Teams notification failed: $_"
+        }
+    }
+
+    # ── Slack ───────────────────────────────────────────────────────
+    if ($cfg.slack -and $cfg.slack.enabled -and $cfg.slack.webhook -and $cfg.slack.$eventType) {
+        try {
+            $slackText = $details.Replace('**', '*').Replace("`n", "\n")
+            $slackBody = @{
+                text        = $title
+                attachments = @(@{
+                    color = '#' + $color
+                    text  = $slackText
+                })
+            } | ConvertTo-Json -Depth 5
+            Invoke-RestMethod -Uri $cfg.slack.webhook -Method Post -ContentType 'application/json' -Body $slackBody -ErrorAction Stop | Out-Null
+            Write-Success "Slack notification sent"
+        } catch {
+            Write-Warn "Slack notification failed: $_"
+        }
+    }
+
+    # ── Email (SMTP) ────────────────────────────────────────────────
+    if ($cfg.email -and $cfg.email.enabled -and $cfg.email.smtp -and $cfg.email.from -and $cfg.email.to -and $cfg.email.$eventType) {
+        try {
+            $toList  = ($cfg.email.to -split ',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+            $subject = $title
+            $body    = $details.Replace('**', '').Replace("`n", "`r`n")
+            $port    = if ($cfg.email.port) { $cfg.email.port } else { 587 }
+            Send-MailMessage -From $cfg.email.from -To $toList -Subject $subject -Body $body `
+                -SmtpServer $cfg.email.smtp -Port $port -UseSsl -ErrorAction Stop
+            Write-Success "Email notification sent"
+        } catch {
+            Write-Warn "Email notification failed: $_"
+        }
+    }
+}
+
 function New-ScratchDirectory {
     param([string]$Path)
     if (-not (Test-Path $Path)) {
@@ -1478,6 +1633,8 @@ if (-not $PSBoundParameters.ContainsKey('FirmwareType')) {
 }
 
 $stepName = ''
+$script:DeploymentStartTime = Get-Date
+$script:CompletedStepCount  = 0
 try {
 
     # ── Task-sequence-driven execution ──────────────────────────────
@@ -1532,7 +1689,21 @@ try {
                 }
             }
         }
+        $script:CompletedStepCount = $i + 1
     }
+
+    # ── Deployment reporting & alerting ─────────────────────────────
+    $tsName    = if ($ts.name) { $ts.name } else { 'Unknown' }
+    $elapsed   = (Get-Date) - $script:DeploymentStartTime
+    $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
+
+    Save-DeploymentReport -Status 'success' -TaskSequence $tsName `
+        -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count `
+        -StartTime $script:DeploymentStartTime
+
+    Send-DeploymentAlert -Status 'success' -TaskSequence $tsName `
+        -Duration $durString `
+        -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count
 
     Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Detail 'Windows installation finished successfully' -Step 4 -Progress 100 -Done
 
@@ -1559,6 +1730,23 @@ try {
     Write-Fail "AmpCloud imaging failed at step '$stepName': $_"
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
     Write-Host ''
+
+    # ── Failure reporting & alerting ────────────────────────────────
+    $tsName    = if ($ts -and $ts.name) { $ts.name } else { 'Unknown' }
+    $totalSteps = if ($enabledSteps) { $enabledSteps.Count } else { 0 }
+    $elapsed   = (Get-Date) - $script:DeploymentStartTime
+    $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
+
+    Save-DeploymentReport -Status 'failed' -TaskSequence $tsName `
+        -StepsCompleted $script:CompletedStepCount -StepsTotal $totalSteps `
+        -StartTime $script:DeploymentStartTime `
+        -ErrorMessage "$_" -FailedStep $stepName
+
+    Send-DeploymentAlert -Status 'failed' -TaskSequence $tsName `
+        -Duration $durString `
+        -StepsCompleted $script:CompletedStepCount -StepsTotal $totalSteps `
+        -ErrorMessage "$_" -FailedStep $stepName
+
     Write-Host '[AmpCloud] Dropping to interactive shell for troubleshooting.' -ForegroundColor Yellow
     # Re-throw so Bootstrap.ps1 can close the UI before the user
     # needs the console.  The PowerShell host was started with -NoExit by

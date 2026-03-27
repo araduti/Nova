@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - "Editor/**"
+      - "Monitoring/**"
       - "TaskSequence/**"
       - "Config/**"
       - "index.html"

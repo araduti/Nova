@@ -1,0 +1,23 @@
+{
+    "teams": {
+        "enabled": false,
+        "webhook": "",
+        "onSuccess": true,
+        "onFailure": true
+    },
+    "slack": {
+        "enabled": false,
+        "webhook": "",
+        "onSuccess": true,
+        "onFailure": true
+    },
+    "email": {
+        "enabled": false,
+        "smtp": "",
+        "port": 587,
+        "from": "",
+        "to": "",
+        "onSuccess": true,
+        "onFailure": true
+    }
+}
