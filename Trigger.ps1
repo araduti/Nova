@@ -1236,19 +1236,33 @@ function Build-WinPE {
         $launcherPath = Join-Path $paths.MountDir 'Windows\System32\ampcloud-start.cmd'
         @'
 @echo off
-REM ── Launch HTML Progress UI immediately ──────────────────────────────
+title AmpCloud Bootstrap
+
+REM ── Launch the new HTML UI in Edge kiosk mode ─────────────────────────
 REM Covers the screen before any console window is visible at boot.
-if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\AmpCloud\Progress\index.html" (
+if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\AmpCloud-UI\index.html" (
     start "" "X:\WebView2\Edge\msedge.exe" ^
-        --app="file:///X:/AmpCloud/Progress/index.html" ^
-        --kiosk --edge-kiosk-type=fullscreen ^
-        --no-first-run ^
-        --disable-features=TranslateUI,PrivacySandboxSettings4 ^
+        --kiosk "file:///X:/AmpCloud-UI/index.html" ^
+        --kiosk-type=fullscreen ^
+        --edge-kiosk-type=public-browsing ^
+        --allow-run-as-system ^
+        --user-data-dir="X:\Temp\EdgeKiosk" ^
         --disable-gpu ^
-        --window-position=0,0 ^
+        --disable-gpu-compositing ^
+        --disable-direct-composition ^
+        --use-angle=swiftshader ^
+        --enable-unsafe-swiftshader ^
+        --in-process-gpu ^
+        --no-first-run ^
+        --disable-fre ^
+        --disable-features=msWebOOBE ^
         --allow-file-access-from-files
 )
-X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -NoExit -Command "& X:\Windows\System32\Bootstrap.ps1"
+
+timeout /t 2 /nobreak >nul
+
+REM ── Launch Bootstrap (no WinForms visible UI) ────────────────────────
+X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File "X:\Windows\System32\Bootstrap.ps1"
 '@ | Set-Content -Path $launcherPath -Encoding Ascii
 
         $winpeshlPath = Join-Path $paths.MountDir 'Windows\System32\winpeshl.ini'
