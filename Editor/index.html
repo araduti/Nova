@@ -131,6 +131,9 @@
             <button id="btnOpen" class="tb-btn" title="Open JSON file">&#128194; Open</button>
             <button id="btnSave" class="tb-btn" title="Save to GitHub repository">&#128190; Save</button>
             <button id="btnDownload" class="tb-btn" title="Download as JSON file">&#11015; Download</button>
+            <span class="toolbar-sep"></span>
+            <button id="btnUndo" class="tb-btn" title="Undo (Ctrl+Z)" disabled>&#8617; Undo</button>
+            <button id="btnRedo" class="tb-btn" title="Redo (Ctrl+Y)" disabled>&#8618; Redo</button>
         </div>
         <div class="toolbar-right">
             <span id="userName" class="user-name" style="display:none;"></span>
@@ -147,6 +150,7 @@
                 <span>Steps</span>
                 <div class="panel-actions">
                     <button id="btnAddStep" class="icon-btn" title="Add step">&#43;</button>
+                    <button id="btnDuplicateStep" class="icon-btn" title="Duplicate selected step (Ctrl+D)">&#9112;</button>
                     <button id="btnRemoveStep" class="icon-btn danger" title="Remove selected step">&#8722;</button>
                     <span class="panel-sep"></span>
                     <button id="btnMoveUp" class="icon-btn" title="Move up">&#9650;</button>
@@ -185,8 +189,15 @@
                 </div>
                 <hr>
                 <div id="validationWarnings" class="validation-warnings" style="display:none;"></div>
-                <h3>Parameters</h3>
+                <div class="param-header">
+                    <h3>Parameters</h3>
+                    <button id="jsonToggle" class="json-toggle-btn" title="Switch to raw JSON view">{ } JSON</button>
+                </div>
                 <div id="paramFields"></div>
+                <div id="jsonRawEditor" class="json-raw-editor" style="display:none;">
+                    <textarea id="jsonRawTextarea" class="json-raw-textarea" spellcheck="false" wrap="off" rows="18"></textarea>
+                    <div id="jsonRawError" class="json-raw-error" style="display:none;"></div>
+                </div>
             </div>
         </section>
     </div>

@@ -163,6 +163,11 @@ let githubConfig = { owner: '', repo: '', clientId: '', oauthProxy: '' };
 let dirty = false;
 let autoSaveTimer = null;
 const DRAFT_KEY = 'ampcloud_editor_draft';
+let undoStack = [];
+let redoStack = [];
+const MAX_UNDO = 50;
+let lastSnapshot = null;
+let jsonRawMode = false;
 
 /* ── DOM refs ─────────────────────────────────────────────────────── */
 const $stepList     = document.getElementById('stepList');
@@ -181,6 +186,12 @@ const $addOk        = document.getElementById('btnAddStepOk');
 const $fileInput    = document.getElementById('fileInput');
 const $validationWarnings = document.getElementById('validationWarnings');
 const $btnSave      = document.getElementById('btnSave');
+const $btnUndo      = document.getElementById('btnUndo');
+const $btnRedo      = document.getElementById('btnRedo');
+const $jsonToggle   = document.getElementById('jsonToggle');
+const $jsonRawEditor = document.getElementById('jsonRawEditor');
+const $jsonRawTextarea = document.getElementById('jsonRawTextarea');
+const $jsonRawError = document.getElementById('jsonRawError');
 
 /* ── Populate type <select> ───────────────────────────────────────── */
 STEP_TYPES.forEach(t => {
@@ -209,6 +220,16 @@ function scheduleDraftSave() {
 }
 
 function markDirty() {
+    /* Push the pre-mutation snapshot to the undo stack.
+       lastSnapshot was taken after the previous operation, so it
+       represents the state BEFORE the current mutation. */
+    if (lastSnapshot !== null) {
+        undoStack.push(lastSnapshot);
+        if (undoStack.length > MAX_UNDO) undoStack.shift();
+        redoStack.length = 0;
+    }
+    lastSnapshot = JSON.stringify({ ts: taskSequence, sel: selectedIndex });
+    updateUndoRedoUI();
     dirty = true;
     updateDirtyUI();
     scheduleDraftSave();
@@ -220,6 +241,53 @@ function markClean() {
     updateDirtyUI();
     clearTimeout(autoSaveTimer);
     try { localStorage.removeItem(DRAFT_KEY); } catch (_) {}
+    resetUndoRedo();
+    captureSnapshot();
+}
+
+/* ── Undo / Redo ──────────────────────────────────────────────────── */
+function captureSnapshot() {
+    lastSnapshot = JSON.stringify({ ts: taskSequence, sel: selectedIndex });
+}
+
+function applySnapshot(json) {
+    const snap = JSON.parse(json);
+    taskSequence = snap.ts;
+    selectedIndex = snap.sel;
+    $tsName.textContent = taskSequence.name || 'Untitled';
+    updateBreadcrumb(taskSequence.name || 'Untitled');
+    renderStepList();
+    selectStep(selectedIndex);
+    lastSnapshot = json;
+    dirty = true;
+    updateDirtyUI();
+    scheduleDraftSave();
+}
+
+function undo() {
+    if (undoStack.length === 0) return;
+    redoStack.push(JSON.stringify({ ts: taskSequence, sel: selectedIndex }));
+    applySnapshot(undoStack.pop());
+    updateUndoRedoUI();
+}
+
+function redo() {
+    if (redoStack.length === 0) return;
+    undoStack.push(JSON.stringify({ ts: taskSequence, sel: selectedIndex }));
+    applySnapshot(redoStack.pop());
+    updateUndoRedoUI();
+}
+
+function updateUndoRedoUI() {
+    if ($btnUndo) $btnUndo.disabled = undoStack.length === 0;
+    if ($btnRedo) $btnRedo.disabled = redoStack.length === 0;
+}
+
+function resetUndoRedo() {
+    undoStack.length = 0;
+    redoStack.length = 0;
+    lastSnapshot = null;
+    updateUndoRedoUI();
 }
 
 /* ── Step validation ──────────────────────────────────────────────── */
@@ -327,6 +395,7 @@ function selectStep(index) {
     if (index < 0 || index >= taskSequence.steps.length) {
         $propsEmpty.style.display = '';
         $propsEditor.style.display = 'none';
+        if (jsonRawMode) hideJsonRawView();
         return;
     }
     $propsEmpty.style.display = 'none';
@@ -338,7 +407,11 @@ function selectStep(index) {
     $propEnabled.checked = step.enabled !== false;
     $propContErr.checked = step.continueOnError === true;
     renderValidationWarnings();
-    renderParamFields(step);
+    if (jsonRawMode) {
+        showJsonRawView();
+    } else {
+        renderParamFields(step);
+    }
 }
 
 /* ── Render parameter fields dynamically ──────────────────────────── */
@@ -583,7 +656,7 @@ $addOk.addEventListener('click', () => {
     $addDialog.style.display = 'none';
     const def = typeMap[addDialogChoice];
     const newStep = {
-        id: addDialogChoice.toLowerCase() + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+        id: generateStepId(addDialogChoice),
         name: def.label,
         type: addDialogChoice,
         enabled: true,
@@ -925,6 +998,9 @@ document.getElementById('btnDownload').addEventListener('click', () => {
 });
 
 /* ── Utils ────────────────────────────────────────────────────────── */
+function generateStepId(type) {
+    return (type || 'step').toLowerCase() + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
 function escapeHtml(str) {
     const d = document.createElement('div');
     d.appendChild(document.createTextNode(str));
@@ -1019,11 +1095,103 @@ function setupXmlEditor(container, textarea) {
     });
 }
 
+/* ── Duplicate step ───────────────────────────────────────────────── */
+function duplicateSelectedStep() {
+    if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) return;
+    const original = taskSequence.steps[selectedIndex];
+    const clone = JSON.parse(JSON.stringify(original));
+    clone.id = generateStepId(clone.type);
+    clone.name = (clone.name || 'Step') + ' (Copy)';
+    const insertAt = selectedIndex + 1;
+    taskSequence.steps.splice(insertAt, 0, clone);
+    selectedIndex = insertAt;
+    markDirty();
+    renderStepList();
+    selectStep(selectedIndex);
+    if (clone.type === 'SetComputerName' || clone.type === 'SetRegionalSettings') {
+        syncUnattendContent();
+    }
+}
+
+document.getElementById('btnDuplicateStep').addEventListener('click', duplicateSelectedStep);
+
+/* ── Undo / Redo toolbar buttons ──────────────────────────────────── */
+if ($btnUndo) $btnUndo.addEventListener('click', undo);
+if ($btnRedo) $btnRedo.addEventListener('click', redo);
+
+/* ── JSON raw view toggle ─────────────────────────────────────────── */
+function showJsonRawView() {
+    if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) return;
+    jsonRawMode = true;
+    $jsonToggle.textContent = '📋 Form View';
+    $jsonToggle.title = 'Switch to form view';
+    $jsonRawEditor.style.display = '';
+    $paramFields.style.display = 'none';
+    $jsonRawTextarea.value = JSON.stringify(taskSequence.steps[selectedIndex], null, 2);
+    $jsonRawError.style.display = 'none';
+}
+
+function hideJsonRawView() {
+    jsonRawMode = false;
+    $jsonToggle.textContent = '{ } JSON';
+    $jsonToggle.title = 'Switch to raw JSON view';
+    $jsonRawEditor.style.display = 'none';
+    $paramFields.style.display = '';
+}
+
+function applyJsonRawEdits() {
+    if (selectedIndex < 0 || !$jsonRawTextarea) return true;
+    try {
+        const edited = JSON.parse($jsonRawTextarea.value);
+        if (!edited || typeof edited !== 'object') throw new Error('Must be a JSON object');
+        taskSequence.steps[selectedIndex] = edited;
+        $jsonRawError.style.display = 'none';
+        return true;
+    } catch (err) {
+        $jsonRawError.textContent = '\u26A0 ' + err.message;
+        $jsonRawError.style.display = '';
+        return false;
+    }
+}
+
+if ($jsonToggle) {
+    $jsonToggle.addEventListener('click', function () {
+        if (jsonRawMode) {
+            /* Switching back to form view — apply edits first */
+            if (!applyJsonRawEdits()) return;
+            markDirty();
+            hideJsonRawView();
+            selectStep(selectedIndex);
+            renderStepList();
+        } else {
+            showJsonRawView();
+        }
+    });
+}
+
 /* ── Keyboard shortcuts ───────────────────────────────────────────── */
 document.addEventListener('keydown', (e) => {
+    /* Undo / Redo work even inside inputs */
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'z') {
+        e.preventDefault();
+        undo();
+        return;
+    }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) {
+        e.preventDefault();
+        redo();
+        return;
+    }
+
+    /* Skip remaining shortcuts when inside an editable field */
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.isContentEditable) return;
     if (e.key === 'Delete' && selectedIndex >= 0) {
         document.getElementById('btnRemoveStep').click();
+    }
+    /* Ctrl+D — duplicate step */
+    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        e.preventDefault();
+        duplicateSelectedStep();
     }
 });
 
@@ -1234,6 +1402,7 @@ function loadDefault() {
                     selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
                     dirty = true;
                     updateDirtyUI();
+                    captureSnapshot();
                     renderStepList();
                     selectStep(selectedIndex);
                     fetch('../Unattend/unattend.xml')
@@ -1305,6 +1474,7 @@ function loadDefault() {
                             selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
                             renderStepList();
                             selectStep(selectedIndex);
+                            captureSnapshot();
                         });
                     return;
                 }
@@ -1340,6 +1510,7 @@ function loadDefault() {
         selectedIndex = taskSequence.steps.length > 0 ? 0 : -1;
         renderStepList();
         selectStep(selectedIndex);
+        captureSnapshot();
     }).catch(() => {
         /* No default file available — start empty */
         renderStepList();
