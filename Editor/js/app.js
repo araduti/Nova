@@ -240,7 +240,7 @@ function validateStep(step) {
             if (!p.driverPath) warnings.push('Driver path is empty');
             break;
         case 'ApplyAutopilot':
-            if (!p.jsonUrl && !p.jsonPath) warnings.push('Both JSON URL and JSON path are empty');
+            if (!p.jsonUrl && !p.jsonPath) warnings.push('Either JSON URL or JSON path must be provided');
             break;
         case 'StageCCMSetup':
             if (!p.ccmSetupUrl) warnings.push('CCMSetup URL is empty');
