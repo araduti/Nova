@@ -38,7 +38,7 @@
       "description": "Register this device in Windows Autopilot via Microsoft Graph API",
       "continueOnError": true,
       "parameters": {
-        "groupTag": "",
+        "groupTag": "SE-SH",
         "userEmail": ""
       }
     },
