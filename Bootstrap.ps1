@@ -660,11 +660,12 @@ public class AmpCloudHotkeyWindow : NativeWindow, IDisposable {
 # the user-data dir lock files, and relaunches Edge with the original args.
 
 $script:EdgeExe  = 'X:\WebView2\Edge\msedge.exe'
+$script:EdgeUserDataDir = 'X:\Temp\EdgeKiosk'
 $script:EdgeArgs = @(
     '--kiosk',           'file:///X:/AmpCloud-UI/index.html',
     '--kiosk-type=fullscreen',
     '--allow-run-as-system',
-    '--user-data-dir=X:\Temp\EdgeKiosk',
+    "--user-data-dir=$($script:EdgeUserDataDir)",
     '--disable-gpu',
     '--disable-gpu-compositing',
     '--disable-direct-composition',
@@ -678,8 +679,8 @@ $script:EdgeArgs = @(
     '--disable-popup-blocking'
 )
 
-$script:_lastHeartbeat       = [DateTime]::UtcNow
-$script:_edgeWatchdogStarted = $false
+$script:_lastHeartbeat        = [DateTime]::UtcNow
+$script:_edgeWatchdogGraceEnd = ([DateTime]::UtcNow).AddSeconds(60)
 
 function Restart-Edge {
     <#
@@ -691,8 +692,8 @@ function Restart-Edge {
         ForEach-Object { try { $_.Kill() } catch {} }
     Start-Sleep -Seconds 2
     # Remove stale lock files so Edge starts cleanly
-    Remove-Item 'X:\Temp\EdgeKiosk\lockfile'   -Force -ErrorAction SilentlyContinue
-    Remove-Item 'X:\Temp\EdgeKiosk\SingletonLock' -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $script:EdgeUserDataDir 'lockfile')     -Force -ErrorAction SilentlyContinue
+    Remove-Item (Join-Path $script:EdgeUserDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue
     if (Test-Path $script:EdgeExe) {
         Start-Process -FilePath $script:EdgeExe -ArgumentList $script:EdgeArgs
     }
@@ -703,17 +704,9 @@ $script:edgeWatchdogTimer = New-Object System.Windows.Forms.Timer
 $script:edgeWatchdogTimer.Interval = 10000   # check every 10 seconds
 
 $script:edgeWatchdogTimer.Add_Tick({
-    # Skip watchdog until at least one heartbeat has been received, giving
-    # Edge enough time to start on first boot.
-    if (-not $script:_edgeWatchdogStarted) {
-        if (([DateTime]::UtcNow - $script:_lastHeartbeat).TotalSeconds -lt 60) {
-            # Still in grace period — check if we have received an actual
-            # heartbeat (timestamp updated by /heartbeat route).
-            $edgeRunning = Get-Process -Name 'msedge' -ErrorAction SilentlyContinue
-            if ($edgeRunning) { return }
-        }
-        $script:_edgeWatchdogStarted = $true
-    }
+    # Grace period: give Edge enough time to start on first boot before
+    # the watchdog begins monitoring heartbeats.
+    if ([DateTime]::UtcNow -lt $script:_edgeWatchdogGraceEnd) { return }
 
     $edgeRunning = Get-Process -Name 'msedge' -ErrorAction SilentlyContinue
 
