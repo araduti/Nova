@@ -805,6 +805,56 @@ function Show-ConfigurationMenu {
     }
 }
 
+function Update-TaskSequenceFromConfig {
+    <#
+    .SYNOPSIS  Writes user configuration choices into the task sequence JSON.
+    .DESCRIPTION
+        After the user submits the configuration modal, this function updates
+        the relevant step parameters in the task sequence JSON file so that
+        the engine reads all values from the task sequence — no separate
+        command-line parameters needed.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$TaskSequencePath,
+        [hashtable]$Config
+    )
+
+    if (-not (Test-Path $TaskSequencePath)) { return }
+
+    $raw = Get-Content $TaskSequencePath -Raw -ErrorAction Stop
+    $ts  = $raw | ConvertFrom-Json -ErrorAction Stop
+    if (-not $ts.steps) { return }
+
+    foreach ($step in $ts.steps) {
+        if (-not $step.parameters) {
+            $step | Add-Member -NotePropertyName parameters -NotePropertyValue ([pscustomobject]@{}) -Force
+        }
+
+        switch ($step.type) {
+            'DownloadImage' {
+                if ($Config.Edition)      { $step.parameters | Add-Member -NotePropertyName edition      -NotePropertyValue $Config.Edition      -Force }
+                if ($Config.OsLanguage)   { $step.parameters | Add-Member -NotePropertyName language     -NotePropertyValue $Config.OsLanguage   -Force }
+                if ($Config.Architecture) { $step.parameters | Add-Member -NotePropertyName architecture -NotePropertyValue $Config.Architecture -Force }
+            }
+            'ApplyImage' {
+                if ($Config.Edition) { $step.parameters | Add-Member -NotePropertyName edition -NotePropertyValue $Config.Edition -Force }
+            }
+            'SetComputerName' {
+                if ($Config.ComputerName) { $step.parameters | Add-Member -NotePropertyName computerName -NotePropertyValue $Config.ComputerName -Force }
+            }
+            'SetRegionalSettings' {
+                if ($Config.InputLocale)  { $step.parameters | Add-Member -NotePropertyName inputLocale  -NotePropertyValue $Config.InputLocale  -Force }
+                if ($Config.SystemLocale) { $step.parameters | Add-Member -NotePropertyName systemLocale -NotePropertyValue $Config.SystemLocale -Force }
+                if ($Config.UserLocale)   { $step.parameters | Add-Member -NotePropertyName userLocale   -NotePropertyValue $Config.UserLocale   -Force }
+                if ($Config.UILanguage)   { $step.parameters | Add-Member -NotePropertyName uiLanguage   -NotePropertyValue $Config.UILanguage   -Force }
+            }
+        }
+    }
+
+    $ts | ConvertTo-Json -Depth 10 | Set-Content $TaskSequencePath -Encoding UTF8 -Force
+}
+
 #region ── M365 Authentication ────────────────────────────────────────────────
 
 function Invoke-M365EdgeAuth {
@@ -1244,16 +1294,13 @@ function ProceedToEngine {
     $config = Show-ConfigurationMenu
     $script:Lang = $config.Language
     $script:S    = $Strings[$script:Lang]
-    $script:SelectedEdition    = $config.Edition
-    $script:SelectedOsLang     = $config.OsLanguage
-    $script:SelectedArch       = $config.Architecture
-    $script:SelectedActivation = $config.Activation
-    $script:SelectedInputLocale  = $config.InputLocale
-    $script:SelectedSystemLocale = $config.SystemLocale
-    $script:SelectedUserLocale   = $config.UserLocale
-    $script:SelectedUILanguage   = $config.UILanguage
-    $script:SelectedComputerName = $config.ComputerName
-    $script:TaskSequencePath     = $config.TaskSequencePath
+    $script:TaskSequencePath = $config.TaskSequencePath
+
+    # Write user configuration choices into the task sequence JSON so the
+    # engine reads everything from a single source of truth.
+    if ($script:TaskSequencePath) {
+        Update-TaskSequenceFromConfig -TaskSequencePath $script:TaskSequencePath -Config $config
+    }
 
     # Clean up any stale status file from a previous run.
     if (Test-Path $script:StatusFile) { Remove-Item $script:StatusFile -Force }
@@ -1296,16 +1343,8 @@ function ProceedToEngine {
 
         $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $localAmpCloud,
                     '-StatusFile', $script:StatusFile,
-                    '-FirmwareType', $detectedFirmware)
-        if ($script:SelectedEdition)  { $psArgs += @('-WindowsEdition',      $script:SelectedEdition)  }
-        if ($script:SelectedOsLang)   { $psArgs += @('-WindowsLanguage',     $script:SelectedOsLang)   }
-        if ($script:SelectedArch)     { $psArgs += @('-WindowsArchitecture', $script:SelectedArch)     }
-        if ($script:SelectedInputLocale)  { $psArgs += @('-InputLocale',     $script:SelectedInputLocale)  }
-        if ($script:SelectedSystemLocale) { $psArgs += @('-SystemLocale',    $script:SelectedSystemLocale) }
-        if ($script:SelectedUserLocale)   { $psArgs += @('-UserLocale',      $script:SelectedUserLocale)   }
-        if ($script:SelectedUILanguage)   { $psArgs += @('-UILanguage',      $script:SelectedUILanguage)   }
-        if ($script:SelectedComputerName) { $psArgs += @('-ComputerName',    $script:SelectedComputerName) }
-        if ($script:TaskSequencePath)     { $psArgs += @('-TaskSequencePath', $script:TaskSequencePath) }
+                    '-FirmwareType', $detectedFirmware,
+                    '-TaskSequencePath', $script:TaskSequencePath)
 
         # Pass the Graph access token to the engine via an environment variable
         # so the ImportAutopilot task sequence step can register the device in
