@@ -883,7 +883,8 @@ function Show-ConfigurationMenu {
                             'macAddress' {
                                 try {
                                     $mac = (Get-WmiObject Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1).MACAddress
-                                    if ($mac) { $base = ($mac -replace '[:\-]','').Substring(6) }
+                                    $mac = if ($mac) { $mac -replace '[:\-]','' } else { '' }
+                                    if ($mac.Length -ge 12) { $base = $mac.Substring(6) }
                                 } catch { $base = '' }
                             }
                             'deviceModel' {
@@ -891,8 +892,8 @@ function Show-ConfigurationMenu {
                             }
                             'randomDigits' {
                                 $count = if ($sp.randomDigitCount -gt 0) { [math]::Min($sp.randomDigitCount, 10) } else { 4 }
-                                $min = [math]::Pow(10, $count - 1)
-                                $max = [math]::Pow(10, $count)
+                                $min = [int][math]::Pow(10, $count - 1)
+                                $max = [int][math]::Pow(10, $count)
                                 $base = (Get-Random -Minimum ([int]$min) -Maximum ([int]$max)).ToString()
                             }
                         }
