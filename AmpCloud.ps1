@@ -1304,7 +1304,7 @@ try {
             }
         }
 
-        Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Detail 'Windows installation finished successfully' -Step 3 -Progress 100 -Done
+        Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Detail 'Windows installation finished successfully' -Step 4 -Progress 100 -Done
 
     } else {
 
@@ -1317,7 +1317,7 @@ try {
 
     # Step 1: Partition the disk
     $stepName = 'Partition disk'
-    Update-BootstrapStatus -Message 'Partitioning disk...' -Detail 'Creating GPT layout on target drive' -Step 1 -Progress 10
+    Update-BootstrapStatus -Message 'Partitioning disk...' -Detail 'Creating GPT layout on target drive' -Step 4 -Progress 10
     Initialize-TargetDisk `
         -DiskNumber    $TargetDiskNumber `
         -FirmwareType  $FirmwareType `
@@ -1331,7 +1331,7 @@ try {
 
     # Step 2: Download Windows image
     $stepName = 'Download Windows image'
-    Update-BootstrapStatus -Message 'Downloading Windows image...' -Detail 'Fetching ESD image from Microsoft CDN' -Step 1 -Progress 20
+    Update-BootstrapStatus -Message 'Downloading Windows image...' -Detail 'Fetching ESD image from Microsoft CDN' -Step 4 -Progress 20
     $imagePath = Get-WindowsImageSource `
         -ImageUrl      $WindowsImageUrl `
         -Edition       $WindowsEdition `
@@ -1342,7 +1342,7 @@ try {
 
     # Step 3: Apply Windows image
     $stepName = 'Apply Windows image'
-    Update-BootstrapStatus -Message 'Applying Windows image...' -Detail 'Expanding Windows files to target partition' -Step 2 -Progress 50
+    Update-BootstrapStatus -Message 'Applying Windows image...' -Detail 'Expanding Windows files to target partition' -Step 4 -Progress 50
     Install-WindowsImage `
         -ImagePath     $imagePath `
         -Edition       $WindowsEdition `
@@ -1351,7 +1351,7 @@ try {
 
     # Step 4: Configure bootloader
     $stepName = 'Configure bootloader'
-    Update-BootstrapStatus -Message 'Configuring bootloader...' -Detail 'Writing BCD store and EFI boot entries' -Step 2 -Progress 65
+    Update-BootstrapStatus -Message 'Configuring bootloader...' -Detail 'Writing BCD store and EFI boot entries' -Step 4 -Progress 65
     Set-Bootloader `
         -OSDriveLetter $OSDrive `
         -FirmwareType  $FirmwareType `
@@ -1359,14 +1359,14 @@ try {
 
     # Step 5: Inject drivers
     $stepName = 'Inject drivers'
-    Update-BootstrapStatus -Message 'Injecting drivers...' -Detail 'Adding network and storage drivers' -Step 2 -Progress 75
+    Update-BootstrapStatus -Message 'Injecting drivers...' -Detail 'Adding network and storage drivers' -Step 4 -Progress 75
     Add-Driver `
         -DriverPath    $DriverPath `
         -OSDriveLetter $OSDrive
 
     if ($UseOemDrivers) {
         $stepName = 'Inject OEM drivers'
-        Update-BootstrapStatus -Message 'Injecting OEM drivers...' -Detail 'Adding manufacturer-specific drivers' -Step 2 -Progress 80
+        Update-BootstrapStatus -Message 'Injecting OEM drivers...' -Detail 'Adding manufacturer-specific drivers' -Step 4 -Progress 80
         Invoke-OemDriverInjection `
             -OSDriveLetter $OSDrive `
             -ScratchDir    $ScratchDir
@@ -1374,7 +1374,7 @@ try {
 
     # Step 6: Apply Autopilot/Intune configuration
     $stepName = 'Apply Autopilot configuration'
-    Update-BootstrapStatus -Message 'Applying Autopilot configuration...' -Detail 'Embedding Autopilot provisioning profile' -Step 3 -Progress 85
+    Update-BootstrapStatus -Message 'Applying Autopilot configuration...' -Detail 'Embedding Autopilot provisioning profile' -Step 4 -Progress 85
     Set-AutopilotConfig `
         -JsonUrl       $AutopilotJsonUrl `
         -JsonPath      $AutopilotJsonPath `
@@ -1389,7 +1389,7 @@ try {
 
     # Step 8: Customize OOBE
     $stepName = 'Customize OOBE'
-    Update-BootstrapStatus -Message 'Customizing OOBE...' -Detail 'Setting out-of-box experience preferences' -Step 3 -Progress 90
+    Update-BootstrapStatus -Message 'Customizing OOBE...' -Detail 'Setting out-of-box experience preferences' -Step 4 -Progress 90
     Set-OOBECustomization `
         -UnattendUrl     $UnattendUrl `
         -UnattendPath    $UnattendPath `
@@ -1403,7 +1403,7 @@ try {
         -OSDriveLetter $OSDrive `
         -ScratchDir    $ScratchDir
 
-    Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Detail 'Windows installation finished successfully' -Step 3 -Progress 100 -Done
+    Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Detail 'Windows installation finished successfully' -Step 4 -Progress 100 -Done
 
     } # end if/else TaskSequencePath
 
