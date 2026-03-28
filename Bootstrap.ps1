@@ -276,6 +276,7 @@ function Test-HasValidIP {
 
 function Test-InternetConnectivity {
     $urls = @(
+        'https://api.github.com',                          # GitHub API (deployment reporting)
         'https://www.msftconnecttest.com/connecttest.txt',
         'https://clients3.google.com/generate_204',
         'http://www.msftconnecttest.com/connecttest.txt'   # HTTP fallback (Windows NCSI endpoint)
