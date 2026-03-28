@@ -1756,7 +1756,16 @@ function Invoke-TaskSequenceStep {
                 -FirmwareType $CurrentFirmwareType -ScratchDir $CurrentScratchDir
         }
         'ApplyImage' {
-            $ed = if ($p -and $p.edition) { $p.edition } else { 'Professional' }
+            $ed   = if ($p -and $p.edition)        { $p.edition }       else { 'Professional' }
+            $lang = if ($p -and $p.language)        { $p.language }      else { 'en-us' }
+            $arch = if ($p -and $p.architecture)    { $p.architecture }  else { 'x64' }
+            if (-not $script:TsImagePath) {
+                $url = if ($p -and $p.imageUrl) { $p.imageUrl } else { '' }
+                Update-BootstrapStatus -Message "Downloading Windows image..." -Detail "Fetching $ed $lang $arch" -Step $uiStep -Progress $pct
+                $script:TsImagePath = Get-WindowsImageSource `
+                    -ImageUrl $url -Edition $ed -Language $lang -Architecture $arch `
+                    -FirmwareType $CurrentFirmwareType -ScratchDir $CurrentScratchDir
+            }
             Update-BootstrapStatus -Message "Applying Windows image..." -Detail "Expanding Windows files" -Step $uiStep -Progress $pct
             Install-WindowsImage -ImagePath $script:TsImagePath -Edition $ed -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
