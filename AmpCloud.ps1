@@ -487,7 +487,7 @@ function Push-ReportToGitHub {
     }
     if (-not $Token) { return }
 
-    $maxRetries = if ($Delete) { 3 } else { 1 }
+    $maxRetries = 3
 
     for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
         try {
@@ -537,13 +537,12 @@ function Push-ReportToGitHub {
             # Success — exit retry loop
             return
         } catch {
-            if ($Delete -and $attempt -lt $maxRetries) {
-                Write-Warning "GitHub DELETE attempt $attempt/$maxRetries failed for '$FilePath': $_ — retrying in $($attempt * 2)s..."
+            $verb = if ($Delete) { 'DELETE' } else { 'PUT' }
+            if ($attempt -lt $maxRetries) {
+                Write-Warning "GitHub $verb attempt $attempt/$maxRetries failed for '$FilePath': $_ — retrying in $($attempt * 2)s..."
                 Start-Sleep -Seconds ($attempt * 2)
-            } elseif ($Delete) {
-                Write-Warning "GitHub DELETE failed after $maxRetries attempts for '$FilePath': $_"
             } else {
-                Write-Verbose "GitHub report push suppressed: $_"
+                Write-Warning "GitHub $verb failed after $maxRetries attempts for '$FilePath': $_"
             }
         }
     }
