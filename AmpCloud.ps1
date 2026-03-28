@@ -93,6 +93,9 @@ $script:CachedEntraGitHubToken = $null
 $script:CachedEntraGitHubTokenTime = [datetime]::MinValue
 # Negative cache: avoid retrying a recently-failed token exchange.
 $script:EntraExchangeLastFailure = $null
+# One-shot flag: warn once when no GitHub token can be resolved so the user
+# knows status reporting is disabled without flooding the log on every step.
+$script:GitHubTokenWarningShown = $false
 
 #region ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -378,11 +381,18 @@ function Get-GitHubTokenViaEntra {
 
     # Don't retry a recently failed exchange (wait at least 5 min).
     if ($script:EntraExchangeLastFailure -and ((Get-Date) - $script:EntraExchangeLastFailure).TotalMinutes -lt 5) {
+        Write-Verbose "Skipping Entra→GitHub exchange: last attempt failed less than 5 minutes ago"
         return $null
     }
 
     $entraToken = $env:AMPCLOUD_GRAPH_TOKEN
-    if (-not $entraToken) { return $null }
+    if (-not $entraToken) {
+        if (-not $script:GitHubTokenWarningShown) {
+            Write-Warning "AMPCLOUD_GRAPH_TOKEN is not set — Entra→GitHub token exchange unavailable. Set GITHUB_TOKEN or sign in via Entra ID to enable deployment status reporting."
+            $script:GitHubTokenWarningShown = $true
+        }
+        return $null
+    }
 
     # ── Resolve the OAuth proxy URL from Config/auth.json ──────────
     $proxyUrl = $null
@@ -391,9 +401,12 @@ function Get-GitHubTokenViaEntra {
         $cfg = Invoke-RestMethod -Uri $cfgUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
         $proxyUrl = $cfg.githubOAuthProxy
     } catch {
-        Write-Verbose "Could not load auth config for Entra exchange: $_"
+        Write-Warning "Could not load auth config for Entra exchange: $_"
     }
-    if (-not $proxyUrl) { return $null }
+    if (-not $proxyUrl) {
+        Write-Warning "No githubOAuthProxy URL in Config/auth.json — cannot exchange Entra token for GitHub token."
+        return $null
+    }
 
     # ── Call the proxy's token exchange endpoint ───────────────────
     # Uses .NET HttpWebRequest instead of Invoke-RestMethod so that HTTP
@@ -443,7 +456,7 @@ function Get-GitHubTokenViaEntra {
             $script:EntraExchangeLastFailure = Get-Date
         }
     } catch {
-        Write-Verbose "Entra→GitHub token exchange failed: $_"
+        Write-Warning "Entra→GitHub token exchange failed: $_"
         $script:EntraExchangeLastFailure = Get-Date
     } finally {
         if ($resp) { $resp.Close() }
@@ -485,7 +498,13 @@ function Push-ReportToGitHub {
     if (-not $Token) {
         $Token = Get-GitHubTokenViaEntra
     }
-    if (-not $Token) { return }
+    if (-not $Token) {
+        if (-not $script:GitHubTokenWarningShown) {
+            Write-Warning "No GitHub token available (GITHUB_TOKEN not set, Entra exchange unavailable). Deployment status will NOT be reported to GitHub."
+            $script:GitHubTokenWarningShown = $true
+        }
+        return
+    }
 
     $maxRetries = 3
 
