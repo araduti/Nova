@@ -260,6 +260,18 @@ export default {
                 return new Response(null, { status: 204, headers: cors });
             }
 
+            /* ── Server-side origin enforcement ──────────────────────── */
+            const allowedOrigin = (env && env.ALLOWED_ORIGIN) || '';
+            if (allowedOrigin) {
+                const requestOrigin = (request.headers && request.headers.get('Origin')) || '';
+                if (requestOrigin !== allowedOrigin) {
+                    return new Response(JSON.stringify({
+                        error: 'origin_not_allowed',
+                        error_description: 'Request origin is not allowed.'
+                    }), { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } });
+                }
+            }
+
             /* Only POST is accepted */
             if (request.method !== 'POST') {
                 return new Response('Method Not Allowed', { status: 405, headers: cors });
