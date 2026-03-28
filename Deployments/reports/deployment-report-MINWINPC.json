@@ -1,0 +1,13 @@
+{
+    "failedStep":  "",
+    "id":  "dep_1774734570743_89530370",
+    "startedAt":  1774734287894,
+    "deviceName":  "MINWINPC",
+    "completedAt":  1774734570758,
+    "error":  "",
+    "stepsCompleted":  11,
+    "status":  "success",
+    "taskSequence":  "Default AmpCloud Task Sequence (Copy)",
+    "duration":  282849,
+    "stepsTotal":  11
+}
