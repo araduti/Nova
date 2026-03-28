@@ -952,6 +952,18 @@
     var ACTIVE_KEY  = 'ampcloud_active_deploys';
     var ALERTS_KEY  = 'ampcloud_alert_config';
 
+    /* GitHub repo for fetching deployment data pushed by the engine */
+    var GH_OWNER  = 'araduti';
+    var GH_REPO   = 'AmpCloud';
+    var GH_BRANCH = 'main';
+    var GH_API    = 'https://api.github.com';
+    var REFRESH_INTERVAL = 30000; /* poll every 30 s */
+
+    /* Entra ID → GitHub token exchange state (loaded from Config/auth.json) */
+    var authConfig      = null;  /* populated by loadAuthConfig() */
+    var cachedGhToken   = null;  /* GitHub token obtained via Entra exchange */
+    var ghTokenExpiry   = 0;     /* Unix-ms when cachedGhToken expires */
+
     /* ── Utility helpers ───────────────────────────────────────────── */
     function escapeHtml(str) {
         var d = document.createElement('div');
@@ -996,6 +1008,126 @@
 
     function saveActiveDeployments(records) {
         localStorage.setItem(ACTIVE_KEY, JSON.stringify(records));
+    }
+
+    /* ── Auth config & Entra → GitHub token exchange ───────────────── */
+    /*  Loads Config/auth.json and uses the OAuth proxy's
+        /api/token-exchange endpoint to convert an Entra ID session
+        token into a scoped GitHub installation token.  This lets the
+        dashboard make authenticated GitHub API calls (5 000 req/hr)
+        without requiring a separate GitHub PAT.
+        If the exchange is unavailable the dashboard falls back to
+        unauthenticated reads (60 req/hr, fine for public repos).     */
+
+    function loadAuthConfig() {
+        var url = 'https://raw.githubusercontent.com/' + GH_OWNER + '/' + GH_REPO + '/' + GH_BRANCH + '/Config/auth.json';
+        return fetch(url)
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (cfg) { authConfig = cfg; })
+            .catch(function () { authConfig = null; });
+    }
+
+    function exchangeEntraToken(entraToken) {
+        if (!authConfig || !authConfig.githubOAuthProxy) {
+            return Promise.resolve(null);
+        }
+        return fetch(authConfig.githubOAuthProxy + '/api/token-exchange', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + entraToken,
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+            if (data && data.token) {
+                cachedGhToken = data.token;
+                ghTokenExpiry = data.expires_at
+                    ? new Date(data.expires_at).getTime()
+                    : Date.now() + 55 * 60 * 1000; /* 55 min — 5-min safety buffer before typical 60-min expiry */
+                return data.token;
+            }
+            return null;
+        })
+        .catch(function () { return null; });
+    }
+
+    function getGitHubHeaders() {
+        var headers = { Accept: 'application/vnd.github.v3+json' };
+        if (cachedGhToken && Date.now() < ghTokenExpiry) {
+            headers['Authorization'] = 'Bearer ' + cachedGhToken;
+        }
+        return headers;
+    }
+
+    /* ── GitHub data fetch ─────────────────────────────────────────── */
+    /*  Fetches per-device JSON files pushed by the engine via the
+        GitHub Contents API.  This bridges the gap between the engine
+        (which writes files atomically with PUT) and the dashboard
+        (which reads them here).  Each device gets its own file so
+        concurrent deployments never collide or block each other.
+        When an Entra-derived GitHub token is available, requests are
+        authenticated (5 000 req/hr); otherwise falls back to
+        unauthenticated reads (60 req/hr, fine for public repos).     */
+
+    function fetchGitHubDir(dirPath) {
+        var url = GH_API + '/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/' + dirPath + '?ref=' + GH_BRANCH;
+        return fetch(url, { headers: getGitHubHeaders() })
+            .then(function (r) { return r.ok ? r.json() : []; })
+            .catch(function () { return []; });
+    }
+
+    function fetchGitHubFile(downloadUrl) {
+        return fetch(downloadUrl, { headers: getGitHubHeaders() })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; });
+    }
+
+    function mergeById(existing, incoming) {
+        var map = {};
+        existing.forEach(function (r) { map[r.id] = r; });
+        incoming.forEach(function (r) { map[r.id] = r; });
+        return Object.keys(map).map(function (k) { return map[k]; });
+    }
+
+    function fetchDeploymentReports() {
+        return fetchGitHubDir('Deployments/reports').then(function (files) {
+            if (!Array.isArray(files) || files.length === 0) return;
+            var promises = files
+                .filter(function (f) { return f.name && f.name.endsWith('.json'); })
+                .map(function (f) { return fetchGitHubFile(f.download_url); });
+            return Promise.all(promises).then(function (reports) {
+                var valid = reports.filter(function (r) { return r && r.id; });
+                if (valid.length > 0) {
+                    var merged = mergeById(getHistory(), valid);
+                    saveHistory(merged);
+                }
+            });
+        });
+    }
+
+    function fetchActiveDeployments() {
+        return fetchGitHubDir('Deployments/active').then(function (files) {
+            if (!Array.isArray(files)) return;
+            var jsonFiles = files.filter(function (f) { return f.name && f.name.endsWith('.json'); });
+            if (jsonFiles.length === 0) {
+                /* No active files on GitHub — clear stale active entries */
+                saveActiveDeployments([]);
+                return;
+            }
+            var promises = jsonFiles
+                .map(function (f) { return fetchGitHubFile(f.download_url); });
+            return Promise.all(promises).then(function (records) {
+                var valid = records.filter(function (r) { return r && r.id; });
+                saveActiveDeployments(valid);
+            });
+        });
+    }
+
+    function refreshFromGitHub() {
+        Promise.all([fetchDeploymentReports(), fetchActiveDeployments()])
+            .then(function () { renderAll(); })
+            .catch(function () { /* network or rate-limit — use cached data */ });
     }
 
     function getAlertConfig() {
@@ -1223,7 +1355,8 @@
 
         history.forEach(function (r) {
             if (r.status === 'failed' && r.error) {
-                var key = r.error.length > 80 ? r.error.substring(0, 80) + '…' : r.error;
+                var label = r.failedStep ? r.failedStep + ': ' + r.error : r.error;
+                var key = label.length > 80 ? label.substring(0, 80) + '…' : label;
                 errorMap[key] = (errorMap[key] || 0) + 1;
             }
         });
@@ -1326,6 +1459,10 @@
                 ? '<span class="history-status-badge success">&#10003; Success</span>'
                 : '<span class="history-status-badge failed">&#10007; Failed</span>';
 
+            var errorDisplay = r.failedStep && r.error
+                ? r.failedStep + ': ' + r.error
+                : (r.error || '—');
+
             html += '<tr>' +
                 '<td>' + escapeHtml(r.deviceName || '—') + '</td>' +
                 '<td>' + escapeHtml(r.taskSequence || '—') + '</td>' +
@@ -1333,7 +1470,7 @@
                 '<td>' + formatDuration(r.duration) + '</td>' +
                 '<td>' + (r.stepsCompleted || 0) + '/' + (r.stepsTotal || 0) + '</td>' +
                 '<td>' + formatDate(r.startedAt) + '</td>' +
-                '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(r.error || '') + '">' + escapeHtml(r.error || '—') + '</td>' +
+                '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtml(errorDisplay) + '">' + escapeHtml(errorDisplay) + '</td>' +
                 '</tr>';
         });
 
@@ -1355,7 +1492,7 @@
         var history = getHistory();
         if (history.length === 0) { alert('No deployment history to export.'); return; }
 
-        var csvRows = ['Device,Task Sequence,Status,Duration (s),Steps Completed,Steps Total,Started,Error'];
+        var csvRows = ['Device,Task Sequence,Status,Duration (s),Steps Completed,Steps Total,Started,Completed,Failed Step,Error'];
         history.forEach(function (r) {
             var row = [
                 '"' + (r.deviceName || '').replace(/"/g, '""') + '"',
@@ -1365,6 +1502,8 @@
                 r.stepsCompleted || 0,
                 r.stepsTotal || 0,
                 r.startedAt ? new Date(r.startedAt).toISOString() : '',
+                r.completedAt ? new Date(r.completedAt).toISOString() : '',
+                '"' + (r.failedStep || '').replace(/"/g, '""') + '"',
                 '"' + (r.error || '').replace(/"/g, '""') + '"'
             ];
             csvRows.push(row.join(','));
@@ -1586,6 +1725,8 @@
     /* ── Init ──────────────────────────────────────────────────────── */
     loadAlertConfig();
     renderAll();
+    loadAuthConfig().then(function () { refreshFromGitHub(); });
+    setInterval(refreshFromGitHub, REFRESH_INTERVAL);
     </script>
 </body>
 </html>

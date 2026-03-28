@@ -154,7 +154,8 @@ function Save-DeploymentReport {
         [string]$ReportPath     = ''
     )
     if (-not $ReportPath) {
-        $ReportPath = Join-Path $ScratchDir 'deployment-report.json'
+        $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
+        $ReportPath = Join-Path $ScratchDir "deployment-report-$safeName.json"
     }
     try {
         $duration = [math]::Round(((Get-Date) - $StartTime).TotalMilliseconds)
@@ -175,8 +176,63 @@ function Save-DeploymentReport {
         if ($dir -and -not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
         $report | ConvertTo-Json | Set-Content -Path $ReportPath -Force
         Write-Success "Deployment report saved to $ReportPath"
+
+        # Push to GitHub so the Monitoring dashboard can read it
+        $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
+        Push-ReportToGitHub -FilePath "Deployments/reports/deployment-report-$safeName.json" -Content $report
     } catch {
         Write-Warn "Failed to save deployment report: $_"
+    }
+}
+
+function Update-ActiveDeploymentReport {
+    <#
+    .SYNOPSIS  Writes or clears an active-deployment progress file.
+    .DESCRIPTION
+        Maintains a JSON file that mirrors the schema expected by the
+        Monitoring dashboard's "Active Deployments" panel (id, deviceName,
+        taskSequence, status, progress, currentStep, startedAt).
+
+        Call with -Clear to remove the file after the deployment finishes or
+        fails, signalling that the device is no longer actively deploying.
+    #>
+    param(
+        [string]$DeviceName   = $env:COMPUTERNAME,
+        [string]$TaskSequence = '',
+        [string]$CurrentStep  = '',
+        [int]$Progress        = 0,
+        [datetime]$StartTime  = (Get-Date),
+        [string]$ReportPath   = '',
+        [switch]$Clear
+    )
+    if (-not $ReportPath) {
+        $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
+        $ReportPath = Join-Path $ScratchDir "active-deployment-$safeName.json"
+    }
+    $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
+    $ghPath   = "Deployments/active/active-deployment-$safeName.json"
+    try {
+        if ($Clear) {
+            if (Test-Path $ReportPath) { Remove-Item $ReportPath -Force -ErrorAction SilentlyContinue }
+            Push-ReportToGitHub -FilePath $ghPath -Content @{} -Delete
+            return
+        }
+        $report = @{
+            id            = 'active_' + $DeviceName
+            deviceName    = $DeviceName
+            taskSequence  = $TaskSequence
+            status        = 'running'
+            progress      = $Progress
+            currentStep   = $CurrentStep
+            startedAt     = [DateTimeOffset]::new($StartTime).ToUnixTimeMilliseconds()
+        }
+        $dir = Split-Path $ReportPath
+        if ($dir -and -not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
+        $report | ConvertTo-Json -Compress | Set-Content -Path $ReportPath -Force -ErrorAction SilentlyContinue
+
+        Push-ReportToGitHub -FilePath $ghPath -Content $report
+    } catch {
+        Write-Verbose "Active deployment report update suppressed: $_"
     }
 }
 
@@ -287,6 +343,139 @@ function Send-DeploymentAlert {
         } catch {
             Write-Warn "Email notification failed: $_"
         }
+    }
+}
+
+function Get-GitHubTokenViaEntra {
+    <#
+    .SYNOPSIS  Exchanges an Entra ID token for a GitHub installation token.
+    .DESCRIPTION
+        Calls the AmpCloud OAuth proxy's /api/token-exchange endpoint to
+        convert the Entra ID access token (already obtained during sign-in
+        by Bootstrap.ps1 and stored in $env:AMPCLOUD_GRAPH_TOKEN) into a
+        short-lived GitHub App installation access token scoped to
+        contents:write.
+
+        This eliminates the need for a separate $env:GITHUB_TOKEN.  The
+        proxy validates the Entra token against Microsoft Graph and only
+        issues a GitHub token to authenticated users.
+
+        Returns $null if the exchange is not available (no Entra token,
+        no proxy configured, or proxy returns an error).
+    #>
+    $entraToken = $env:AMPCLOUD_GRAPH_TOKEN
+    if (-not $entraToken) { return $null }
+
+    # ── Resolve the OAuth proxy URL from Config/auth.json ──────────
+    $proxyUrl = $null
+    try {
+        $cfgUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/auth.json"
+        $cfg = Invoke-RestMethod -Uri $cfgUrl -UseBasicParsing -ErrorAction Stop
+        $proxyUrl = $cfg.githubOAuthProxy
+    } catch {
+        Write-Verbose "Could not load auth config for Entra exchange: $_"
+    }
+    if (-not $proxyUrl) { return $null }
+
+    # ── Call the proxy's token exchange endpoint ───────────────────
+    try {
+        $exchangeUrl = "$proxyUrl/api/token-exchange"
+        $headers = @{
+            'Authorization' = "Bearer $entraToken"
+            'Content-Type'  = 'application/json'
+            'User-Agent'    = 'AmpCloud-Engine'
+        }
+        $result = Invoke-RestMethod -Uri $exchangeUrl -Method Post `
+            -Headers $headers -UseBasicParsing -ErrorAction Stop
+        if ($result.token) {
+            Write-Verbose "GitHub token obtained via Entra ID exchange (user: $($result.user))"
+            return $result.token
+        }
+    } catch {
+        Write-Verbose "Entra→GitHub token exchange failed: $_"
+    }
+    return $null
+}
+
+function Push-ReportToGitHub {
+    <#
+    .SYNOPSIS  Pushes a deployment JSON file to the GitHub repo via the Contents API.
+    .DESCRIPTION
+        Uses the GitHub REST API (PUT /repos/{owner}/{repo}/contents/{path}) to
+        write a per-device JSON file into the Deployments/ directory.  Each file
+        is named after the device, so concurrent deployments never collide.
+
+        The API call is atomic — there is no git clone/push, so it cannot
+        conflict with the .github/ workflows or block other pushes.
+
+        Token resolution order:
+          1. -Token parameter (explicit)
+          2. $env:GITHUB_TOKEN (classic PAT — backward compatible)
+          3. Entra ID exchange — if $env:AMPCLOUD_GRAPH_TOKEN is set and the
+             OAuth proxy (from Config/auth.json) is configured, the Entra
+             token is exchanged for a short-lived GitHub installation token.
+             This is the recommended path: no separate GitHub PAT required.
+
+        If no token can be resolved the function silently returns so that
+        deployments still succeed without any token configured.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$FilePath,
+        [hashtable]$Content,
+        [string]$Token  = $env:GITHUB_TOKEN,
+        [switch]$Delete
+    )
+
+    # ── Token resolution: try Entra exchange when no explicit token ──
+    if (-not $Token) {
+        $Token = Get-GitHubTokenViaEntra
+    }
+    if (-not $Token) { return }
+    try {
+        $apiUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/$FilePath"
+        $headers = @{
+            Authorization  = "Bearer $Token"
+            Accept         = 'application/vnd.github.v3+json'
+            'User-Agent'   = 'AmpCloud-Engine'
+        }
+
+        # Get the current file SHA (required for updates/deletes)
+        $sha = $null
+        try {
+            $existing = Invoke-RestMethod -Uri $apiUrl -Headers $headers `
+                -Method Get -UseBasicParsing -ErrorAction Stop
+            $sha = $existing.sha
+        } catch {
+            # File does not exist yet — that is fine for creates
+            if ($Delete) { return }
+        }
+
+        if ($Delete) {
+            $body = @{
+                message = "Remove active deployment: $(Split-Path $FilePath -Leaf)"
+                sha     = $sha
+                branch  = $GitHubBranch
+            } | ConvertTo-Json
+            Invoke-RestMethod -Uri $apiUrl -Headers $headers `
+                -Method Delete -Body $body -ContentType 'application/json' `
+                -UseBasicParsing -ErrorAction Stop | Out-Null
+        } else {
+            $jsonBytes  = [System.Text.Encoding]::UTF8.GetBytes(($Content | ConvertTo-Json))
+            $b64Content = [Convert]::ToBase64String($jsonBytes)
+            $body = @{
+                message = "Deployment report: $(Split-Path $FilePath -Leaf)"
+                content = $b64Content
+                branch  = $GitHubBranch
+            }
+            if ($sha) { $body.sha = $sha }
+            $body = $body | ConvertTo-Json
+            Invoke-RestMethod -Uri $apiUrl -Headers $headers `
+                -Method Put -Body $body -ContentType 'application/json' `
+                -UseBasicParsing -ErrorAction Stop | Out-Null
+        }
+    } catch {
+        Write-Verbose "GitHub report push suppressed: $_"
     }
 }
 
@@ -1655,6 +1844,7 @@ try {
     # into unattendContent by the Editor and Bootstrap config modal — the
     # engine just writes what's in the task sequence.
     $script:TsImagePath = ''
+    $tsName = if ($ts.name) { $ts.name } else { 'Unknown' }
 
     for ($i = 0; $i -lt $enabledSteps.Count; $i++) {
         $s = $enabledSteps[$i]
@@ -1669,6 +1859,13 @@ try {
         }
 
         Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type))"
+
+        # Update active deployment report so the Monitoring dashboard can
+        # display in-progress status for this device.
+        $stepPct = if ($enabledSteps.Count -gt 0) { [math]::Min(100, [math]::Round(($i / $enabledSteps.Count) * 100)) } else { 0 }
+        Update-ActiveDeploymentReport -TaskSequence $tsName `
+            -CurrentStep "$($s.name)..." -Progress $stepPct `
+            -StartTime $script:DeploymentStartTime
 
         # After PartitionDisk, redirect scratch to OS drive
         if ($s.type -eq 'PartitionDisk') {
@@ -1696,9 +1893,11 @@ try {
     }
 
     # ── Deployment reporting & alerting ─────────────────────────────
-    $tsName    = if ($ts.name) { $ts.name } else { 'Unknown' }
     $elapsed   = (Get-Date) - $script:DeploymentStartTime
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
+
+    # Clear active deployment file — device is no longer deploying
+    Update-ActiveDeploymentReport -Clear
 
     Save-DeploymentReport -Status 'success' -TaskSequence $tsName `
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count `
@@ -1739,6 +1938,9 @@ try {
     $totalSteps = if ($enabledSteps) { $enabledSteps.Count } else { 0 }
     $elapsed   = (Get-Date) - $script:DeploymentStartTime
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
+
+    # Clear active deployment file — device is no longer deploying
+    Update-ActiveDeploymentReport -Clear
 
     Save-DeploymentReport -Status 'failed' -TaskSequence $tsName `
         -StepsCompleted $script:CompletedStepCount -StepsTotal $totalSteps `
