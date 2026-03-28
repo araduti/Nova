@@ -1,0 +1,21 @@
+# AmpCloud GitHub OAuth CORS Proxy — Cloudflare Worker configuration
+#
+# Deploy with:
+#   cd oauth-proxy
+#   wrangler deploy
+#
+# After deploying, configure secrets (see README.md for details):
+#   wrangler secret put GITHUB_APP_ID
+#   wrangler secret put GITHUB_APP_PRIVATE_KEY
+#   wrangler secret put GITHUB_APP_INSTALLATION_ID
+
+name = "ampcloud-oauth-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Optional: uncomment to lock the proxy to a single browser origin.
+# You can also set this in the Cloudflare dashboard under
+# Settings → Variables & Secrets instead of hard-coding it here.
+#
+# [vars]
+# ALLOWED_ORIGIN = "https://<you>.github.io"

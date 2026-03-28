@@ -22,20 +22,26 @@ npm install -g wrangler
 wrangler login          # opens browser to authenticate
 ```
 
-### 2. Create the Worker
+### 2. Deploy the Worker
+
+The repository includes a ready-to-use `wrangler.toml`.  Deploy directly:
 
 ```bash
 cd oauth-proxy
-wrangler init ampcloud-oauth-proxy
+wrangler deploy
 ```
 
-Copy `worker.js` into the generated `src/` folder (or point `wrangler.toml`
-at it).
+Wrangler prints the Worker URL, for example:
+
+```
+https://ampcloud-oauth-proxy.<you>.workers.dev
+```
 
 ### 3. Configure environment variables
 
-In the Cloudflare dashboard → your Worker → **Settings → Variables &
-Secrets**:
+The worker reads several environment variables at runtime.
+**Wrangler does not create these automatically** — you must set them
+yourself using one of the methods described below.
 
 | Variable                       | Required | Description                                     |
 | ------------------------------ | -------- | ----------------------------------------------- |
@@ -45,24 +51,102 @@ Secrets**:
 | `GITHUB_APP_INSTALLATION_ID`   | For token exchange | Installation ID for your repo          |
 | `ENTRA_TENANT_ID`              | No       | Restrict accepted Entra tokens to one tenant    |
 
-The `ALLOWED_ORIGIN` variable is optional.  When set, only requests from
-that origin are allowed.
+`ALLOWED_ORIGIN` is optional.  When set, only requests whose `Origin`
+header matches this value are processed; all others receive a `403
+Forbidden` response.  Leave it unset to allow any origin (safe because the
+proxy only forwards public Device Flow data).
 
-The `GITHUB_APP_*` variables are required for the `/api/token-exchange`
-endpoint.  If not configured, the endpoint returns `501 Not Configured`
-and the Device Flow / PAT fallbacks continue to work.
+The `GITHUB_APP_*` variables are required **only** for the
+`/api/token-exchange` endpoint (Entra ID → GitHub token exchange).  If not
+configured, that endpoint returns `501 Not Configured` and the Device Flow
+/ PAT fallbacks continue to work normally.
 
-### 4. Deploy
+#### Setting secrets via Wrangler CLI
+
+Sensitive values (private keys, app IDs) should be stored as **secrets** so
+they are encrypted at rest and never appear in plain text in the dashboard
+or in `wrangler.toml`:
 
 ```bash
-wrangler deploy
+wrangler secret put GITHUB_APP_ID
+# paste your App ID and press Enter
+
+wrangler secret put GITHUB_APP_PRIVATE_KEY
+# paste the full PEM key (including -----BEGIN/END----- lines) and press Enter
+
+wrangler secret put GITHUB_APP_INSTALLATION_ID
+# paste the Installation ID and press Enter
 ```
 
-Wrangler prints the Worker URL, for example:
+Optional variables can be set the same way:
 
+```bash
+wrangler secret put ENTRA_TENANT_ID        # optional tenant lock
+wrangler secret put ALLOWED_ORIGIN         # optional origin lock
 ```
-https://ampcloud-oauth-proxy.<you>.workers.dev
-```
+
+> **Tip:** You can also set these in the Cloudflare dashboard under your
+> Worker → **Settings → Variables & Secrets**.
+
+### 4. Create a GitHub App (for token exchange)
+
+> Skip this section if you only need the Device Flow proxy (steps 1–3 above
+> are sufficient).
+
+The `/api/token-exchange` endpoint requires a **GitHub App** so the worker
+can mint short-lived installation access tokens.
+
+1. Go to **[GitHub → Settings → Developer settings → GitHub Apps → New
+   GitHub App](https://github.com/settings/apps/new)**.
+
+2. Fill in the required fields:
+
+   | Field | Value |
+   |-------|-------|
+   | **GitHub App name** | e.g. `AmpCloud Deploy` |
+   | **Homepage URL** | Your GitHub Pages URL or repository URL |
+   | **Webhook** | Uncheck **Active** (no webhook needed) |
+
+3. Under **Repository permissions**, grant:
+
+   | Permission | Access |
+   |------------|--------|
+   | **Contents** | Read & write |
+
+   No other permissions are needed.
+
+4. Click **Create GitHub App**.
+
+5. On the app's settings page, note the **App ID** (a numeric value shown
+   at the top of the General tab).
+
+6. Scroll to **Private keys** and click **Generate a private key**.  Your
+   browser downloads a `.pem` file.
+
+   GitHub generates PKCS#1 keys (`BEGIN RSA PRIVATE KEY`).  The worker
+   expects **PKCS#8** (`BEGIN PRIVATE KEY`).  Convert with OpenSSL:
+
+   ```bash
+   openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt \
+       -in downloaded-key.pem -out private-key-pkcs8.pem
+   ```
+
+7. Install the app on your repository:
+
+   - Go to the app's settings → **Install App** (left sidebar).
+   - Select your account and choose **Only select repositories** → pick
+     your AmpCloud fork.
+   - After installation, the URL will contain the **Installation ID**
+     (the number at the end of the URL, e.g.
+     `https://github.com/settings/installations/12345678` → `12345678`).
+
+8. Set the three values as Worker secrets (see step 3 above):
+
+   ```bash
+   wrangler secret put GITHUB_APP_ID               # e.g. 123456
+   wrangler secret put GITHUB_APP_PRIVATE_KEY       # paste contents of private-key-pkcs8.pem
+   wrangler secret put GITHUB_APP_INSTALLATION_ID   # e.g. 12345678
+   ```
 
 ### 5. Configure AmpCloud
 
