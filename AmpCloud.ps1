@@ -237,7 +237,7 @@ function Update-ActiveDeploymentReport {
 
         Push-ReportToGitHub -FilePath $ghPath -Content $report
     } catch {
-        Write-Verbose "Active deployment report update suppressed: $_"
+        Write-Warning "Active deployment report update failed: $_"
     }
 }
 
@@ -445,50 +445,66 @@ function Push-ReportToGitHub {
         $Token = Get-GitHubTokenViaEntra
     }
     if (-not $Token) { return }
-    try {
-        $apiUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/$FilePath"
-        $headers = @{
-            Authorization  = "Bearer $Token"
-            Accept         = 'application/vnd.github.v3+json'
-            'User-Agent'   = 'AmpCloud-Engine'
-        }
 
-        # Get the current file SHA (required for updates/deletes)
-        $sha = $null
+    $maxRetries = if ($Delete) { 3 } else { 1 }
+
+    for ($attempt = 1; $attempt -le $maxRetries; $attempt++) {
         try {
-            $existing = Invoke-RestMethod -Uri $apiUrl -Headers $headers `
-                -Method Get -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
-            $sha = $existing.sha
-        } catch {
-            # File does not exist yet — that is fine for creates
-            if ($Delete) { return }
-        }
-
-        if ($Delete) {
-            $body = @{
-                message = "Remove active deployment: $(Split-Path $FilePath -Leaf)"
-                sha     = $sha
-                branch  = $GitHubBranch
-            } | ConvertTo-Json
-            Invoke-RestMethod -Uri $apiUrl -Headers $headers `
-                -Method Delete -Body $body -ContentType 'application/json' `
-                -UseBasicParsing -ErrorAction Stop -TimeoutSec 15 | Out-Null
-        } else {
-            $jsonBytes  = [System.Text.Encoding]::UTF8.GetBytes(($Content | ConvertTo-Json))
-            $b64Content = [Convert]::ToBase64String($jsonBytes)
-            $body = @{
-                message = "Deployment report: $(Split-Path $FilePath -Leaf)"
-                content = $b64Content
-                branch  = $GitHubBranch
+            $apiUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/$FilePath"
+            $headers = @{
+                Authorization  = "Bearer $Token"
+                Accept         = 'application/vnd.github.v3+json'
+                'User-Agent'   = 'AmpCloud-Engine'
             }
-            if ($sha) { $body.sha = $sha }
-            $body = $body | ConvertTo-Json
-            Invoke-RestMethod -Uri $apiUrl -Headers $headers `
-                -Method Put -Body $body -ContentType 'application/json' `
-                -UseBasicParsing -ErrorAction Stop -TimeoutSec 15 | Out-Null
+
+            # Get the current file SHA (required for updates/deletes)
+            $sha = $null
+            try {
+                $existing = Invoke-RestMethod -Uri $apiUrl -Headers $headers `
+                    -Method Get -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
+                $sha = $existing.sha
+            } catch {
+                # File does not exist yet — that is fine for creates.
+                # For deletes, file is already gone — nothing to do.
+                if ($Delete) { return }
+            }
+
+            if ($Delete) {
+                $body = @{
+                    message = "Remove active deployment: $(Split-Path $FilePath -Leaf)"
+                    sha     = $sha
+                    branch  = $GitHubBranch
+                } | ConvertTo-Json
+                Invoke-RestMethod -Uri $apiUrl -Headers $headers `
+                    -Method Delete -Body $body -ContentType 'application/json' `
+                    -UseBasicParsing -ErrorAction Stop -TimeoutSec 15 | Out-Null
+            } else {
+                $jsonBytes  = [System.Text.Encoding]::UTF8.GetBytes(($Content | ConvertTo-Json))
+                $b64Content = [Convert]::ToBase64String($jsonBytes)
+                $body = @{
+                    message = "Deployment report: $(Split-Path $FilePath -Leaf)"
+                    content = $b64Content
+                    branch  = $GitHubBranch
+                }
+                if ($sha) { $body.sha = $sha }
+                $body = $body | ConvertTo-Json
+                Invoke-RestMethod -Uri $apiUrl -Headers $headers `
+                    -Method Put -Body $body -ContentType 'application/json' `
+                    -UseBasicParsing -ErrorAction Stop -TimeoutSec 15 | Out-Null
+            }
+
+            # Success — exit retry loop
+            return
+        } catch {
+            if ($Delete -and $attempt -lt $maxRetries) {
+                Write-Warning "GitHub DELETE attempt $attempt/$maxRetries failed for '$FilePath': $_ — retrying in $($attempt * 2)s..."
+                Start-Sleep -Seconds ($attempt * 2)
+            } elseif ($Delete) {
+                Write-Warning "GitHub DELETE failed after $maxRetries attempts for '$FilePath': $_"
+            } else {
+                Write-Verbose "GitHub report push suppressed: $_"
+            }
         }
-    } catch {
-        Write-Verbose "GitHub report push suppressed: $_"
     }
 }
 
@@ -1918,7 +1934,7 @@ try {
 
     # Clear active deployment file — device is no longer deploying
     try { Update-ActiveDeploymentReport -Clear }
-    catch { Write-Verbose "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
+    catch { Write-Warning "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
 
     Save-DeploymentReport -Status 'success' -TaskSequence $tsName `
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count `
@@ -1962,7 +1978,7 @@ try {
 
     # Clear active deployment file — device is no longer deploying
     try { Update-ActiveDeploymentReport -Clear }
-    catch { Write-Verbose "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
+    catch { Write-Warning "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
 
     Save-DeploymentReport -Status 'failed' -TaskSequence $tsName `
         -StepsCompleted $script:CompletedStepCount -StepsTotal $totalSteps `
