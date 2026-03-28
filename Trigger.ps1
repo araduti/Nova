@@ -1276,7 +1276,10 @@ if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\AmpCloud-UI\index.html" (
         --in-process-gpu ^
         --no-first-run ^
         --disable-fre ^
-        --disable-features=msWebOOBE ^
+        --disable-features=msWebOOBE,PasswordManager ^
+        --password-store=basic ^
+        --guest ^
+        --disable-save-password-bubble ^
         --allow-file-access-from-files ^
         --disable-popup-blocking
 )
