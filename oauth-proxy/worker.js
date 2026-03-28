@@ -93,6 +93,9 @@ function wrapPkcs1InPkcs8(pkcs1Buf) {
     const pkcs1Len = pkcs1.length;
     /* Fixed parts: version (3) + AlgorithmIdentifier (15) + OCTET STRING tag+len (4) */
     const innerLen = 22 + pkcs1Len;
+    if (innerLen > 0xFFFF) {
+        throw new Error('Private key too large for PKCS#8 wrapping');
+    }
     const pkcs8 = new Uint8Array(4 + innerLen);
     let o = 0;
     /* outer SEQUENCE */
