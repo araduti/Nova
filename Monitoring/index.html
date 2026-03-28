@@ -1152,6 +1152,7 @@
     var GH_API    = 'https://api.github.com';
     var REFRESH_INTERVAL = 30000; /* poll every 30 s */
     var STALE_THRESHOLD  = 4 * 60 * 60 * 1000; /* 4 hours in ms — deployments older than this are flagged stale */
+    var ABANDON_THRESHOLD = 24 * 60 * 60 * 1000; /* 24 hours in ms — cached entries older than this are auto-purged */
 
     /* Entra ID → GitHub token exchange state (loaded from Config/auth.json) */
     var authConfig      = null;  /* populated by loadAuthConfig() */
@@ -1327,9 +1328,8 @@
                    indefinitely when the dashboard can't reach GitHub. */
                 var cached = getActiveDeployments();
                 if (cached.length > 0) {
-                    var autoExpire = 24 * 60 * 60 * 1000; /* 24 h hard cutoff */
                     var filtered = cached.filter(function (d) {
-                        return d.startedAt && (Date.now() - d.startedAt) < autoExpire;
+                        return d.startedAt && (Date.now() - d.startedAt) < ABANDON_THRESHOLD;
                     });
                     if (filtered.length !== cached.length) {
                         saveActiveDeployments(filtered);
