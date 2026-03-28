@@ -274,7 +274,7 @@ function Send-DeploymentAlert {
         } else {
             # Try fetching from GitHub repo
             $cfgUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/alerts.json"
-            $cfgJson = Invoke-RestMethod -Uri $cfgUrl -UseBasicParsing -ErrorAction Stop
+            $cfgJson = Invoke-RestMethod -Uri $cfgUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
             $cfg = $cfgJson
         }
     } catch {
@@ -307,7 +307,7 @@ function Send-DeploymentAlert {
                     markdown      = $true
                 })
             } | ConvertTo-Json -Depth 5
-            Invoke-RestMethod -Uri $cfg.teams.webhook -Method Post -ContentType 'application/json' -Body $teamsBody -ErrorAction Stop | Out-Null
+            Invoke-RestMethod -Uri $cfg.teams.webhook -Method Post -ContentType 'application/json' -Body $teamsBody -ErrorAction Stop -TimeoutSec 15 | Out-Null
             Write-Success "Teams notification sent"
         } catch {
             Write-Warn "Teams notification failed: $_"
@@ -325,7 +325,7 @@ function Send-DeploymentAlert {
                     text  = $slackText
                 })
             } | ConvertTo-Json -Depth 5
-            Invoke-RestMethod -Uri $cfg.slack.webhook -Method Post -ContentType 'application/json' -Body $slackBody -ErrorAction Stop | Out-Null
+            Invoke-RestMethod -Uri $cfg.slack.webhook -Method Post -ContentType 'application/json' -Body $slackBody -ErrorAction Stop -TimeoutSec 15 | Out-Null
             Write-Success "Slack notification sent"
         } catch {
             Write-Warn "Slack notification failed: $_"
@@ -541,10 +541,12 @@ function Invoke-DownloadWithProgress {
     $fs        = $null
     try {
         $wr = [System.Net.WebRequest]::Create($Uri)
-        $wr.Method = 'GET'
+        $wr.Method  = 'GET'
+        $wr.Timeout = 30000   # 30-second connection timeout (ms)
         $response  = $wr.GetResponse()
         $totalBytes = $response.ContentLength
         $stream     = $response.GetResponseStream()
+        $stream.ReadTimeout = 30000   # 30-second read timeout (ms)
         $fs         = [System.IO.File]::Create($OutFile)
         $buffer     = New-Object byte[] $script:DownloadBufferSize
         $downloaded = 0
@@ -1210,7 +1212,7 @@ function Set-AutopilotConfig {
         if ($JsonUrl) {
             $stepName = 'Download Autopilot JSON'
             Write-Host "  Fetching Autopilot JSON from: $JsonUrl"
-            Invoke-WebRequest -Uri $JsonUrl -OutFile $autopilotDest -UseBasicParsing
+            Invoke-WebRequest -Uri $JsonUrl -OutFile $autopilotDest -UseBasicParsing -TimeoutSec 30
         } else {
             $stepName = 'Copy Autopilot JSON'
             Copy-Item $JsonPath $autopilotDest -Force
@@ -1260,7 +1262,7 @@ function Invoke-AutopilotImport {
     $checkUri  = "https://graph.microsoft.com/v1.0/deviceManagement/windowsAutopilotDeviceIdentities?`$filter=$filter"
 
     try {
-        $existing = Invoke-RestMethod -Uri $checkUri -Headers $authHeaders -Method GET
+        $existing = Invoke-RestMethod -Uri $checkUri -Headers $authHeaders -Method GET -TimeoutSec 30
         if ($existing.value -and $existing.value.Count -gt 0) {
             Write-Success "Device $serial is already registered in Autopilot — skipping import."
             return
@@ -1317,7 +1319,7 @@ function Invoke-AutopilotImport {
     $uploadUri = 'https://graph.microsoft.com/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities'
     $null = Invoke-RestMethod -Uri $uploadUri -Headers ($authHeaders + @{
         'Content-Type' = 'application/json'
-    }) -Method POST -Body ($body | ConvertTo-Json)
+    }) -Method POST -Body ($body | ConvertTo-Json) -TimeoutSec 60
 
     Write-Host '  Device uploaded — waiting for registration...'
 
@@ -1328,7 +1330,7 @@ function Invoke-AutopilotImport {
     for ($i = 1; $i -le $maxAttempts; $i++) {
         Start-Sleep -Seconds 30
         try {
-            $poll = Invoke-RestMethod -Uri $checkUri -Headers $authHeaders -Method GET
+            $poll = Invoke-RestMethod -Uri $checkUri -Headers $authHeaders -Method GET -TimeoutSec 30
             if ($poll.value -and $poll.value.Count -gt 0) {
                 Write-Success "Device successfully registered in Autopilot (attempt $i)."
                 return
@@ -1440,7 +1442,7 @@ function Set-OOBECustomization {
         if ($UnattendUrl) {
             $stepName = 'Download unattend.xml'
             Write-Host "  Fetching unattend.xml from: $UnattendUrl"
-            Invoke-WebRequest -Uri $UnattendUrl -OutFile $unattendDest -UseBasicParsing
+            Invoke-WebRequest -Uri $UnattendUrl -OutFile $unattendDest -UseBasicParsing -TimeoutSec 30
             Write-Success "Custom unattend.xml applied from URL."
             return
         }
@@ -1498,7 +1500,7 @@ function Invoke-PostScript {
             $stepName = "Download post-script '$fileName'"
             $dest     = Join-Path $scriptDir $fileName
             Write-Host "  Downloading: $url -> $fileName"
-            Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing
+            Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -TimeoutSec 30
             $i++
         }
 
