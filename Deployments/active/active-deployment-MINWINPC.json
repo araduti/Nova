@@ -1,9 +1,9 @@
 {
     "id":  "active_MINWINPC",
-    "currentStep":  "Partition Disk 1...",
+    "currentStep":  "Apply Windows Image...",
     "deviceName":  "MINWINPC",
     "taskSequence":  "Default AmpCloud Task Sequence (Copy)",
     "startedAt":  1774734287894,
     "status":  "running",
-    "progress":  18
+    "progress":  27
 }
