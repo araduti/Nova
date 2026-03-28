@@ -12,6 +12,7 @@
 name = "ampcloud-oauth-proxy"
 main = "worker.js"
 compatibility_date = "2024-01-01"
+account_id = "deb57b55201f0395f39a3f5ea1df09e3"
 
 # Optional: uncomment to lock the proxy to a single browser origin.
 # You can also set this in the Cloudflare dashboard under

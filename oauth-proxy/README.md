@@ -24,7 +24,10 @@ wrangler login          # opens browser to authenticate
 
 ### 2. Deploy the Worker
 
-The repository includes a ready-to-use `wrangler.toml`.  Deploy directly:
+The repository includes a ready-to-use `wrangler.toml`.  If you are
+deploying to your own Cloudflare account, update the `account_id` field
+in `wrangler.toml` with your own Account ID (visible in `wrangler whoami`
+or in the Cloudflare dashboard).
 
 ```bash
 cd oauth-proxy
