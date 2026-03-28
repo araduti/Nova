@@ -250,6 +250,39 @@
             color: var(--danger);
             background: rgba(224, 62, 62, 0.15);
         }
+        .deploy-status.stale {
+            color: #e67700;
+            background: rgba(230, 119, 0, 0.15);
+        }
+        .deploy-card.stale {
+            border-color: #e67700;
+            opacity: 0.85;
+        }
+        .deploy-stale-banner {
+            background: rgba(230, 119, 0, 0.1);
+            color: #e67700;
+            font-size: 12px;
+            padding: 6px 10px;
+            border-radius: 6px;
+            margin-top: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .deploy-dismiss-btn {
+            background: none;
+            border: 1px solid #e67700;
+            color: #e67700;
+            cursor: pointer;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+        .deploy-dismiss-btn:hover {
+            background: rgba(230, 119, 0, 0.15);
+        }
         .deploy-status-dot {
             width: 8px;
             height: 8px;
@@ -1118,6 +1151,7 @@
     var GH_BRANCH = 'main';
     var GH_API    = 'https://api.github.com';
     var REFRESH_INTERVAL = 30000; /* poll every 30 s */
+    var STALE_THRESHOLD  = 4 * 60 * 60 * 1000; /* 4 hours in ms — deployments older than this are flagged stale */
 
     /* Entra ID → GitHub token exchange state (loaded from Config/auth.json) */
     var authConfig      = null;  /* populated by loadAuthConfig() */
@@ -1287,7 +1321,22 @@
     function refreshFromGitHub() {
         Promise.all([fetchDeploymentReports(), fetchActiveDeployments()])
             .then(function () { renderAll(); })
-            .catch(function () { /* network or rate-limit — use cached data */ });
+            .catch(function () {
+                /* Network or rate-limit — use cached data but still apply
+                   staleness filtering so orphaned entries don't persist
+                   indefinitely when the dashboard can't reach GitHub. */
+                var cached = getActiveDeployments();
+                if (cached.length > 0) {
+                    var autoExpire = 24 * 60 * 60 * 1000; /* 24 h hard cutoff */
+                    var filtered = cached.filter(function (d) {
+                        return d.startedAt && (Date.now() - d.startedAt) < autoExpire;
+                    });
+                    if (filtered.length !== cached.length) {
+                        saveActiveDeployments(filtered);
+                    }
+                }
+                renderAll();
+            });
     }
 
     function getAlertConfig() {
@@ -1355,6 +1404,17 @@
     }
 
     /* ── Active deployments panel ──────────────────────────────────── */
+    function isDeploymentStale(dep) {
+        if (!dep.startedAt) return false;
+        return (Date.now() - dep.startedAt) > STALE_THRESHOLD;
+    }
+
+    function dismissStaleDeployment(deviceId) {
+        var active = getActiveDeployments().filter(function (d) { return d.id !== deviceId; });
+        saveActiveDeployments(active);
+        renderAll();
+    }
+
     function renderActiveDeployments() {
         var active = getActiveDeployments();
         var container = document.getElementById('activeDeployments');
@@ -1372,11 +1432,25 @@
         container.innerHTML = '';
         active.forEach(function (dep) {
             var progress = dep.progress || 0;
-            var statusCls = dep.status === 'failed' ? 'failed' : (progress >= 100 ? 'success' : 'running');
-            var statusLabel = statusCls === 'running' ? 'In Progress' : (statusCls === 'success' ? 'Complete' : 'Failed');
+            var stale = isDeploymentStale(dep);
+            var statusCls = dep.status === 'failed' ? 'failed' : (stale ? 'stale' : (progress >= 100 ? 'success' : 'running'));
+            var statusLabel = stale ? 'Stale' : (statusCls === 'running' ? 'In Progress' : (statusCls === 'success' ? 'Complete' : 'Failed'));
+
+            var staleBanner = '';
+            if (stale) {
+                var elapsed = Date.now() - dep.startedAt;
+                var hours = Math.floor(elapsed / 3600000);
+                var mins  = Math.floor((elapsed % 3600000) / 60000);
+                var elapsedStr = hours > 0 ? hours + 'h ' + mins + 'm' : mins + 'm';
+                staleBanner =
+                    '<div class="deploy-stale-banner">' +
+                        '<span>&#9888; Running for ' + elapsedStr + ' — this deployment may have completed or failed without updating its status.</span>' +
+                        '<button type="button" class="deploy-dismiss-btn" onclick="dismissStaleDeployment(\'' + escapeHtml(dep.id || '') + '\')">Dismiss</button>' +
+                    '</div>';
+            }
 
             var html =
-                '<div class="deploy-card">' +
+                '<div class="deploy-card' + (stale ? ' stale' : '') + '">' +
                     '<div class="deploy-card-header">' +
                         '<div>' +
                             '<div class="deploy-card-name">' + escapeHtml(dep.deviceName || 'Unknown Device') + '</div>' +
@@ -1395,6 +1469,7 @@
                         '<span>Started: ' + formatDate(dep.startedAt) + '</span>' +
                         '<span>Progress: ' + progress + '%</span>' +
                     '</div>' +
+                    staleBanner +
                 '</div>';
 
             var card = document.createElement('div');
