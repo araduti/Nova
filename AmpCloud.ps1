@@ -907,14 +907,13 @@ function Install-WindowsImage {
 
     $stepName = ''
     try {
-        # Create the scratch directory early so both Get-WindowsImage and
-        # Expand-WindowsImage can use it.  In WinPE the default temp path
-        # lives on a RAM disk; redirecting DISM scratch to the OS drive
-        # prevents E_OUTOFMEMORY (0x8007000e) after large image downloads.
         $scratch = Join-Path $ScratchDir 'scratch'
         New-ScratchDirectory -Path $scratch
 
-        # Get the correct image index for the requested edition
+        # Get the correct image index for the requested edition.
+        # -ScratchDirectory redirects DISM temp files to the OS drive;
+        # without it DISM defaults to the WinPE RAM disk and fails with
+        # E_OUTOFMEMORY (0x8007000e) on large images.
         $stepName = 'Get-WindowsImage (enumerate editions)'
         $images = Get-WindowsImage -ImagePath $ImagePath -ScratchDirectory $scratch -ErrorAction Stop
         Write-Host "  Available editions in image:"
