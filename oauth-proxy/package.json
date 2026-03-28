@@ -1,0 +1,8 @@
+{
+  "name": "ampcloud-oauth-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy"
+  }
+}
