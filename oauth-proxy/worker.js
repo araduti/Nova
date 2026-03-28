@@ -17,7 +17,8 @@
  * Environment variables (Cloudflare dashboard → Settings → Variables):
  *   ALLOWED_ORIGIN              – (optional) Lock to a single origin.
  *   GITHUB_APP_ID               – (required for /api/token-exchange)
- *   GITHUB_APP_PRIVATE_KEY      – (required for /api/token-exchange) PEM key.
+ *   GITHUB_APP_PRIVATE_KEY      – (required for /api/token-exchange) PEM key
+ *                                  (PKCS#1 or PKCS#8).
  *   GITHUB_APP_INSTALLATION_ID  – (required for /api/token-exchange)
  *   ENTRA_TENANT_ID             – (optional) Restrict accepted Entra tokens
  *                                  to a specific tenant.
@@ -77,10 +78,59 @@ function corsHeaders(request, env) {
  * ──────────────────────────────────────────────────────────────────── */
 
 /**
+ * Wrap a PKCS#1 (RSA PRIVATE KEY) DER buffer in a PKCS#8 envelope so
+ * it can be imported via crypto.subtle.importKey('pkcs8', …).
+ *
+ * PKCS#8 structure:
+ *   SEQUENCE {
+ *     INTEGER 0,                                    -- version
+ *     SEQUENCE { OID 1.2.840.113549.1.1.1, NULL },  -- rsaEncryption
+ *     OCTET STRING { <pkcs1 bytes> }
+ *   }
+ */
+function wrapPkcs1InPkcs8(pkcs1Buf) {
+    const pkcs1 = new Uint8Array(pkcs1Buf);
+    const pkcs1Len = pkcs1.length;
+    /* Fixed parts: version (3) + AlgorithmIdentifier (15) + OCTET STRING tag+len (4) */
+    const innerLen = 22 + pkcs1Len;
+    const pkcs8 = new Uint8Array(4 + innerLen);
+    let o = 0;
+    /* outer SEQUENCE */
+    pkcs8[o++] = 0x30; pkcs8[o++] = 0x82;
+    pkcs8[o++] = (innerLen >> 8) & 0xFF; pkcs8[o++] = innerLen & 0xFF;
+    /* version INTEGER 0 */
+    pkcs8[o++] = 0x02; pkcs8[o++] = 0x01; pkcs8[o++] = 0x00;
+    /* AlgorithmIdentifier SEQUENCE */
+    pkcs8[o++] = 0x30; pkcs8[o++] = 0x0D;
+    pkcs8[o++] = 0x06; pkcs8[o++] = 0x09;
+    /* OID 1.2.840.113549.1.1.1 (rsaEncryption) */
+    pkcs8[o++] = 0x2A; pkcs8[o++] = 0x86; pkcs8[o++] = 0x48; pkcs8[o++] = 0x86;
+    pkcs8[o++] = 0xF7; pkcs8[o++] = 0x0D; pkcs8[o++] = 0x01; pkcs8[o++] = 0x01;
+    pkcs8[o++] = 0x01;
+    pkcs8[o++] = 0x05; pkcs8[o++] = 0x00; /* NULL */
+    /* OCTET STRING containing PKCS#1 key */
+    pkcs8[o++] = 0x04; pkcs8[o++] = 0x82;
+    pkcs8[o++] = (pkcs1Len >> 8) & 0xFF; pkcs8[o++] = pkcs1Len & 0xFF;
+    pkcs8.set(pkcs1, o);
+    return pkcs8.buffer;
+}
+
+/**
  * Import a PEM-encoded RSA private key for signing JWTs.
+ *
+ * Accepts both PKCS#8 (BEGIN PRIVATE KEY) and PKCS#1
+ * (BEGIN RSA PRIVATE KEY) formats.  GitHub generates PKCS#1 keys by
+ * default, so we auto-wrap them in a PKCS#8 envelope for Web Crypto.
+ *
+ * Also normalises literal "\n" sequences that are common when PEM keys
+ * are pasted into secret-manager UIs or environment variables.
  */
 async function importPrivateKey(pem) {
-    const pemContents = pem
+    /* Normalise literal \n that secret managers sometimes introduce */
+    const normalised = pem.replace(/\\n/g, '\n');
+    const isPkcs1 = normalised.includes('BEGIN RSA PRIVATE KEY');
+
+    const pemContents = normalised
         .replace(/-----BEGIN RSA PRIVATE KEY-----/, '')
         .replace(/-----END RSA PRIVATE KEY-----/, '')
         .replace(/-----BEGIN PRIVATE KEY-----/, '')
@@ -88,17 +138,21 @@ async function importPrivateKey(pem) {
         .replace(/\s/g, '');
     const binaryDer = Uint8Array.from(atob(pemContents), c => c.charCodeAt(0));
 
-    /* Try PKCS#8 first (BEGIN PRIVATE KEY), fall back to PKCS#1 */
-    try {
+    if (isPkcs1) {
+        /* GitHub-generated PKCS#1 key — wrap in PKCS#8 for Web Crypto */
         return await crypto.subtle.importKey(
-            'pkcs8', binaryDer.buffer,
+            'pkcs8', wrapPkcs1InPkcs8(binaryDer.buffer),
             { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
             false, ['sign']
         );
-    } catch {
-        /* Some keys are PKCS#1 (BEGIN RSA PRIVATE KEY) — wrap in PKCS#8 */
-        throw new Error('Unsupported private key format. Use PKCS#8 (BEGIN PRIVATE KEY).');
     }
+
+    /* PKCS#8 key — import directly */
+    return await crypto.subtle.importKey(
+        'pkcs8', binaryDer.buffer,
+        { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+        false, ['sign']
+    );
 }
 
 /**
