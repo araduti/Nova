@@ -1,9 +1,9 @@
 {
     "id":  "active_MINWINPC",
-    "currentStep":  "Import Autopilot Device...",
+    "currentStep":  "Apply Autopilot Configuration...",
     "deviceName":  "MINWINPC",
     "taskSequence":  "Default AmpCloud Task Sequence (Copy)",
     "startedAt":  1774734287894,
     "status":  "running",
-    "progress":  55
+    "progress":  64
 }
