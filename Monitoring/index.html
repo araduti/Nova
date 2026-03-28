@@ -1268,8 +1268,8 @@
     function fetchGitHubDir(dirPath) {
         var url = GH_API + '/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/' + dirPath + '?ref=' + GH_BRANCH;
         return fetch(url, { headers: getGitHubHeaders() })
-            .then(function (r) { return r.ok ? r.json() : []; })
-            .catch(function () { return []; });
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .catch(function () { return null; });
     }
 
     function fetchGitHubFile(downloadUrl) {
