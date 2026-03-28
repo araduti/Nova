@@ -152,7 +152,7 @@ async function handleTokenExchange(request, env, cors) {
         });
         if (!graphResp.ok) {
             let graphErr = '';
-            try { graphErr = await graphResp.text(); } catch { /* ignore */ }
+            try { graphErr = await graphResp.text(); } catch { /* response body unavailable */ }
             return new Response(JSON.stringify({
                 error: 'invalid_token',
                 error_description: 'Entra ID token validation failed (Graph /me returned HTTP ' +

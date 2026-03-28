@@ -439,7 +439,7 @@ function Get-GitHubTokenViaEntra {
                     $reader.Close()
                 } catch { }
             }
-            Write-Warning "Entra→GitHub token exchange failed (HTTP $statusCode): $($errBody.Substring(0, [math]::Min($errBody.Length, 200)))"
+            Write-Warning "Entra→GitHub token exchange failed (HTTP $statusCode): $(if ($errBody) { $errBody.Substring(0, [math]::Min($errBody.Length, 200)) } else { '(no response body)' })"
             $script:EntraExchangeLastFailure = Get-Date
         }
     } catch {
