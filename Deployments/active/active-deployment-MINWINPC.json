@@ -1,9 +1,9 @@
 {
     "id":  "active_MINWINPC",
-    "currentStep":  "Set Regional Settings...",
+    "currentStep":  "Partition Disk 1...",
     "deviceName":  "MINWINPC",
     "taskSequence":  "Default AmpCloud Task Sequence (Copy)",
     "startedAt":  1774734287894,
     "status":  "running",
-    "progress":  9
+    "progress":  18
 }
