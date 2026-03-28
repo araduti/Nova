@@ -959,6 +959,11 @@
     var GH_API    = 'https://api.github.com';
     var REFRESH_INTERVAL = 30000; /* poll every 30 s */
 
+    /* Entra ID → GitHub token exchange state (loaded from Config/auth.json) */
+    var authConfig      = null;  /* populated by loadAuthConfig() */
+    var cachedGhToken   = null;  /* GitHub token obtained via Entra exchange */
+    var ghTokenExpiry   = 0;     /* Unix-ms when cachedGhToken expires */
+
     /* ── Utility helpers ───────────────────────────────────────────── */
     function escapeHtml(str) {
         var d = document.createElement('div');
@@ -1005,22 +1010,75 @@
         localStorage.setItem(ACTIVE_KEY, JSON.stringify(records));
     }
 
+    /* ── Auth config & Entra → GitHub token exchange ───────────────── */
+    /*  Loads Config/auth.json and uses the OAuth proxy's
+        /api/token-exchange endpoint to convert an Entra ID session
+        token into a scoped GitHub installation token.  This lets the
+        dashboard make authenticated GitHub API calls (5 000 req/hr)
+        without requiring a separate GitHub PAT.
+        If the exchange is unavailable the dashboard falls back to
+        unauthenticated reads (60 req/hr, fine for public repos).     */
+
+    function loadAuthConfig() {
+        var url = 'https://raw.githubusercontent.com/' + GH_OWNER + '/' + GH_REPO + '/' + GH_BRANCH + '/Config/auth.json';
+        return fetch(url)
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (cfg) { authConfig = cfg; })
+            .catch(function () { authConfig = null; });
+    }
+
+    function exchangeEntraToken(entraToken) {
+        if (!authConfig || !authConfig.githubOAuthProxy) {
+            return Promise.resolve(null);
+        }
+        return fetch(authConfig.githubOAuthProxy + '/api/token-exchange', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + entraToken,
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+            if (data && data.token) {
+                cachedGhToken = data.token;
+                ghTokenExpiry = data.expires_at
+                    ? new Date(data.expires_at).getTime()
+                    : Date.now() + 55 * 60 * 1000; /* 55 min — 5-min safety buffer before typical 60-min expiry */
+                return data.token;
+            }
+            return null;
+        })
+        .catch(function () { return null; });
+    }
+
+    function getGitHubHeaders() {
+        var headers = { Accept: 'application/vnd.github.v3+json' };
+        if (cachedGhToken && Date.now() < ghTokenExpiry) {
+            headers['Authorization'] = 'Bearer ' + cachedGhToken;
+        }
+        return headers;
+    }
+
     /* ── GitHub data fetch ─────────────────────────────────────────── */
     /*  Fetches per-device JSON files pushed by the engine via the
         GitHub Contents API.  This bridges the gap between the engine
         (which writes files atomically with PUT) and the dashboard
         (which reads them here).  Each device gets its own file so
-        concurrent deployments never collide or block each other.     */
+        concurrent deployments never collide or block each other.
+        When an Entra-derived GitHub token is available, requests are
+        authenticated (5 000 req/hr); otherwise falls back to
+        unauthenticated reads (60 req/hr, fine for public repos).     */
 
     function fetchGitHubDir(dirPath) {
         var url = GH_API + '/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/' + dirPath + '?ref=' + GH_BRANCH;
-        return fetch(url, { headers: { Accept: 'application/vnd.github.v3+json' } })
+        return fetch(url, { headers: getGitHubHeaders() })
             .then(function (r) { return r.ok ? r.json() : []; })
             .catch(function () { return []; });
     }
 
     function fetchGitHubFile(downloadUrl) {
-        return fetch(downloadUrl)
+        return fetch(downloadUrl, { headers: getGitHubHeaders() })
             .then(function (r) { return r.ok ? r.json() : null; })
             .catch(function () { return null; });
     }
@@ -1667,7 +1725,7 @@
     /* ── Init ──────────────────────────────────────────────────────── */
     loadAlertConfig();
     renderAll();
-    refreshFromGitHub();
+    loadAuthConfig().then(function () { refreshFromGitHub(); });
     setInterval(refreshFromGitHub, REFRESH_INTERVAL);
     </script>
 </body>

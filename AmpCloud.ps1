@@ -346,6 +346,57 @@ function Send-DeploymentAlert {
     }
 }
 
+function Get-GitHubTokenViaEntra {
+    <#
+    .SYNOPSIS  Exchanges an Entra ID token for a GitHub installation token.
+    .DESCRIPTION
+        Calls the AmpCloud OAuth proxy's /api/token-exchange endpoint to
+        convert the Entra ID access token (already obtained during sign-in
+        by Bootstrap.ps1 and stored in $env:AMPCLOUD_GRAPH_TOKEN) into a
+        short-lived GitHub App installation access token scoped to
+        contents:write.
+
+        This eliminates the need for a separate $env:GITHUB_TOKEN.  The
+        proxy validates the Entra token against Microsoft Graph and only
+        issues a GitHub token to authenticated users.
+
+        Returns $null if the exchange is not available (no Entra token,
+        no proxy configured, or proxy returns an error).
+    #>
+    $entraToken = $env:AMPCLOUD_GRAPH_TOKEN
+    if (-not $entraToken) { return $null }
+
+    # ── Resolve the OAuth proxy URL from Config/auth.json ──────────
+    $proxyUrl = $null
+    try {
+        $cfgUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/auth.json"
+        $cfg = Invoke-RestMethod -Uri $cfgUrl -UseBasicParsing -ErrorAction Stop
+        $proxyUrl = $cfg.githubOAuthProxy
+    } catch {
+        Write-Verbose "Could not load auth config for Entra exchange: $_"
+    }
+    if (-not $proxyUrl) { return $null }
+
+    # ── Call the proxy's token exchange endpoint ───────────────────
+    try {
+        $exchangeUrl = "$proxyUrl/api/token-exchange"
+        $headers = @{
+            'Authorization' = "Bearer $entraToken"
+            'Content-Type'  = 'application/json'
+            'User-Agent'    = 'AmpCloud-Engine'
+        }
+        $result = Invoke-RestMethod -Uri $exchangeUrl -Method Post `
+            -Headers $headers -UseBasicParsing -ErrorAction Stop
+        if ($result.token) {
+            Write-Verbose "GitHub token obtained via Entra ID exchange (user: $($result.user))"
+            return $result.token
+        }
+    } catch {
+        Write-Verbose "Entra→GitHub token exchange failed: $_"
+    }
+    return $null
+}
+
 function Push-ReportToGitHub {
     <#
     .SYNOPSIS  Pushes a deployment JSON file to the GitHub repo via the Contents API.
@@ -357,10 +408,16 @@ function Push-ReportToGitHub {
         The API call is atomic — there is no git clone/push, so it cannot
         conflict with the .github/ workflows or block other pushes.
 
-        Requires a GitHub token with contents:write scope.  The token is read
-        from -Token, then from $env:GITHUB_TOKEN.  If neither is available the
-        function silently returns so that deployments still succeed without a
-        configured token.
+        Token resolution order:
+          1. -Token parameter (explicit)
+          2. $env:GITHUB_TOKEN (classic PAT — backward compatible)
+          3. Entra ID exchange — if $env:AMPCLOUD_GRAPH_TOKEN is set and the
+             OAuth proxy (from Config/auth.json) is configured, the Entra
+             token is exchanged for a short-lived GitHub installation token.
+             This is the recommended path: no separate GitHub PAT required.
+
+        If no token can be resolved the function silently returns so that
+        deployments still succeed without any token configured.
     #>
     param(
         [Parameter(Mandatory)]
@@ -369,6 +426,11 @@ function Push-ReportToGitHub {
         [string]$Token  = $env:GITHUB_TOKEN,
         [switch]$Delete
     )
+
+    # ── Token resolution: try Entra exchange when no explicit token ──
+    if (-not $Token) {
+        $Token = Get-GitHubTokenViaEntra
+    }
     if (-not $Token) { return }
     try {
         $apiUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/$FilePath"
