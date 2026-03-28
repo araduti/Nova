@@ -1,0 +1,9 @@
+{
+    "id":  "active_MINWINPC",
+    "currentStep":  "Set Computer Name...",
+    "deviceName":  "MINWINPC",
+    "taskSequence":  "Default AmpCloud Task Sequence (Copy)",
+    "startedAt":  1774734287894,
+    "status":  "running",
+    "progress":  0
+}
