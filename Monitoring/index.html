@@ -1364,7 +1364,7 @@
                 '<div class="deploy-empty">' +
                     '<div class="deploy-empty-icon">&#128203;</div>' +
                     '<p>No active deployments. Deployment status will appear here in real time when devices are being imaged.</p>' +
-                    '<p style="margin-top:8px"><button class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p>' +
+                    '<p style="margin-top:8px"><button type="button" class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p>' +
                 '</div>';
             return;
         }
@@ -1469,7 +1469,7 @@
         var total   = success + failed;
 
         if (total === 0) {
-            container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No deployment data yet.</p><p style="margin-top:8px"><button class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p></div>';
+            container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No deployment data yet.</p><p style="margin-top:8px"><button type="button" class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p></div>';
             return;
         }
 
@@ -1527,7 +1527,7 @@
         }).sort(function (a, b) { return b.count - a.count; }).slice(0, 8);
 
         if (errors.length === 0) {
-            container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No errors recorded.</p><p style="margin-top:8px"><button class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p></div>';
+            container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No errors recorded.</p><p style="margin-top:8px"><button type="button" class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p></div>';
             return;
         }
 
@@ -1610,7 +1610,7 @@
         filtered.sort(function (a, b) { return (b.startedAt || 0) - (a.startedAt || 0); });
 
         if (filtered.length === 0) {
-            body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No deployment records found. <button class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></td></tr>';
+            body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No deployment records found. <button type="button" class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></td></tr>';
             return;
         }
 
@@ -1898,7 +1898,7 @@
         var iconEl = el.querySelector('.diag-check-icon');
         var detailEl = el.querySelector('.diag-check-detail');
         iconEl.className = 'diag-check-icon ' + state;
-        iconEl.textContent = state === 'pass' ? '\u2713' : (state === 'fail' ? '\u2717' : (state === 'warn' ? '!' : ''));
+        iconEl.textContent = ({ pass: '\u2713', fail: '\u2717', warn: '!' })[state] || '';
         detailEl.textContent = detail;
     }
 
@@ -1976,7 +1976,8 @@
         /* 3. Authentication status */
         (function checkAuth() {
             if (cachedGhToken && Date.now() < ghTokenExpiry) {
-                var remaining = Math.round((ghTokenExpiry - Date.now()) / 60000);
+                var remainingMs = ghTokenExpiry - Date.now();
+                var remaining = Math.ceil(remainingMs / 60000);
                 finish('ghAuth', 'pass', 'Authenticated with GitHub token (expires in ~' + remaining + ' min). Rate limit: 5,000 req/hr.');
             } else if (cachedGhToken && Date.now() >= ghTokenExpiry) {
                 finish('ghAuth', 'warn', 'GitHub token has expired. The dashboard will use unauthenticated access (60 req/hr). Re-authenticate via Entra ID to restore higher limits.');
