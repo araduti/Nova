@@ -87,6 +87,11 @@ $script:MbrSystemSize = 500MB
 $script:DownloadBufferSize  = 65536   # 64 KB read buffer
 $script:ProgressIntervalMs  = 1000    # Minimum ms between progress updates
 
+# Cached GitHub token obtained via Entra ID exchange so we don't re-fetch
+# on every status update call.
+$script:CachedEntraGitHubToken = $null
+$script:CachedEntraGitHubTokenTime = [datetime]::MinValue
+
 #region ── Helpers ──────────────────────────────────────────────────────────────
 
 function Write-Step {
@@ -363,6 +368,12 @@ function Get-GitHubTokenViaEntra {
         Returns $null if the exchange is not available (no Entra token,
         no proxy configured, or proxy returns an error).
     #>
+    # Return the cached token when available and not expired (GitHub App
+    # installation tokens are valid for 1 hour; re-fetch after 55 min).
+    if ($script:CachedEntraGitHubToken -and ((Get-Date) - $script:CachedEntraGitHubTokenTime).TotalMinutes -lt 55) {
+        return $script:CachedEntraGitHubToken
+    }
+
     $entraToken = $env:AMPCLOUD_GRAPH_TOKEN
     if (-not $entraToken) { return $null }
 
@@ -370,7 +381,7 @@ function Get-GitHubTokenViaEntra {
     $proxyUrl = $null
     try {
         $cfgUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/auth.json"
-        $cfg = Invoke-RestMethod -Uri $cfgUrl -UseBasicParsing -ErrorAction Stop
+        $cfg = Invoke-RestMethod -Uri $cfgUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
         $proxyUrl = $cfg.githubOAuthProxy
     } catch {
         Write-Verbose "Could not load auth config for Entra exchange: $_"
@@ -386,9 +397,11 @@ function Get-GitHubTokenViaEntra {
             'User-Agent'    = 'AmpCloud-Engine'
         }
         $result = Invoke-RestMethod -Uri $exchangeUrl -Method Post `
-            -Headers $headers -UseBasicParsing -ErrorAction Stop
+            -Headers $headers -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
         if ($result.token) {
             Write-Verbose "GitHub token obtained via Entra ID exchange (user: $($result.user))"
+            $script:CachedEntraGitHubToken = $result.token
+            $script:CachedEntraGitHubTokenTime = Get-Date
             return $result.token
         }
     } catch {
@@ -444,7 +457,7 @@ function Push-ReportToGitHub {
         $sha = $null
         try {
             $existing = Invoke-RestMethod -Uri $apiUrl -Headers $headers `
-                -Method Get -UseBasicParsing -ErrorAction Stop
+                -Method Get -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
             $sha = $existing.sha
         } catch {
             # File does not exist yet — that is fine for creates
@@ -459,7 +472,7 @@ function Push-ReportToGitHub {
             } | ConvertTo-Json
             Invoke-RestMethod -Uri $apiUrl -Headers $headers `
                 -Method Delete -Body $body -ContentType 'application/json' `
-                -UseBasicParsing -ErrorAction Stop | Out-Null
+                -UseBasicParsing -ErrorAction Stop -TimeoutSec 15 | Out-Null
         } else {
             $jsonBytes  = [System.Text.Encoding]::UTF8.GetBytes(($Content | ConvertTo-Json))
             $b64Content = [Convert]::ToBase64String($jsonBytes)
@@ -472,7 +485,7 @@ function Push-ReportToGitHub {
             $body = $body | ConvertTo-Json
             Invoke-RestMethod -Uri $apiUrl -Headers $headers `
                 -Method Put -Body $body -ContentType 'application/json' `
-                -UseBasicParsing -ErrorAction Stop | Out-Null
+                -UseBasicParsing -ErrorAction Stop -TimeoutSec 15 | Out-Null
         }
     } catch {
         Write-Verbose "GitHub report push suppressed: $_"
@@ -1862,10 +1875,15 @@ try {
 
         # Update active deployment report so the Monitoring dashboard can
         # display in-progress status for this device.
+        # Wrapped in try/catch so a failed status update never blocks imaging.
         $stepPct = if ($enabledSteps.Count -gt 0) { [math]::Min(100, [math]::Round(($i / $enabledSteps.Count) * 100)) } else { 0 }
-        Update-ActiveDeploymentReport -TaskSequence $tsName `
-            -CurrentStep "$($s.name)..." -Progress $stepPct `
-            -StartTime $script:DeploymentStartTime
+        try {
+            Update-ActiveDeploymentReport -TaskSequence $tsName `
+                -CurrentStep "$($s.name)..." -Progress $stepPct `
+                -StartTime $script:DeploymentStartTime
+        } catch {
+            Write-Verbose "Non-blocking: active deployment report update failed for step '$($s.name)': $_"
+        }
 
         # After PartitionDisk, redirect scratch to OS drive
         if ($s.type -eq 'PartitionDisk') {
@@ -1897,7 +1915,8 @@ try {
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
 
     # Clear active deployment file — device is no longer deploying
-    Update-ActiveDeploymentReport -Clear
+    try { Update-ActiveDeploymentReport -Clear }
+    catch { Write-Verbose "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
 
     Save-DeploymentReport -Status 'success' -TaskSequence $tsName `
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count `
@@ -1940,7 +1959,8 @@ try {
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
 
     # Clear active deployment file — device is no longer deploying
-    Update-ActiveDeploymentReport -Clear
+    try { Update-ActiveDeploymentReport -Clear }
+    catch { Write-Verbose "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
 
     Save-DeploymentReport -Status 'failed' -TaskSequence $tsName `
         -StepsCompleted $script:CompletedStepCount -StepsTotal $totalSteps `
