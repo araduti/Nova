@@ -1882,7 +1882,7 @@ try {
         $stepName = $s.name
 
         # Evaluate step condition (if any) before execution
-        if ($s.condition -and $s.condition.type) {
+        if ($s.PSObject.Properties['condition'] -and $s.condition -and $s.condition.type) {
             if (-not (Test-StepCondition -Condition $s.condition)) {
                 Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type)) — condition not met, skipping"
                 continue
@@ -1918,7 +1918,7 @@ try {
                     -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
                     -CurrentDiskNumber $TargetDiskNumber
             } catch {
-                if ($s.continueOnError) {
+                if ($s.PSObject.Properties['continueOnError'] -and $s.continueOnError) {
                     Write-Warn "Step '$($s.name)' failed but continueOnError is set — continuing: $_"
                 } else {
                     throw
