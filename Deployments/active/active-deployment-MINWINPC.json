@@ -1,9 +1,9 @@
 {
     "id":  "active_MINWINPC",
-    "currentStep":  "Apply Windows Image...",
+    "currentStep":  "Configure Bootloader...",
     "deviceName":  "MINWINPC",
     "taskSequence":  "Default AmpCloud Task Sequence (Copy)",
     "startedAt":  1774734287894,
     "status":  "running",
-    "progress":  27
+    "progress":  36
 }
