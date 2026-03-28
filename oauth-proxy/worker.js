@@ -151,9 +151,14 @@ async function handleTokenExchange(request, env, cors) {
             headers: { 'Authorization': 'Bearer ' + entraToken }
         });
         if (!graphResp.ok) {
+            let graphErr = '';
+            try { graphErr = await graphResp.text(); } catch { /* ignore */ }
             return new Response(JSON.stringify({
                 error: 'invalid_token',
-                error_description: 'Entra ID token validation failed. Ensure the token has User.Read scope.'
+                error_description: 'Entra ID token validation failed (Graph /me returned HTTP ' +
+                    graphResp.status + '). Ensure the token has User.Read scope and is not expired.',
+                graph_status: graphResp.status,
+                graph_error: graphErr.substring(0, 500)
             }), { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
         }
         graphUser = await graphResp.json();
