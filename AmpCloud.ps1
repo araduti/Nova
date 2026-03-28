@@ -91,6 +91,8 @@ $script:ProgressIntervalMs  = 1000    # Minimum ms between progress updates
 # on every status update call.
 $script:CachedEntraGitHubToken = $null
 $script:CachedEntraGitHubTokenTime = [datetime]::MinValue
+# Negative cache: avoid retrying a recently-failed token exchange.
+$script:EntraExchangeLastFailure = $null
 
 #region ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -374,6 +376,11 @@ function Get-GitHubTokenViaEntra {
         return $script:CachedEntraGitHubToken
     }
 
+    # Don't retry a recently failed exchange (wait at least 5 min).
+    if ($script:EntraExchangeLastFailure -and ((Get-Date) - $script:EntraExchangeLastFailure).TotalMinutes -lt 5) {
+        return $null
+    }
+
     $entraToken = $env:AMPCLOUD_GRAPH_TOKEN
     if (-not $entraToken) { return $null }
 
@@ -389,23 +396,57 @@ function Get-GitHubTokenViaEntra {
     if (-not $proxyUrl) { return $null }
 
     # ── Call the proxy's token exchange endpoint ───────────────────
+    # Uses .NET HttpWebRequest instead of Invoke-RestMethod so that HTTP
+    # error responses (e.g. 401 for an expired Entra token) do not produce
+    # PS>TerminatingError transcript entries that look like unhandled errors.
+    $resp = $null
     try {
         $exchangeUrl = "$proxyUrl/api/token-exchange"
-        $headers = @{
-            'Authorization' = "Bearer $entraToken"
-            'Content-Type'  = 'application/json'
-            'User-Agent'    = 'AmpCloud-Engine'
+        $req = [System.Net.HttpWebRequest]::Create($exchangeUrl)
+        $req.Method      = 'POST'
+        $req.ContentType = 'application/json'
+        $req.Headers.Add('Authorization', "Bearer $entraToken")
+        $req.UserAgent   = 'AmpCloud-Engine'
+        $req.Timeout         = 15000
+        $req.ReadWriteTimeout = 15000
+
+        $statusCode = 0
+        try {
+            $resp       = $req.GetResponse()
+            $statusCode = [int]$resp.StatusCode
+        } catch [System.Net.WebException] {
+            $resp       = $_.Exception.Response
+            $statusCode = if ($resp) { [int]$resp.StatusCode } else { 0 }
         }
-        $result = Invoke-RestMethod -Uri $exchangeUrl -Method Post `
-            -Headers $headers -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
-        if ($result.token) {
-            Write-Verbose "GitHub token obtained via Entra ID exchange (user: $($result.user))"
-            $script:CachedEntraGitHubToken = $result.token
-            $script:CachedEntraGitHubTokenTime = Get-Date
-            return $result.token
+
+        if ($statusCode -eq 200 -and $resp) {
+            $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+            $body   = $reader.ReadToEnd()
+            $reader.Close()
+            $result = $body | ConvertFrom-Json
+            if ($result.token) {
+                Write-Verbose "GitHub token obtained via Entra ID exchange (user: $($result.user))"
+                $script:CachedEntraGitHubToken     = $result.token
+                $script:CachedEntraGitHubTokenTime = Get-Date
+                return $result.token
+            }
+        } else {
+            $errBody = ''
+            if ($resp) {
+                try {
+                    $reader  = New-Object System.IO.StreamReader($resp.GetResponseStream())
+                    $errBody = $reader.ReadToEnd()
+                    $reader.Close()
+                } catch { }
+            }
+            Write-Warning "Entra→GitHub token exchange failed (HTTP $statusCode): $(if ($errBody) { $errBody.Substring(0, [math]::Min($errBody.Length, 200)) } else { '(no response body)' })"
+            $script:EntraExchangeLastFailure = Get-Date
         }
     } catch {
         Write-Verbose "Entra→GitHub token exchange failed: $_"
+        $script:EntraExchangeLastFailure = Get-Date
+    } finally {
+        if ($resp) { $resp.Close() }
     }
     return $null
 }
@@ -1882,7 +1923,7 @@ try {
         $stepName = $s.name
 
         # Evaluate step condition (if any) before execution
-        if ($s.condition -and $s.condition.type) {
+        if ($s.PSObject.Properties['condition'] -and $s.condition -and $s.condition.type) {
             if (-not (Test-StepCondition -Condition $s.condition)) {
                 Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type)) — condition not met, skipping"
                 continue
@@ -1918,7 +1959,7 @@ try {
                     -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
                     -CurrentDiskNumber $TargetDiskNumber
             } catch {
-                if ($s.continueOnError) {
+                if ($s.PSObject.Properties['continueOnError'] -and $s.continueOnError) {
                     Write-Warn "Step '$($s.name)' failed but continueOnError is set — continuing: $_"
                 } else {
                     throw
