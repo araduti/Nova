@@ -376,7 +376,7 @@ function Get-GitHubTokenViaEntra {
         return $script:CachedEntraGitHubToken
     }
 
-    # Don't retry a recently-failed exchange (wait at least 5 min).
+    # Don't retry a recently failed exchange (wait at least 5 min).
     if ($script:EntraExchangeLastFailure -and ((Get-Date) - $script:EntraExchangeLastFailure).TotalMinutes -lt 5) {
         return $null
     }
@@ -439,7 +439,7 @@ function Get-GitHubTokenViaEntra {
                     $reader.Close()
                 } catch { }
             }
-            Write-Warning "Entra→GitHub token exchange failed (HTTP $statusCode): $errBody"
+            Write-Warning "Entra→GitHub token exchange failed (HTTP $statusCode): $($errBody.Substring(0, [math]::Min($errBody.Length, 200)))"
             $script:EntraExchangeLastFailure = Get-Date
         }
     } catch {
