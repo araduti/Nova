@@ -1734,33 +1734,33 @@ function Invoke-TaskSequenceStep {
 
     switch ($Step.type) {
         'PartitionDisk' {
-            $disk = if ($p -and $null -ne $p.diskNumber) { $p.diskNumber } else { $CurrentDiskNumber }
-            $drv  = if ($p -and $p.osDriveLetter)        { $p.osDriveLetter } else { $CurrentOSDrive }
+            $disk = if ($p -and $p.PSObject.Properties['diskNumber'] -and $null -ne $p.diskNumber) { $p.diskNumber } else { $CurrentDiskNumber }
+            $drv  = if ($p -and $p.PSObject.Properties['osDriveLetter'] -and $p.osDriveLetter) { $p.osDriveLetter } else { $CurrentOSDrive }
             Update-BootstrapStatus -Message "Partitioning disk..." -Detail "Creating layout on disk $disk" -Step $uiStep -Progress $pct
             Initialize-TargetDisk -DiskNumber $disk -FirmwareType $CurrentFirmwareType -OSDriveLetter $drv
         }
         'ImportAutopilot' {
-            $tag   = if ($p -and $p.groupTag)  { $p.groupTag }  else { '' }
-            $email = if ($p -and $p.userEmail) { $p.userEmail } else { '' }
+            $tag   = if ($p -and $p.PSObject.Properties['groupTag']  -and $p.groupTag)  { $p.groupTag }  else { '' }
+            $email = if ($p -and $p.PSObject.Properties['userEmail'] -and $p.userEmail) { $p.userEmail } else { '' }
             Update-BootstrapStatus -Message "Importing Autopilot device..." -Detail "Registering device in Windows Autopilot" -Step $uiStep -Progress $pct
             Invoke-AutopilotImport -GroupTag $tag -UserEmail $email
         }
         'DownloadImage' {
-            $url  = if ($p -and $p.imageUrl)      { $p.imageUrl }      else { '' }
-            $ed   = if ($p -and $p.edition)        { $p.edition }       else { 'Professional' }
-            $lang = if ($p -and $p.language)        { $p.language }      else { 'en-us' }
-            $arch = if ($p -and $p.architecture)    { $p.architecture }  else { 'x64' }
+            $url  = if ($p -and $p.PSObject.Properties['imageUrl']      -and $p.imageUrl)      { $p.imageUrl }      else { '' }
+            $ed   = if ($p -and $p.PSObject.Properties['edition']       -and $p.edition)       { $p.edition }       else { 'Professional' }
+            $lang = if ($p -and $p.PSObject.Properties['language']      -and $p.language)      { $p.language }      else { 'en-us' }
+            $arch = if ($p -and $p.PSObject.Properties['architecture']  -and $p.architecture)  { $p.architecture }  else { 'x64' }
             Update-BootstrapStatus -Message "Downloading Windows image..." -Detail "Fetching $ed $lang $arch" -Step $uiStep -Progress $pct
             $script:TsImagePath = Get-WindowsImageSource `
                 -ImageUrl $url -Edition $ed -Language $lang -Architecture $arch `
                 -FirmwareType $CurrentFirmwareType -ScratchDir $CurrentScratchDir
         }
         'ApplyImage' {
-            $ed   = if ($p -and $p.edition)        { $p.edition }       else { 'Professional' }
-            $lang = if ($p -and $p.language)        { $p.language }      else { 'en-us' }
-            $arch = if ($p -and $p.architecture)    { $p.architecture }  else { 'x64' }
+            $ed   = if ($p -and $p.PSObject.Properties['edition']       -and $p.edition)       { $p.edition }       else { 'Professional' }
+            $lang = if ($p -and $p.PSObject.Properties['language']      -and $p.language)      { $p.language }      else { 'en-us' }
+            $arch = if ($p -and $p.PSObject.Properties['architecture']  -and $p.architecture)  { $p.architecture }  else { 'x64' }
             if (-not $script:TsImagePath) {
-                $url = if ($p -and $p.imageUrl) { $p.imageUrl } else { '' }
+                $url = if ($p -and $p.PSObject.Properties['imageUrl'] -and $p.imageUrl) { $p.imageUrl } else { '' }
                 Update-BootstrapStatus -Message "Downloading Windows image..." -Detail "Fetching $ed $lang $arch" -Step $uiStep -Progress $pct
                 $script:TsImagePath = Get-WindowsImageSource `
                     -ImageUrl $url -Edition $ed -Language $lang -Architecture $arch `
@@ -1774,7 +1774,7 @@ function Invoke-TaskSequenceStep {
             Set-Bootloader -OSDriveLetter $CurrentOSDrive -FirmwareType $CurrentFirmwareType -DiskNumber $CurrentDiskNumber
         }
         'InjectDrivers' {
-            $dp = if ($p -and $p.driverPath) { $p.driverPath } else { '' }
+            $dp = if ($p -and $p.PSObject.Properties['driverPath'] -and $p.driverPath) { $p.driverPath } else { '' }
             Update-BootstrapStatus -Message "Injecting drivers..." -Detail "Adding drivers" -Step $uiStep -Progress $pct
             Add-Driver -DriverPath $dp -OSDriveLetter $CurrentOSDrive
         }
@@ -1783,13 +1783,13 @@ function Invoke-TaskSequenceStep {
             Invoke-OemDriverInjection -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
         'ApplyAutopilot' {
-            $jUrl  = if ($p -and $p.jsonUrl)  { $p.jsonUrl }  else { '' }
-            $jPath = if ($p -and $p.jsonPath) { $p.jsonPath } else { '' }
+            $jUrl  = if ($p -and $p.PSObject.Properties['jsonUrl']  -and $p.jsonUrl)  { $p.jsonUrl }  else { '' }
+            $jPath = if ($p -and $p.PSObject.Properties['jsonPath'] -and $p.jsonPath) { $p.jsonPath } else { '' }
             Update-BootstrapStatus -Message "Applying Autopilot configuration..." -Detail "Embedding provisioning profile" -Step $uiStep -Progress $pct
             Set-AutopilotConfig -JsonUrl $jUrl -JsonPath $jPath -OSDriveLetter $CurrentOSDrive
         }
         'StageCCMSetup' {
-            $url = if ($p -and $p.ccmSetupUrl) { $p.ccmSetupUrl } else { '' }
+            $url = if ($p -and $p.PSObject.Properties['ccmSetupUrl'] -and $p.ccmSetupUrl) { $p.ccmSetupUrl } else { '' }
             Update-BootstrapStatus -Message "Staging ConfigMgr setup..." -Detail "Preparing ccmsetup.exe" -Step $uiStep -Progress $pct
             Install-CCMSetup -CCMSetupUrl $url -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
@@ -1797,11 +1797,11 @@ function Invoke-TaskSequenceStep {
             # Resolve computer name from naming rules or use the static value.
             # The Task Sequence Editor and Bootstrap config modal handle syncing
             # names into unattendContent — the engine just resolves and logs.
-            $cName = if ($p -and $p.computerName) { $p.computerName } else { '' }
+            $cName = if ($p -and $p.PSObject.Properties['computerName'] -and $p.computerName) { $p.computerName } else { '' }
             if (-not $cName -and $p) {
                 # Determine naming source (backward compat: useSerialNumber → serialNumber)
-                $source = if ($p.namingSource) { $p.namingSource }
-                          elseif ($p.useSerialNumber) { 'serialNumber' }
+                $source = if ($p.PSObject.Properties['namingSource'] -and $p.namingSource) { $p.namingSource }
+                          elseif ($p.PSObject.Properties['useSerialNumber'] -and $p.useSerialNumber) { 'serialNumber' }
                           else { 'randomDigits' }
                 $base = ''
                 switch ($source) {
@@ -1822,19 +1822,19 @@ function Invoke-TaskSequenceStep {
                         try { $base = (Get-WmiObject Win32_ComputerSystem).Model -replace '[^A-Za-z0-9]','' } catch {}
                     }
                     'randomDigits' {
-                        $count = if ($p.randomDigitCount -gt 0) { [math]::Min($p.randomDigitCount, 10) } else { 4 }
+                        $count = if ($p.PSObject.Properties['randomDigitCount'] -and $p.randomDigitCount -gt 0) { [math]::Min($p.randomDigitCount, 10) } else { 4 }
                         $min = [int][math]::Pow(10, $count - 1)
                         $max = [int][math]::Pow(10, $count)
                         $base = (Get-Random -Minimum ([int]$min) -Maximum ([int]$max)).ToString()
                     }
                 }
                 if (-not $base) { $base = 'PC' + (Get-Random -Minimum 1000 -Maximum 9999).ToString() }
-                $pfx = if ($p.prefix) { $p.prefix } else { '' }
-                $sfx = if ($p.suffix) { $p.suffix } else { '' }
+                $pfx = if ($p.PSObject.Properties['prefix'] -and $p.prefix) { $p.prefix } else { '' }
+                $sfx = if ($p.PSObject.Properties['suffix'] -and $p.suffix) { $p.suffix } else { '' }
                 $cName = $pfx + $base + $sfx
             }
             # Enforce max length (NetBIOS limit is 15)
-            $maxLen = if ($p -and $p.maxLength -gt 0) { [math]::Min($p.maxLength, 15) } else { 15 }
+            $maxLen = if ($p -and $p.PSObject.Properties['maxLength'] -and $p.maxLength -gt 0) { [math]::Min($p.maxLength, 15) } else { 15 }
             if ($cName.Length -gt $maxLen) { $cName = $cName.Substring(0, $maxLen) }
             # Strip invalid characters (letters, digits, hyphens only; no leading/trailing hyphens)
             $cName = ($cName -replace '[^A-Za-z0-9\-]','').Trim('-')
@@ -1850,9 +1850,9 @@ function Invoke-TaskSequenceStep {
             # Log the regional settings.  The Editor and Bootstrap config
             # modal already synced locale values into unattendContent — no
             # engine-level XML update needed.
-            $iLocale = if ($p -and $p.inputLocale)  { $p.inputLocale }  else { '' }
-            $sLocale = if ($p -and $p.systemLocale) { $p.systemLocale } else { '' }
-            $uiLang  = if ($p -and $p.uiLanguage)   { $p.uiLanguage }   else { '' }
+            $iLocale = if ($p -and $p.PSObject.Properties['inputLocale']  -and $p.inputLocale)  { $p.inputLocale }  else { '' }
+            $sLocale = if ($p -and $p.PSObject.Properties['systemLocale'] -and $p.systemLocale) { $p.systemLocale } else { '' }
+            $uiLang  = if ($p -and $p.PSObject.Properties['uiLanguage']   -and $p.uiLanguage)   { $p.uiLanguage }   else { '' }
             $detail = @()
             if ($iLocale) { $detail += "Keyboard: $iLocale" }
             if ($sLocale) { $detail += "Region: $sLocale" }
@@ -1865,14 +1865,15 @@ function Invoke-TaskSequenceStep {
             # The unattendContent is already the final XML — the Editor syncs
             # step values at design time and Bootstrap syncs config-modal
             # values at runtime.  Just write it to disk.
-            $uUrl     = if ($p -and $p.unattendUrl)  { $p.unattendUrl }  else { '' }
-            $uPath    = if ($p -and $p.unattendPath)  { $p.unattendPath }  else { '' }
-            $uContent = if ($p -and $p.unattendSource -eq 'default' -and $p.unattendContent) { $p.unattendContent } else { '' }
+            $uUrl     = if ($p -and $p.PSObject.Properties['unattendUrl']     -and $p.unattendUrl)     { $p.unattendUrl }     else { '' }
+            $uPath    = if ($p -and $p.PSObject.Properties['unattendPath']    -and $p.unattendPath)    { $p.unattendPath }    else { '' }
+            $uSrc     = if ($p -and $p.PSObject.Properties['unattendSource']  -and $p.unattendSource)  { $p.unattendSource }  else { '' }
+            $uContent = if ($uSrc -eq 'default' -and $p.PSObject.Properties['unattendContent'] -and $p.unattendContent) { $p.unattendContent } else { '' }
             Update-BootstrapStatus -Message "Customizing OOBE..." -Detail "Applying unattend.xml" -Step $uiStep -Progress $pct
             Set-OOBECustomization -UnattendUrl $uUrl -UnattendPath $uPath -UnattendContent $uContent -OSDriveLetter $CurrentOSDrive
         }
         'RunPostScripts' {
-            $urls = if ($p -and $p.scriptUrls) { @($p.scriptUrls) } else { @() }
+            $urls = if ($p -and $p.PSObject.Properties['scriptUrls'] -and $p.scriptUrls) { @($p.scriptUrls) } else { @() }
             Update-BootstrapStatus -Message "Staging post-scripts..." -Detail "Downloading post-provisioning scripts" -Step $uiStep -Progress $pct
             Invoke-PostScript -ScriptUrls $urls -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
