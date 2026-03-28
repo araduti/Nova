@@ -50,7 +50,7 @@ yourself using one of the methods described below.
 | ------------------------------ | -------- | ----------------------------------------------- |
 | `ALLOWED_ORIGIN`               | No       | Lock proxy to a single origin (e.g. `https://<you>.github.io`) |
 | `GITHUB_APP_ID`                | For token exchange | Your GitHub App's numeric App ID       |
-| `GITHUB_APP_PRIVATE_KEY`       | For token exchange | The App's PEM private key (PKCS#8)     |
+| `GITHUB_APP_PRIVATE_KEY`       | For token exchange | The App's PEM private key (PKCS#1 or PKCS#8) |
 | `GITHUB_APP_INSTALLATION_ID`   | For token exchange | Installation ID for your repo          |
 | `ENTRA_TENANT_ID`              | No       | Restrict accepted Entra tokens to one tenant    |
 
@@ -126,13 +126,9 @@ can mint short-lived installation access tokens.
 6. Scroll to **Private keys** and click **Generate a private key**.  Your
    browser downloads a `.pem` file.
 
-   GitHub generates PKCS#1 keys (`BEGIN RSA PRIVATE KEY`).  The worker
-   expects **PKCS#8** (`BEGIN PRIVATE KEY`).  Convert with OpenSSL:
-
-   ```bash
-   openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt \
-       -in downloaded-key.pem -out private-key-pkcs8.pem
-   ```
+   The downloaded key can be used directly — the worker accepts both
+   PKCS#1 (`BEGIN RSA PRIVATE KEY`, GitHub's default) and PKCS#8
+   (`BEGIN PRIVATE KEY`) formats.
 
 7. Install the app on your repository:
 
@@ -147,7 +143,7 @@ can mint short-lived installation access tokens.
 
    ```bash
    wrangler secret put GITHUB_APP_ID               # e.g. 123456
-   wrangler secret put GITHUB_APP_PRIVATE_KEY       # paste contents of private-key-pkcs8.pem
+   wrangler secret put GITHUB_APP_PRIVATE_KEY       # paste contents of .pem file (PKCS#1 or PKCS#8)
    wrangler secret put GITHUB_APP_INSTALLATION_ID   # e.g. 12345678
    ```
 
