@@ -708,6 +708,144 @@
             .history-table { font-size: 12px; }
             .history-table th, .history-table td { padding: 8px 10px; }
         }
+
+        /* ── Connection Diagnostics ───────────────────────────────── */
+        .diag-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+        }
+        .diag-overlay.active { display: flex; }
+        .diag-panel {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            width: min(560px, 90vw);
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+        }
+        .diag-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        .diag-header-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+        }
+        .diag-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 20px;
+            cursor: pointer;
+            padding: 0 4px;
+        }
+        .diag-close:hover { color: var(--text); }
+        .diag-body { padding: 20px; }
+        .diag-intro {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-bottom: 16px;
+            line-height: 1.5;
+        }
+        .diag-checks { display: flex; flex-direction: column; gap: 10px; }
+        .diag-check {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: var(--radius);
+            background: var(--surface-alt);
+            border: 1px solid var(--border);
+        }
+        .diag-check-icon {
+            flex-shrink: 0;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 12px;
+            margin-top: 1px;
+        }
+        .diag-check-icon.pending { background: var(--border); color: var(--text-muted); }
+        .diag-check-icon.pass { background: rgba(43,138,62,0.2); color: #51cf66; }
+        .diag-check-icon.fail { background: rgba(224,62,62,0.2); color: #ff6b6b; }
+        .diag-check-icon.warn { background: rgba(245,159,0,0.2); color: #ffd43b; }
+        .diag-check-body { flex: 1; min-width: 0; }
+        .diag-check-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text);
+        }
+        .diag-check-detail {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 3px;
+            line-height: 1.4;
+            word-break: break-word;
+        }
+        .diag-footer {
+            padding: 12px 20px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .diag-footer-status {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .diag-rerun-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            font-family: inherit;
+            color: #fff;
+            background: var(--accent);
+            border: none;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: background var(--transition);
+        }
+        .diag-rerun-btn:hover { background: var(--accent-hover); }
+        .diag-link {
+            color: var(--accent);
+            cursor: pointer;
+            text-decoration: underline;
+            background: none;
+            border: none;
+            font: inherit;
+            padding: 0;
+        }
+        .diag-link:hover { color: var(--accent-hover); }
+        @keyframes diag-spin {
+            to { transform: rotate(360deg); }
+        }
+        .diag-check-icon.pending::after {
+            content: '';
+            display: block;
+            width: 10px;
+            height: 10px;
+            border: 2px solid var(--text-muted);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: diag-spin 0.6s linear infinite;
+        }
     </style>
 </head>
 <body>
@@ -723,6 +861,7 @@
         </div>
         <div class="dash-header-right">
             <a href="../" class="dash-btn">&#8592; Dashboard</a>
+            <button class="dash-btn" onclick="openDiagnostics()" title="Troubleshoot connections to GitHub and deployment data sources">&#128295; Diagnostics</button>
             <button class="dash-btn" onclick="addSampleData()" title="Add sample deployment data for demonstration">&#128202; Add Sample Data</button>
             <button class="dash-btn" onclick="clearHistory()" title="Clear all deployment history">&#128465; Clear History</button>
         </div>
@@ -943,6 +1082,27 @@
         </div>
 
     </main>
+
+    <!-- ── Connection Diagnostics Overlay ──────────────────────────── -->
+    <div id="diagOverlay" class="diag-overlay" onclick="if(event.target===this)closeDiagnostics()">
+        <div class="diag-panel">
+            <div class="diag-header">
+                <span class="diag-header-title">&#128295; Connection Diagnostics</span>
+                <button class="diag-close" onclick="closeDiagnostics()" title="Close">&times;</button>
+            </div>
+            <div class="diag-body">
+                <div class="diag-intro">
+                    Running connection checks to diagnose why deployment data may not be appearing.
+                    Each check tests a link in the data pipeline from the AmpCloud engine to this dashboard.
+                </div>
+                <div id="diagChecks" class="diag-checks"></div>
+            </div>
+            <div class="diag-footer">
+                <span id="diagStatus" class="diag-footer-status"></span>
+                <button class="diag-rerun-btn" onclick="runDiagnostics()">&#8635; Re-run Checks</button>
+            </div>
+        </div>
+    </div>
 
     <script>
     'use strict';
@@ -1204,6 +1364,7 @@
                 '<div class="deploy-empty">' +
                     '<div class="deploy-empty-icon">&#128203;</div>' +
                     '<p>No active deployments. Deployment status will appear here in real time when devices are being imaged.</p>' +
+                    '<p style="margin-top:8px"><button class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p>' +
                 '</div>';
             return;
         }
@@ -1308,7 +1469,7 @@
         var total   = success + failed;
 
         if (total === 0) {
-            container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No deployment data yet.</p></div>';
+            container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No deployment data yet.</p><p style="margin-top:8px"><button class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p></div>';
             return;
         }
 
@@ -1366,7 +1527,7 @@
         }).sort(function (a, b) { return b.count - a.count; }).slice(0, 8);
 
         if (errors.length === 0) {
-            container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No errors recorded.</p></div>';
+            container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No errors recorded.</p><p style="margin-top:8px"><button class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p></div>';
             return;
         }
 
@@ -1449,7 +1610,7 @@
         filtered.sort(function (a, b) { return (b.startedAt || 0) - (a.startedAt || 0); });
 
         if (filtered.length === 0) {
-            body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No deployment records found.</td></tr>';
+            body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No deployment records found. <button class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></td></tr>';
             return;
         }
 
@@ -1709,6 +1870,218 @@
         localStorage.removeItem(STORAGE_KEY);
         localStorage.removeItem(ACTIVE_KEY);
         renderAll();
+    }
+
+    /* ── Connection Diagnostics ────────────────────────────────────── */
+    var diagChecks = [
+        { id: 'ghApi',     label: 'GitHub API Reachability' },
+        { id: 'ghRepo',    label: 'Repository Access' },
+        { id: 'ghAuth',    label: 'Authentication Status' },
+        { id: 'ghRate',    label: 'API Rate Limit' },
+        { id: 'authCfg',   label: 'Auth Configuration (Config/auth.json)' },
+        { id: 'reportsDir', label: 'Deployment Reports Directory' },
+        { id: 'activeDir', label: 'Active Deployments Directory' }
+    ];
+
+    function openDiagnostics() {
+        document.getElementById('diagOverlay').classList.add('active');
+        runDiagnostics();
+    }
+
+    function closeDiagnostics() {
+        document.getElementById('diagOverlay').classList.remove('active');
+    }
+
+    function setCheckState(id, state, detail) {
+        var el = document.getElementById('diag-' + id);
+        if (!el) return;
+        var iconEl = el.querySelector('.diag-check-icon');
+        var detailEl = el.querySelector('.diag-check-detail');
+        iconEl.className = 'diag-check-icon ' + state;
+        iconEl.textContent = state === 'pass' ? '\u2713' : (state === 'fail' ? '\u2717' : (state === 'warn' ? '!' : ''));
+        detailEl.textContent = detail;
+    }
+
+    function runDiagnostics() {
+        var container = document.getElementById('diagChecks');
+        var html = '';
+        diagChecks.forEach(function (c) {
+            html += '<div class="diag-check" id="diag-' + c.id + '">' +
+                '<div class="diag-check-icon pending"></div>' +
+                '<div class="diag-check-body">' +
+                    '<div class="diag-check-label">' + escapeHtml(c.label) + '</div>' +
+                    '<div class="diag-check-detail">Checking\u2026</div>' +
+                '</div>' +
+            '</div>';
+        });
+        container.innerHTML = html;
+        document.getElementById('diagStatus').textContent = 'Running checks\u2026';
+
+        var results = { passed: 0, warned: 0, failed: 0 };
+        var rateLimitInfo = {};
+
+        function finish(id, state, detail) {
+            setCheckState(id, state, detail);
+            if (state === 'pass') results.passed++;
+            else if (state === 'warn') results.warned++;
+            else results.failed++;
+            var total = results.passed + results.warned + results.failed;
+            if (total === diagChecks.length) {
+                var statusEl = document.getElementById('diagStatus');
+                if (results.failed > 0) {
+                    statusEl.textContent = results.failed + ' check(s) failed \u2014 see details above for resolution steps.';
+                } else if (results.warned > 0) {
+                    statusEl.textContent = 'All checks passed with ' + results.warned + ' warning(s).';
+                } else {
+                    statusEl.textContent = 'All checks passed. Data pipeline is healthy.';
+                }
+            }
+        }
+
+        /* 1. GitHub API reachability */
+        fetch(GH_API + '/rate_limit', { headers: getGitHubHeaders() })
+            .then(function (r) {
+                if (r.ok) {
+                    return r.json().then(function (data) {
+                        rateLimitInfo = data;
+                        finish('ghApi', 'pass', 'GitHub API is reachable (HTTP ' + r.status + ').');
+                    });
+                } else {
+                    finish('ghApi', 'fail', 'GitHub API returned HTTP ' + r.status + '. Check your network or firewall settings.');
+                }
+            })
+            .catch(function (err) {
+                finish('ghApi', 'fail', 'Cannot reach GitHub API. Check network connectivity or CORS/firewall settings. Error: ' + (err.message || err));
+            });
+
+        /* 2. Repository access */
+        fetch(GH_API + '/repos/' + GH_OWNER + '/' + GH_REPO, { headers: getGitHubHeaders() })
+            .then(function (r) {
+                if (r.ok) {
+                    return r.json().then(function (data) {
+                        finish('ghRepo', 'pass', 'Repository ' + GH_OWNER + '/' + GH_REPO + ' is accessible' + (data.private ? ' (private)' : ' (public)') + '.');
+                    });
+                } else if (r.status === 404) {
+                    finish('ghRepo', 'fail', 'Repository ' + GH_OWNER + '/' + GH_REPO + ' not found. Verify GH_OWNER and GH_REPO are correct, or that the repo is not private without a valid token.');
+                } else if (r.status === 403) {
+                    finish('ghRepo', 'fail', 'Access denied to ' + GH_OWNER + '/' + GH_REPO + '. The repository may be private and requires authentication.');
+                } else {
+                    finish('ghRepo', 'fail', 'Repository check returned HTTP ' + r.status + '.');
+                }
+            })
+            .catch(function (err) {
+                finish('ghRepo', 'fail', 'Failed to check repository. Error: ' + (err.message || err));
+            });
+
+        /* 3. Authentication status */
+        (function checkAuth() {
+            if (cachedGhToken && Date.now() < ghTokenExpiry) {
+                var remaining = Math.round((ghTokenExpiry - Date.now()) / 60000);
+                finish('ghAuth', 'pass', 'Authenticated with GitHub token (expires in ~' + remaining + ' min). Rate limit: 5,000 req/hr.');
+            } else if (cachedGhToken && Date.now() >= ghTokenExpiry) {
+                finish('ghAuth', 'warn', 'GitHub token has expired. The dashboard will use unauthenticated access (60 req/hr). Re-authenticate via Entra ID to restore higher limits.');
+            } else {
+                finish('ghAuth', 'warn', 'No GitHub token available. Using unauthenticated access (60 req/hr). For higher rate limits, configure Entra ID authentication in Config/auth.json or set a GITHUB_TOKEN environment variable in the engine.');
+            }
+        })();
+
+        /* 4. API rate limit */
+        fetch(GH_API + '/rate_limit', { headers: getGitHubHeaders() })
+            .then(function (r) {
+                if (!r.ok) {
+                    finish('ghRate', 'warn', 'Could not fetch rate limit info (HTTP ' + r.status + ').');
+                    return;
+                }
+                return r.json().then(function (data) {
+                    var core = data && data.resources && data.resources.core;
+                    if (!core) {
+                        finish('ghRate', 'warn', 'Rate limit data not available.');
+                        return;
+                    }
+                    var remaining = core.remaining;
+                    var limit = core.limit;
+                    var resetAt = new Date(core.reset * 1000);
+                    var resetStr = resetAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    if (remaining === 0) {
+                        finish('ghRate', 'fail', 'Rate limit exhausted (0/' + limit + '). Resets at ' + resetStr + '. Authenticate to increase limit to 5,000 req/hr.');
+                    } else if (remaining < 10) {
+                        finish('ghRate', 'warn', remaining + '/' + limit + ' requests remaining. Resets at ' + resetStr + '. Consider authenticating for higher limits.');
+                    } else {
+                        finish('ghRate', 'pass', remaining + '/' + limit + ' requests remaining. Resets at ' + resetStr + '.');
+                    }
+                });
+            })
+            .catch(function (err) {
+                finish('ghRate', 'warn', 'Could not check rate limit. Error: ' + (err.message || err));
+            });
+
+        /* 5. Auth config (Config/auth.json) */
+        var authUrl = 'https://raw.githubusercontent.com/' + GH_OWNER + '/' + GH_REPO + '/' + GH_BRANCH + '/Config/auth.json';
+        fetch(authUrl)
+            .then(function (r) {
+                if (r.ok) {
+                    return r.json().then(function (cfg) {
+                        if (cfg && cfg.githubOAuthProxy) {
+                            finish('authCfg', 'pass', 'Auth config loaded. OAuth proxy: ' + cfg.githubOAuthProxy);
+                        } else {
+                            finish('authCfg', 'warn', 'Auth config loaded but githubOAuthProxy is not set. Entra ID token exchange will not work.');
+                        }
+                    });
+                } else if (r.status === 404) {
+                    finish('authCfg', 'warn', 'Config/auth.json not found. Entra ID authentication is not configured. Dashboard will use unauthenticated GitHub access.');
+                } else {
+                    finish('authCfg', 'fail', 'Failed to load Config/auth.json (HTTP ' + r.status + ').');
+                }
+            })
+            .catch(function (err) {
+                finish('authCfg', 'fail', 'Error loading auth config. Error: ' + (err.message || err));
+            });
+
+        /* 6. Deployment reports directory */
+        var reportsUrl = GH_API + '/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/Deployments/reports?ref=' + GH_BRANCH;
+        fetch(reportsUrl, { headers: getGitHubHeaders() })
+            .then(function (r) {
+                if (r.ok) {
+                    return r.json().then(function (files) {
+                        var jsonFiles = Array.isArray(files) ? files.filter(function (f) { return f.name && f.name.endsWith('.json'); }) : [];
+                        if (jsonFiles.length > 0) {
+                            finish('reportsDir', 'pass', 'Found ' + jsonFiles.length + ' deployment report(s) in Deployments/reports/.');
+                        } else {
+                            finish('reportsDir', 'warn', 'Deployments/reports/ exists but contains no JSON files. Deployment reports will appear here after the engine completes a deployment.');
+                        }
+                    });
+                } else if (r.status === 404) {
+                    finish('reportsDir', 'warn', 'Deployments/reports/ directory not found. This is normal if no deployment has been completed yet. The AmpCloud engine creates this directory automatically when it pushes the first report.');
+                } else {
+                    finish('reportsDir', 'fail', 'Cannot access Deployments/reports/ (HTTP ' + r.status + '). Check repository permissions.');
+                }
+            })
+            .catch(function (err) {
+                finish('reportsDir', 'fail', 'Error checking reports directory. Error: ' + (err.message || err));
+            });
+
+        /* 7. Active deployments directory */
+        var activeUrl = GH_API + '/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/Deployments/active?ref=' + GH_BRANCH;
+        fetch(activeUrl, { headers: getGitHubHeaders() })
+            .then(function (r) {
+                if (r.ok) {
+                    return r.json().then(function (files) {
+                        var jsonFiles = Array.isArray(files) ? files.filter(function (f) { return f.name && f.name.endsWith('.json'); }) : [];
+                        if (jsonFiles.length > 0) {
+                            finish('activeDir', 'pass', 'Found ' + jsonFiles.length + ' active deployment(s) in Deployments/active/.');
+                        } else {
+                            finish('activeDir', 'warn', 'Deployments/active/ exists but contains no JSON files. Active deployments will appear here while devices are being imaged.');
+                        }
+                    });
+                } else if (r.status === 404) {
+                    finish('activeDir', 'warn', 'Deployments/active/ directory not found. This is normal if no deployment is in progress. The AmpCloud engine creates this directory when a device starts imaging.');
+                } else {
+                    finish('activeDir', 'fail', 'Cannot access Deployments/active/ (HTTP ' + r.status + '). Check repository permissions.');
+                }
+            })
+            .catch(function (err) {
+                finish('activeDir', 'fail', 'Error checking active deployments directory. Error: ' + (err.message || err));
+            });
     }
 
     /* ── Render everything ─────────────────────────────────────────── */
