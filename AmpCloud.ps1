@@ -2031,6 +2031,11 @@ try {
         -StepsCompleted $script:CompletedStepCount -StepsTotal $totalSteps `
         -ErrorMessage "$_" -FailedStep $stepName
 
+    # Update the HTML UI status file so the deployment page shows the
+    # failure instead of staying stuck at the last progress state.
+    Update-BootstrapStatus -Message "Imaging failed at step '$stepName'" `
+        -Detail "$_" -Step 4
+
     Write-Host '[AmpCloud] Dropping to interactive shell for troubleshooting.' -ForegroundColor Yellow
     # Re-throw so Bootstrap.ps1 can close the UI before the user
     # needs the console.  The PowerShell host was started with -NoExit by

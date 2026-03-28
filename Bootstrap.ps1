@@ -1658,6 +1658,12 @@ function ProceedToEngine {
     if (-not $engineFailed) {
         Invoke-Sound 1200 400
         Update-HtmlUi -Message $S.Complete -Step 4 -Done
+    } else {
+        # Re-enable UI updates so the error state is shown to the user
+        # and the Retry button works.
+        $script:HtmlUiActive = $true
+        Invoke-Sound 400 600
+        Update-HtmlUi -Message 'Imaging failed — press Retry or F8 for a shell.' -Step 4 -ShowRetry
     }
 }
 

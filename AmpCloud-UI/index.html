@@ -1152,7 +1152,7 @@
          *    prevent the SwiftShader renderer from being terminated
          *    (Edge Error code 39) during long operations. ────────── */
         (function keepAlive() {
-            var el = document.getElementById('spinner');
+            var el = document.querySelector('.spinner-wrap');
             var tick = 0;
             function frame() {
                 /* Wrap at 3600 to avoid unbounded growth (arbitrary cycle length). */
@@ -1160,7 +1160,9 @@
                 /* Direct style mutation is intentional — it forces the compositor
                    to schedule a repaint every frame, which is the mechanism that
                    keeps the SwiftShader renderer from being marked idle.  The
-                   sub-pixel translateZ oscillation is invisible to the user. */
+                   sub-pixel translateZ oscillation is invisible to the user.
+                   Targets the wrapper (not the spinner itself) so the CSS spin
+                   animation's transform is not overridden by the inline style. */
                 el.style.willChange = 'transform';
                 el.style.transform  = 'translateZ(' + (tick % 2 === 0 ? '0' : '0.01') + 'px)';
                 requestAnimationFrame(frame);
