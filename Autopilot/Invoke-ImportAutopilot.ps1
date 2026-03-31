@@ -1,4 +1,4 @@
-# Import utility functions (provides Get-GraphToken, Test-AutopilotStatus)
+﻿# Import utility functions (provides Get-GraphToken, Test-AutopilotStatus)
 . "$PSScriptRoot\Utils.ps1"
 
 Start-Transcript -Path "X:\OSDCloud\Logs\Invoke-ImportAutopilot.log" -Force
@@ -80,7 +80,7 @@ function Import-AutopilotDevice {
         Remove-Item "OA3.xml" -Force
 
         Write-Host "Status: Getting device serial number..."
-        $SerialNumber = (Get-WmiObject -Class Win32_BIOS).SerialNumber
+        $SerialNumber = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber
         if (-not $SerialNumber -or $SerialNumber.Trim() -eq '') {
             Write-Host "Status: Failed to retrieve device serial number"
             return @{ Success = $false; Message = "Device serial number is empty or unavailable" }
@@ -123,7 +123,7 @@ function Import-AutopilotDevice {
         Write-Host "Status: Device not found in Autopilot — proceeding with import"
 
         Write-Host "Status: Uploading device information to Intune..."
-        $UploadResponse = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities" `
+        $null = Invoke-RestMethod -Uri "https://graph.microsoft.com/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities" `
             -Headers @{
             'Authorization' = "Bearer $GraphToken"
             'Content-Type'  = 'application/json'

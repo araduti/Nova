@@ -3,14 +3,14 @@ import { resolve } from 'path';
 import { cpSync, existsSync } from 'fs';
 
 /**
- * Vite configuration for AmpCloud web UIs.
+ * Vite configuration for Nova web UIs.
  *
  * Builds the Editor, Monitoring, and root dashboard pages for GitHub
  * Pages deployment.  Static config/data files (Config/, TaskSequence/,
  * Unattend/) are copied to the output directory so runtime `fetch()`
  * calls resolve correctly.
  *
- * NOTE: AmpCloud-UI and Progress are embedded into WinPE by Trigger.ps1
+ * NOTE: Nova-UI and Progress are embedded into WinPE by Trigger.ps1
  * and run offline — they are NOT part of this build.
  */
 export default defineConfig({

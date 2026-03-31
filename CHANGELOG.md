@@ -1,10 +1,13 @@
 # Changelog
 
-All notable changes to AmpCloud will be documented in this file.
+All notable changes to Nova will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
+
+### Changed
+- Rebranded product from "AmpCloud" to "Nova" across all documentation
 
 ### Added
 - PSScriptAnalyzer linting job in CI workflow

@@ -6,14 +6,14 @@
 *.esd
 mount/
 
-# AmpCloud workspace
-C:\AmpCloud\
+# Nova workspace
+C:\Nova\
 
 # Logs generated during imaging
 *.log
 
 # Deployment status (written at runtime)
-AmpCloud-Status.json
+Nova-Status.json
 
 # OS / editor
 Thumbs.db

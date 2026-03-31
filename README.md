@@ -1,6 +1,6 @@
 <div align="center">
 
-# ☁️ AmpCloud
+# ☁️ **Nova** — Cloud-Native Windows OS Deployment Platform
 
 ### Cloud-Native Windows OS Deployment Platform
 
@@ -22,9 +22,9 @@ Stream the entire deployment engine from GitHub, reimage any PC over WiFi or Eth
 
 ---
 
-## What Is AmpCloud?
+## What Is Nova?
 
-AmpCloud is a **cloud-native Windows OS deployment platform** that replaces traditional OSDCloud, WinPE USB sticks, and PXE infrastructure. Run a single PowerShell command on any Windows PC, and AmpCloud handles everything: building a minimal boot environment, rebooting, connecting to the network (WiFi included), and streaming the full imaging engine directly from GitHub.
+Nova is a **cloud-native Windows OS deployment platform** that replaces traditional OSDCloud, WinPE USB sticks, and PXE infrastructure. Run a single PowerShell command on any Windows PC, and Nova handles everything: building a minimal boot environment, rebooting, connecting to the network (WiFi included), and streaming the full imaging engine directly from GitHub.
 
 **Key differentiators:**
 
@@ -44,7 +44,7 @@ Run this command on any Windows PC as **Administrator**:
 irm https://raw.githubusercontent.com/araduti/AmpCloud/main/Trigger.ps1 | iex
 ```
 
-AmpCloud installs the required tools, builds a compact boot image, reboots, connects to the network, and deploys Windows — all automatically.
+Nova installs the required tools, builds a compact boot image, reboots, connects to the network, and deploys Windows — all automatically.
 
 > **Tip:** Fork the repository and point the command at your fork to use your own defaults:
 > ```powershell
@@ -55,7 +55,7 @@ AmpCloud installs the required tools, builds a compact boot image, reboots, conn
 
 ## How It Works
 
-AmpCloud operates in three stages. Each stage hands off to the next automatically.
+Nova operates in three stages. Each stage hands off to the next automatically.
 
 ```
   ┌──────────────────────────────────────────────────────────────┐
@@ -75,7 +75,7 @@ AmpCloud operates in three stages. Each stage hands off to the next automaticall
   │  • Initializes network (DHCP + WiFi selector if needed)      │
   │  • Launches real-time HTML progress UI (Edge kiosk mode)     │
   │  • Optional M365 sign-in gate (PKCE or Device Code)         │
-  │  • Downloads AmpCloud.ps1 from GitHub                       │
+  │  • Downloads Nova.ps1 from GitHub                            │
   └──────────────────────┬───────────────────────────────────────┘
                          │
   ┌──────────────────────▼───────────────────────────────────────┐
@@ -118,11 +118,11 @@ AmpCloud operates in three stages. Each stage hands off to the next automaticall
 ## Repository Layout
 
 ```
-AmpCloud/
+Nova/
 ├── Trigger.ps1              # Stage 1 — entry point, WinPE builder
 ├── Bootstrap.ps1            # Stage 2 — network, auth, engine launcher
-├── AmpCloud.ps1             # Stage 3 — full imaging engine
-├── AmpCloud-UI/             # Real-time progress UI (HTML/CSS/JS, WinPE embedded)
+├── Nova.ps1                 # Stage 3 — full imaging engine
+├── Nova-UI/                 # Real-time progress UI (HTML/CSS/JS, WinPE embedded)
 ├── Editor/                  # Task sequence editor (GitHub Pages SPA)
 │   ├── index.html
 │   ├── js/app.js
@@ -193,8 +193,8 @@ AmpCloud/
 | `GitHubUser` | `araduti` | GitHub username or organization |
 | `GitHubRepo` | `AmpCloud` | Repository name |
 | `GitHubBranch` | `main` | Branch to fetch scripts from |
-| `WinPEWorkDir` | `C:\AmpCloud\WinPE` | Working directory for the WinPE build |
-| `RamdiskVHD` | `C:\AmpCloud\boot.vhd` | Path for BCD ramdisk files |
+| `WinPEWorkDir` | `C:\Nova\WinPE` | Working directory for the WinPE build |
+| `RamdiskVHD` | `C:\Nova\boot.vhd` | Path for BCD ramdisk files |
 | `ADKInstallPath` | `C:\Program Files (x86)\Windows Kits\10` | ADK installation path |
 | `NoReboot` | `$false` | Skip automatic reboot (useful for testing) |
 
@@ -214,7 +214,7 @@ AmpCloud/
 </details>
 
 <details>
-<summary><strong>AmpCloud.ps1</strong> — Imaging Engine</summary>
+<summary><strong>Nova.ps1</strong> — Imaging Engine</summary>
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -237,7 +237,7 @@ AmpCloud/
 
 ### Authentication (`Config/auth.json`)
 
-AmpCloud supports an optional **Microsoft 365 authentication gate** using Entra ID. When enabled, operators must sign in before deployment begins.
+Nova supports an optional **Microsoft 365 authentication gate** using Entra ID. When enabled, operators must sign in before deployment begins.
 
 <details>
 <summary><strong>auth.json fields</strong></summary>
@@ -261,7 +261,7 @@ AmpCloud supports an optional **Microsoft 365 authentication gate** using Entra 
 
 1. **Register an Azure AD application:**
    - [Azure Portal → App registrations → New registration](https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade)
-   - Name: e.g. `AmpCloud`
+   - Name: e.g. `Nova`
    - Supported account types: **Accounts in any organizational directory** (multi-tenant)
    - Under **Authentication → Supported accounts**, select **Allow only certain tenants** and add permitted tenant IDs
    - Enable **Allow public client flows** (required for Device Code fallback)
@@ -284,7 +284,7 @@ AmpCloud supports an optional **Microsoft 365 authentication gate** using Entra 
 
 ## Task Sequence Editor
 
-AmpCloud includes a browser-based **Task Sequence Editor** for visually creating deployment workflows — similar to SCCM/MECM task sequences.
+Nova includes a browser-based **Task Sequence Editor** for visually creating deployment workflows — similar to SCCM/MECM task sequences.
 
 **Live editor:** [https://araduti.github.io/AmpCloud/Editor/](https://araduti.github.io/AmpCloud/Editor/)
 
@@ -302,7 +302,7 @@ AmpCloud includes a browser-based **Task Sequence Editor** for visually creating
 ### Fork-and-own
 
 1. **Fork** this repository
-2. Edit `AmpCloud.ps1` defaults (image URL, Autopilot JSON, drivers, etc.)
+2. Edit `Nova.ps1` defaults (image URL, Autopilot JSON, drivers, etc.)
 3. Update `Config/auth.json` with your own app registrations
 4. Run the trigger pointing at your fork:
 
@@ -310,7 +310,7 @@ AmpCloud includes a browser-based **Task Sequence Editor** for visually creating
 irm https://raw.githubusercontent.com/YOURUSER/AmpCloud/main/Trigger.ps1 | iex
 ```
 
-Changes to `AmpCloud.ps1` take effect **immediately** — no rebuild cycle.
+Changes to `Nova.ps1` take effect **immediately** — no rebuild cycle.
 
 ### Example: custom image + Autopilot
 
@@ -345,7 +345,7 @@ npm run build      # production build → dist/
 npm run preview    # preview production build locally
 ```
 
-The Vite build processes the **Editor**, **Monitoring**, and root **Dashboard** pages. AmpCloud-UI and Progress are embedded into WinPE by Trigger.ps1 and run offline — they are not part of the web build.
+The Vite build processes the **Editor**, **Monitoring**, and root **Dashboard** pages. Nova-UI and Progress are embedded into WinPE by Trigger.ps1 and run offline — they are not part of the web build.
 
 ### OAuth proxy development
 
@@ -370,7 +370,7 @@ npm run deploy     # deploy to Cloudflare Workers
 
 ## Security
 
-AmpCloud follows modern security best practices for public-client OAuth 2.0 applications.
+Nova follows modern security best practices for public-client OAuth 2.0 applications.
 
 | Area | Approach |
 |------|----------|

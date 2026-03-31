@@ -26,7 +26,7 @@ export async function handleDeviceFlow(
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'AmpCloud-OAuth-Proxy',
+      'User-Agent': 'Nova-OAuth-Proxy',
     },
     body,
   });

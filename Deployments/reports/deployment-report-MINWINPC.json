@@ -7,7 +7,7 @@
     "error":  "",
     "stepsCompleted":  11,
     "status":  "success",
-    "taskSequence":  "Default AmpCloud Task Sequence (Copy)",
+    "taskSequence":  "Default Nova Task Sequence (Copy)",
     "duration":  282849,
     "stepsTotal":  11
 }

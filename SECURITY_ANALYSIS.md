@@ -1,7 +1,7 @@
-# AmpCloud Authentication Security Analysis
+# Nova Authentication Security Analysis
 
 > **Date:** 2026-03-25
-> **Scope:** All authentication and authorization pathways in the AmpCloud repository
+> **Scope:** All authentication and authorization pathways in the Nova repository
 
 ---
 
@@ -25,7 +25,7 @@
 
 ## Executive Summary
 
-AmpCloud implements **three distinct OAuth 2.0 authentication flows** to protect both the deployment engine and the web-based Task Sequence Editor. All flows use Microsoft Entra ID (Azure AD) as the identity provider with the `/organizations` (multi-tenant) authority, and tenant restrictions are enforced server-side at the app registration level.
+Nova implements **three distinct OAuth 2.0 authentication flows** to protect both the deployment engine and the web-based Task Sequence Editor. All flows use Microsoft Entra ID (Azure AD) as the identity provider with the `/organizations` (multi-tenant) authority, and tenant restrictions are enforced server-side at the app registration level.
 
 **Overall assessment:** The authentication implementation follows modern security best practices for public client applications. The use of PKCE, minimal scopes, ephemeral token handling, and `sessionStorage` caching demonstrates a security-conscious design. The findings below are low-to-informational severity and represent defense-in-depth improvements rather than exploitable vulnerabilities.
 
@@ -218,7 +218,7 @@ The following security best practices are already implemented:
 - **S-02: Minimal OAuth scopes** — All three flows request only `openid profile`, which is the minimum needed for identity verification. No API tokens are issued.
 - **S-03: Ephemeral token handling** — Tokens are validated for presence but not stored long-term. PowerShell scripts discard tokens after the identity gate.
 - **S-04: sessionStorage over localStorage** — The web editor uses `sessionStorage`, which clears when the tab closes and is not shared across tabs.
-- **S-05: TLS 1.2 enforcement** — Both `Bootstrap.ps1` and `AmpCloud.ps1` explicitly set `[Net.ServicePointManager]::SecurityProtocol = Tls12` to prevent downgrade attacks in WinPE.
+- **S-05: TLS 1.2 enforcement** — Both `Bootstrap.ps1` and `Nova.ps1` explicitly set `[Net.ServicePointManager]::SecurityProtocol = Tls12` to prevent downgrade attacks in WinPE.
 - **S-06: Server-side tenant restrictions** — Tenant access control is enforced by Azure AD at the app registration level, not client-side where it could be bypassed.
 - **S-07: No hardcoded secrets** — No tokens, passwords, or client secrets are committed to the repository.
 - **S-08: GitHub PAT memory cleanup** — The PAT used for image upload is explicitly zeroed from memory after use.
@@ -238,7 +238,7 @@ The following security best practices are already implemented:
 
 **Component:** `Bootstrap.ps1`, `Invoke-M365DeviceCodeAuth` (fallback path)
 **Severity:** Informational
-**Description:** The Device Code Flow inherently requires users to visit a URL and enter a code. An attacker who initiates a device code flow on their own could display a code to an unsuspecting user and trick them into authenticating on the attacker's behalf. This is a known limitation of the Device Code Flow (RFC 8628 §5.4) and is not a vulnerability in AmpCloud's implementation.
+**Description:** The Device Code Flow inherently requires users to visit a URL and enter a code. An attacker who initiates a device code flow on their own could display a code to an unsuspecting user and trick them into authenticating on the attacker's behalf. This is a known limitation of the Device Code Flow (RFC 8628 §5.4) and is not a vulnerability in Nova's implementation.
 **Mitigation:** Bootstrap.ps1 now launches a standalone Edge browser with Auth Code + PKCE as the primary authentication method. The Device Code Flow is only used as a fallback when the Edge browser is not present in the WinPE image. This significantly reduces the phishing surface since most deployments will use the browser-based flow.
 **Recommendation:** No further code change required. For maximum security, ensure WinPE images are built using Trigger.ps1's Build-WinPE function, which embeds the Edge browser (step 4e).
 
@@ -254,7 +254,7 @@ The following security best practices are already implemented:
 
 **Component:** `Trigger.ps1` (entire file)
 **Severity:** Low
-**Description:** Both `Bootstrap.ps1` (line 59) and `AmpCloud.ps1` (line 93) explicitly set `[Net.ServicePointManager]::SecurityProtocol = Tls12` to prevent TLS downgrade attacks. However, `Trigger.ps1` does not set this. While Trigger.ps1 runs on a full Windows installation (which likely already defaults to TLS 1.2), older PowerShell 5.1 environments may default to SSL3/TLS 1.0.
+**Description:** Both `Bootstrap.ps1` (line 59) and `Nova.ps1` (line 93) explicitly set `[Net.ServicePointManager]::SecurityProtocol = Tls12` to prevent TLS downgrade attacks. However, `Trigger.ps1` does not set this. While Trigger.ps1 runs on a full Windows installation (which likely already defaults to TLS 1.2), older PowerShell 5.1 environments may default to SSL3/TLS 1.0.
 **Mitigation factors:** Trigger.ps1 is designed to run on full Windows (not WinPE), where modern .NET and OS versions default to TLS 1.2+. The risk is limited to older Windows installations.
 **Recommendation:** Add `[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12` near the top of Trigger.ps1 for consistency and defense in depth.
 
@@ -288,13 +288,13 @@ The following security best practices are already implemented:
 | **Device Code phishing** | Attacker displays their own code to an operator | Primary flow uses standalone Edge browser (no codes); Device Code is fallback only; Azure AD consent screen shows app name | Very Low (mitigated by Edge browser) |
 | **MSAL library supply chain** | Compromised MSAL library | Self-hosted (not CDN); version pinned at v2.39.0; integrity can be verified against the npm package | Very Low |
 | **Replay attacks** | Reuse of captured authorization codes | PKCE code verifier is single-use; authorization codes expire quickly (typically 10 minutes) | Very Low |
-| **TLS downgrade** | Downgrade to SSL3/TLS 1.0 | Explicit `Tls12` enforcement in Bootstrap.ps1 and AmpCloud.ps1; recommended for Trigger.ps1 (F-04) | Low |
+| **TLS downgrade** | Downgrade to SSL3/TLS 1.0 | Explicit `Tls12` enforcement in Bootstrap.ps1 and Nova.ps1; recommended for Trigger.ps1 (F-04) | Low |
 
 ---
 
 ## Conclusion
 
-AmpCloud's authentication implementation is well-designed and follows current industry best practices for public client OAuth 2.0 applications. The use of PKCE, minimal scopes, ephemeral token handling, server-side tenant restrictions, and `sessionStorage`-based caching demonstrates a mature security posture.
+Nova's authentication implementation is well-designed and follows current industry best practices for public client OAuth 2.0 applications. The use of PKCE, minimal scopes, ephemeral token handling, server-side tenant restrictions, and `sessionStorage`-based caching demonstrates a mature security posture.
 
 The findings identified are **low or informational severity** and represent opportunities for defense-in-depth hardening rather than exploitable vulnerabilities. The two most actionable improvements are:
 

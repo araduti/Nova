@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a problem with AmpCloud
+about: Report a problem with Nova
 title: "[Bug] "
 labels: bug
 assignees: ''
@@ -36,8 +36,8 @@ What actually happened.
 
 **Logs**
 If applicable, attach the relevant log file:
-- `X:\AmpCloud-Bootstrap.log` (Stage 2)
-- `X:\AmpCloud-Engine.log` (Stage 3)
+- `X:\Nova-Bootstrap.log` (Stage 2)
+- `X:\Nova-Engine.log` (Stage 3)
 
 **Screenshots**
 If applicable, add screenshots to help explain your problem.

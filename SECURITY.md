@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in AmpCloud, **please do not open a public issue.**
+If you discover a security vulnerability in Nova, **please do not open a public issue.**
 
 Instead, report it privately:
 
@@ -13,7 +13,7 @@ Please include:
 
 - A description of the vulnerability
 - Steps to reproduce (or a proof-of-concept)
-- The affected component(s) (e.g. `Trigger.ps1`, `Bootstrap.ps1`, `AmpCloud.ps1`, `Editor`, `oauth-proxy`)
+- The affected component(s) (e.g. `Trigger.ps1`, `Bootstrap.ps1`, `Nova.ps1`, `Editor`, `oauth-proxy`)
 - Any potential impact or severity assessment
 
 We will acknowledge your report within **3 business days** and aim to release a fix within **30 days** of confirmation.
@@ -36,7 +36,7 @@ The following areas deserve extra scrutiny when contributing:
 | WiFi passwords | Plaintext in RAM | WinPE environment is ephemeral; cleared on reboot |
 | Disk partitioning | Data loss | Explicit disk index parameter; confirmation in UI |
 | `unattend.xml` injection | Privilege escalation | Content validated before embedding |
-| Status JSON (`AmpCloud-Status.json`) | Information disclosure | No secrets or credentials written to status file |
+| Status JSON (`Nova-Status.json`) | Information disclosure | No secrets or credentials written to status file |
 
 ## Security Design
 

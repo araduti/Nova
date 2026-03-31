@@ -13,9 +13,9 @@
 
 - [ ] Trigger.ps1
 - [ ] Bootstrap.ps1
-- [ ] AmpCloud.ps1
+- [ ] Nova.ps1
 - [ ] Task Sequence Editor (Editor/)
-- [ ] AmpCloud-UI
+- [ ] Nova-UI
 - [ ] Monitoring Dashboard
 - [ ] OAuth Proxy (oauth-proxy/)
 - [ ] Configuration (Config/)

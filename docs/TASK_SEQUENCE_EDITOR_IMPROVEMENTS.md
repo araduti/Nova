@@ -1,6 +1,6 @@
 # Task Sequence Editor — Improvement Ideas & Research
 
-This document outlines ideas for improving the AmpCloud Task Sequence Editor to compete with and surpass established tools like MDT (Microsoft Deployment Toolkit), PDT (PowerShell Deployment Toolkit), and SCCM/MECM (Microsoft Endpoint Configuration Manager).
+This document outlines ideas for improving the Nova Task Sequence Editor to compete with and surpass established tools like MDT (Microsoft Deployment Toolkit), PDT (PowerShell Deployment Toolkit), and SCCM/MECM (Microsoft Endpoint Configuration Manager).
 
 ---
 
@@ -103,7 +103,7 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 ## 5. Competitive Advantages over MDT/SCCM
 
 ### What MDT/SCCM Has That We Should Match
-| Feature | MDT | SCCM | AmpCloud Status |
+| Feature | MDT | SCCM | Nova Status |
 |---------|-----|------|-----------------|
 | Task sequence overview | ✅ | ✅ | ✅ Dashboard page |
 | Step groups / folders | ✅ | ✅ | ✅ Collapsible groups |
@@ -116,7 +116,7 @@ Currently the root page immediately redirects into the editor. A proper **Task S
 | Multi-sequence management | ✅ | ✅ | ✅ Dashboard page |
 | Import / Export | ✅ | ✅ | ✅ JSON download/upload |
 
-### Where AmpCloud Can Excel
+### Where Nova Can Excel
 - **Zero infrastructure** — no server, no database, no Active Directory required.
 - **Cloud-native** — GitHub as the source of truth, OAuth for auth, CDN for images.
 - **Modern web UI** — responsive, dark theme, works on any device with a browser.

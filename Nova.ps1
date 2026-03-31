@@ -1,7 +1,7 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    AmpCloud - Full cloud imaging engine for GitHub-native OS deployment.
+    Nova - Full cloud imaging engine for GitHub-native OS deployment.
 
 .DESCRIPTION
     Runs inside WinPE. Reads a task sequence JSON file produced by the
@@ -34,7 +34,7 @@ param(
 
     # Scratch / temp directory inside WinPE
     [ValidateNotNullOrEmpty()]
-    [string]$ScratchDir = 'X:\AmpCloud',
+    [string]$ScratchDir = 'X:\Nova',
 
     # Target OS drive letter (assigned during partitioning)
     [ValidatePattern('^[A-Za-z]$')]
@@ -66,7 +66,7 @@ $ErrorActionPreference = 'Stop'
 # This engine runs in a dedicated process (Start-Process from Bootstrap.ps1),
 # so the parent's Start-Transcript does not carry over.  Start our own
 # transcript so every Write-Host, warning, and error is captured to disk.
-$script:EngineLogPath = 'X:\AmpCloud-Engine.log'
+$script:EngineLogPath = 'X:\Nova-Engine.log'
 $null = Start-Transcript -Path $script:EngineLogPath -Force -ErrorAction SilentlyContinue
 
 # Resolved once so WinPE's X:\ path is used correctly in the error handler.
@@ -101,7 +101,7 @@ $script:GitHubTokenWarningShown = $false
 
 function Write-Step {
     param([string]$Message)
-    Write-Host "`n[AmpCloud] $Message" -ForegroundColor Cyan
+    Write-Host "`n[Nova] $Message" -ForegroundColor Cyan
 }
 
 function Write-Success {
@@ -127,6 +127,7 @@ function Update-BootstrapStatus {
         with the message, progress percentage, and step number.  When imaging is
         done, set -Done to signal the spinner to stop.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$Message  = '',
         [string]$Detail   = '',
@@ -206,6 +207,7 @@ function Update-ActiveDeploymentReport {
         Call with -Clear to remove the file after the deployment finishes or
         fails, signalling that the device is no longer actively deploying.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$DeviceName   = $env:COMPUTERNAME,
         [string]$TaskSequence = '',
@@ -291,7 +293,7 @@ function Send-DeploymentAlert {
     $eventType = if ($Status -eq 'success') { 'onSuccess' } else { 'onFailure' }
     $emoji     = if ($Status -eq 'success') { '✅' } else { '❌' }
     $color     = if ($Status -eq 'success') { '2b8a3e' } else { 'e03e3e' }
-    $title     = "$emoji AmpCloud Deployment $(if ($Status -eq 'success') { 'Succeeded' } else { 'Failed' })"
+    $title     = "$emoji Nova Deployment $(if ($Status -eq 'success') { 'Succeeded' } else { 'Failed' })"
 
     $details = "**Device:** $DeviceName`n**Task Sequence:** $TaskSequence`n**Status:** $Status`n**Steps:** $StepsCompleted/$StepsTotal"
     if ($Duration) { $details += "`n**Duration:** $Duration" }
@@ -360,9 +362,9 @@ function Get-GitHubTokenViaEntra {
     <#
     .SYNOPSIS  Exchanges an Entra ID token for a GitHub installation token.
     .DESCRIPTION
-        Calls the AmpCloud OAuth proxy's /api/token-exchange endpoint to
+        Calls the Nova OAuth proxy's /api/token-exchange endpoint to
         convert the Entra ID access token (already obtained during sign-in
-        by Bootstrap.ps1 and stored in $env:AMPCLOUD_GRAPH_TOKEN) into a
+        by Bootstrap.ps1 and stored in $env:NOVA_GRAPH_TOKEN) into a
         short-lived GitHub App installation access token scoped to
         contents:write.
 
@@ -385,10 +387,10 @@ function Get-GitHubTokenViaEntra {
         return $null
     }
 
-    $entraToken = $env:AMPCLOUD_GRAPH_TOKEN
+    $entraToken = $env:NOVA_GRAPH_TOKEN
     if (-not $entraToken) {
         if (-not $script:GitHubTokenWarningShown) {
-            Write-Warning "AMPCLOUD_GRAPH_TOKEN is not set — Entra→GitHub token exchange unavailable. Set GITHUB_TOKEN or sign in via Entra ID to enable deployment status reporting."
+            Write-Warning "NOVA_GRAPH_TOKEN is not set — Entra→GitHub token exchange unavailable. Set GITHUB_TOKEN or sign in via Entra ID to enable deployment status reporting."
             $script:GitHubTokenWarningShown = $true
         }
         return $null
@@ -419,7 +421,7 @@ function Get-GitHubTokenViaEntra {
         $req.Method      = 'POST'
         $req.ContentType = 'application/json'
         $req.Headers.Add('Authorization', "Bearer $entraToken")
-        $req.UserAgent   = 'AmpCloud-Engine'
+        $req.UserAgent   = 'Nova-Engine'
         $req.Timeout         = 15000
         $req.ReadWriteTimeout = 15000
 
@@ -450,7 +452,7 @@ function Get-GitHubTokenViaEntra {
                     $reader  = New-Object System.IO.StreamReader($resp.GetResponseStream())
                     $errBody = $reader.ReadToEnd()
                     $reader.Close()
-                } catch { }
+                } catch { $null = $_ }
             }
             Write-Warning "Entra→GitHub token exchange failed (HTTP $statusCode): $(if ($errBody) { $errBody.Substring(0, [math]::Min($errBody.Length, 200)) } else { '(no response body)' })"
             $script:EntraExchangeLastFailure = Get-Date
@@ -478,7 +480,7 @@ function Push-ReportToGitHub {
         Token resolution order:
           1. -Token parameter (explicit)
           2. $env:GITHUB_TOKEN (classic PAT — backward compatible)
-          3. Entra ID exchange — if $env:AMPCLOUD_GRAPH_TOKEN is set and the
+          3. Entra ID exchange — if $env:NOVA_GRAPH_TOKEN is set and the
              OAuth proxy (from Config/auth.json) is configured, the Entra
              token is exchanged for a short-lived GitHub installation token.
              This is the recommended path: no separate GitHub PAT required.
@@ -514,7 +516,7 @@ function Push-ReportToGitHub {
             $headers = @{
                 Authorization  = "Bearer $Token"
                 Accept         = 'application/vnd.github.v3+json'
-                'User-Agent'   = 'AmpCloud-Engine'
+                'User-Agent'   = 'Nova-Engine'
             }
 
             # Get the current file SHA (required for updates/deletes)
@@ -568,6 +570,7 @@ function Push-ReportToGitHub {
 }
 
 function New-ScratchDirectory {
+    [CmdletBinding(SupportsShouldProcess)]
     param([string]$Path)
     if (-not (Test-Path $Path)) {
         $null = New-Item -ItemType Directory -Path $Path -Force
@@ -815,6 +818,7 @@ function Find-WindowsESD {
         [string]$FirmwareType
     )
 
+    $null = $FirmwareType
     $arch = $Architecture
     $allFiles = $Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File
     $matchedEsd = $allFiles |
@@ -970,12 +974,14 @@ function Install-WindowsImage {
 #region ── BCD / Bootloader ─────────────────────────────────────────────────────
 
 function Set-Bootloader {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$OSDriveLetter,
         [string]$FirmwareType,
         [int]$DiskNumber
     )
 
+    if (-not $PSCmdlet.ShouldProcess($OSDriveLetter, 'Set-Bootloader')) { return }
     Write-Step 'Configuring bootloader...'
 
     $osDrive = "${OSDriveLetter}:"
@@ -1265,6 +1271,7 @@ function Invoke-OemDriverInjection {
 #region ── Autopilot / Intune ───────────────────────────────────────────────────
 
 function Set-AutopilotConfig {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$JsonUrl,
         [string]$JsonPath,
@@ -1303,7 +1310,7 @@ function Invoke-AutopilotImport {
     <#
     .SYNOPSIS  Registers the current device in Windows Autopilot via Microsoft Graph API.
     .DESCRIPTION
-        Uses the Graph access token (from AMPCLOUD_GRAPH_TOKEN) to check whether
+        Uses the Graph access token (from NOVA_GRAPH_TOKEN) to check whether
         the device is already registered in Autopilot.  If not, generates the
         hardware hash with oa3tool.exe and uploads the device identity via Graph.
         Group tag and user email are applied when provided.
@@ -1313,9 +1320,9 @@ function Invoke-AutopilotImport {
         [string]$UserEmail
     )
 
-    $token = $env:AMPCLOUD_GRAPH_TOKEN
+    $token = $env:NOVA_GRAPH_TOKEN
     if (-not $token) {
-        Write-Warn 'No Graph access token available (AMPCLOUD_GRAPH_TOKEN). Skipping Autopilot device import.'
+        Write-Warn 'No Graph access token available (NOVA_GRAPH_TOKEN). Skipping Autopilot device import.'
         return
     }
 
@@ -1325,7 +1332,7 @@ function Invoke-AutopilotImport {
 
     # ── 1. Get serial number ────────────────────────────────────────────
     $serial = $null
-    try { $serial = (Get-WmiObject -Class Win32_BIOS).SerialNumber } catch {}
+    try { $serial = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber } catch { $null = $_ }
     if (-not $serial -or $serial.Trim() -eq '') {
         throw 'Autopilot import failed: device serial number is empty or unavailable.'
     }
@@ -1499,6 +1506,7 @@ function Set-OOBECustomization {
         This function simply writes the final XML to disk (or downloads /
         copies from an external source).
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$UnattendUrl,
         [string]$UnattendPath,
@@ -1556,6 +1564,7 @@ function Invoke-PostScript {
         [string]$ScratchDir
     )
 
+    $null = $ScratchDir
     if (-not $ScriptUrls -or $ScriptUrls.Count -eq 0) {
         Write-Warn 'No post-provisioning scripts specified. Skipping.'
         return
@@ -1571,7 +1580,7 @@ function Invoke-PostScript {
 
         $i = 1
         foreach ($url in $ScriptUrls) {
-            $fileName = "AmpCloud_Post_$($i.ToString('00')).ps1"
+            $fileName = "Nova_Post_$($i.ToString('00')).ps1"
             $stepName = "Download post-script '$fileName'"
             $dest     = Join-Path $scriptDir $fileName
             Write-Host "  Downloading: $url -> $fileName"
@@ -1583,7 +1592,7 @@ function Invoke-PostScript {
         $stepName = 'Add SetupComplete entries'
         $setupComplete = "${OSDriveLetter}:\Windows\Setup\Scripts\SetupComplete.cmd"
         for ($j = 1; $j -lt $i; $j++) {
-            $fileName = "AmpCloud_Post_$($j.ToString('00')).ps1"
+            $fileName = "Nova_Post_$($j.ToString('00')).ps1"
             Add-SetupCompleteEntry -FilePath $setupComplete -Line "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$fileName`""
         }
 
@@ -1727,7 +1736,7 @@ function Invoke-TaskSequenceStep {
     <#
     .SYNOPSIS  Executes a single task sequence step by dispatching to the matching engine function.
     .DESCRIPTION
-        Maps each step type string to the corresponding AmpCloud engine function,
+        Maps each step type string to the corresponding Nova engine function,
         passing the step's parameters.  All parameter values come from the task
         sequence JSON — no script-level fallbacks.
     #>
@@ -1824,20 +1833,20 @@ function Invoke-TaskSequenceStep {
                 $base = ''
                 switch ($source) {
                     'serialNumber' {
-                        try { $base = (Get-WmiObject Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch {}
+                        try { $base = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch { $null = $_ }
                     }
                     'assetTag' {
-                        try { $base = (Get-WmiObject Win32_SystemEnclosure).SMBIOSAssetTag -replace '[^A-Za-z0-9]','' } catch {}
+                        try { $base = (Get-CimInstance -ClassName Win32_SystemEnclosure).SMBIOSAssetTag -replace '[^A-Za-z0-9]','' } catch { $null = $_ }
                     }
                     'macAddress' {
                         try {
-                            $mac = (Get-WmiObject Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1).MACAddress
+                            $mac = (Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1).MACAddress
                             $mac = if ($mac) { $mac -replace '[:\-]','' } else { '' }
                             if ($mac.Length -ge 12) { $base = $mac.Substring(6) }
-                        } catch {}
+                        } catch { $null = $_ }
                     }
                     'deviceModel' {
-                        try { $base = (Get-WmiObject Win32_ComputerSystem).Model -replace '[^A-Za-z0-9]','' } catch {}
+                        try { $base = (Get-CimInstance -ClassName Win32_ComputerSystem).Model -replace '[^A-Za-z0-9]','' } catch { $null = $_ }
                     }
                     'randomDigits' {
                         $count = if ($p.PSObject.Properties['randomDigitCount'] -and $p.randomDigitCount -gt 0) { [math]::Min($p.randomDigitCount, 10) } else { 4 }
@@ -1978,7 +1987,7 @@ try {
                 -CurrentScratchDir $ScratchDir `
                 -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
                 -CurrentDiskNumber $TargetDiskNumber
-            $ScratchDir = Join-Path "${OSDrive}:" 'AmpCloud'
+            $ScratchDir = Join-Path "${OSDrive}:" 'Nova'
             New-ScratchDirectory -Path $ScratchDir
         } else {
             try {
@@ -2017,10 +2026,10 @@ try {
 
     Write-Host @"
 
-[AmpCloud] ══════════════════════════════════════════════════════════
-[AmpCloud]  Imaging complete! Windows is ready on drive ${OSDrive}:
-[AmpCloud]  Rebooting in 15 seconds...
-[AmpCloud] ══════════════════════════════════════════════════════════
+[Nova] ══════════════════════════════════════════════════════════
+[Nova]  Imaging complete! Windows is ready on drive ${OSDrive}:
+[Nova]  Rebooting in 15 seconds...
+[Nova] ══════════════════════════════════════════════════════════
 "@ -ForegroundColor Green
 
     # Clean up scratch directory so temporary files do not persist in the
@@ -2035,7 +2044,7 @@ try {
     Restart-Computer -Force
 
 } catch {
-    Write-Fail "AmpCloud imaging failed at step '$stepName': $_"
+    Write-Fail "Nova imaging failed at step '$stepName': $_"
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
     Write-Host ''
 
@@ -2064,10 +2073,10 @@ try {
     Update-BootstrapStatus -Message "Imaging failed at step '$stepName'" `
         -Detail "$_" -Step 4
 
-    Write-Host '[AmpCloud] Dropping to interactive shell for troubleshooting.' -ForegroundColor Yellow
+    Write-Host '[Nova] Dropping to interactive shell for troubleshooting.' -ForegroundColor Yellow
     # Re-throw so Bootstrap.ps1 can close the UI before the user
     # needs the console.  The PowerShell host was started with -NoExit by
-    # ampcloud-start.cmd, so an interactive prompt appears automatically
+    # nova-start.cmd, so an interactive prompt appears automatically
     # once the form is dismissed.
     throw
 } finally {

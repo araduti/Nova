@@ -123,7 +123,7 @@ export async function handleTokenExchange(
     } catch {
       /* JWT structure invalid — Graph already validated the token so
          this is a non-standard token format.  Log and skip tenant check. */
-      console.warn('[AmpCloud-OAuth-Proxy] Could not decode Entra JWT for tenant check');
+      console.warn('[Nova-OAuth-Proxy] Could not decode Entra JWT for tenant check');
     }
   }
 
@@ -150,7 +150,7 @@ export async function handleTokenExchange(
       headers: {
         Authorization: 'Bearer ' + appJwt,
         Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'AmpCloud-OAuth-Proxy',
+        'User-Agent': 'Nova-OAuth-Proxy',
       },
       body: JSON.stringify({
         permissions: { contents: 'write' },
