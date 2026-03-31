@@ -20,8 +20,9 @@
 10. [Performance Assessment](#performance-assessment)  
 11. [Open-Source Readiness](#open-source-readiness)  
 12. [Preserving `irm | iex` After Modularization](#preserving-irm--iex-after-modularization)  
-13. [Next-Gen Recommendations](#next-gen-recommendations)  
-14. [Priority Roadmap](#priority-roadmap)  
+13. [GitHub Pages Compatibility with a Build System](#github-pages-compatibility-with-a-build-system)  
+14. [Next-Gen Recommendations](#next-gen-recommendations)  
+15. [Priority Roadmap](#priority-roadmap)  
 
 ---
 
@@ -814,6 +815,249 @@ A: Same as today — the `irm` call fails and PowerShell shows an error. The scr
 
 ---
 
+## GitHub Pages Compatibility with a Build System
+
+> **TL;DR — Yes, fully supported.** GitHub Pages serves static files. A build system (Vite/esbuild) simply *produces* those static files. The build runs in GitHub Actions CI, outputs to a `dist/` folder, and Pages deploys that folder. This is the standard pattern used by thousands of Vite, React, Vue, and Angular projects hosted on GitHub Pages.
+
+### The Concern
+
+The REPORT.md recommends adding a Vite/esbuild build system (Recommendation #3, Phase 3). Since AmpCloud's web UIs are hosted on GitHub Pages, does this even work? **Yes** — and the current `pages.yml` workflow already has the exact structure needed. Only one small change is required.
+
+### How GitHub Pages Works
+
+GitHub Pages is a **static file server**. It doesn't run any server-side code — it simply serves files from a directory. There are two deployment models:
+
+| Model | How It Works | Use Case |
+|-------|-------------|----------|
+| **Static (current)** | Deploy raw files directly from the repo | Simple sites with no build step |
+| **Build + Deploy** | CI builds assets → outputs to `dist/` → Pages serves `dist/` | Projects using Vite, esbuild, Webpack, etc. |
+
+AmpCloud currently uses the "static" model. The proposed build system uses the "build + deploy" model. Both deploy the same thing: **static HTML, CSS, and JS files**. The only difference is *where those files come from*.
+
+### Current vs. Proposed Workflow
+
+```
+TODAY (no build step):                    AFTER (with Vite build):
+──────────────────────                    ────────────────────────
+
+  Source files in repo                      Source files in repo
+  (raw HTML/CSS/JS)                         (src/*.ts, *.css, *.vue)
+         │                                           │
+         ▼                                           ▼
+┌────────────────────┐                    ┌────────────────────┐
+│ pages.yml workflow │                    │ pages.yml workflow │
+│                    │                    │                    │
+│ 1. Checkout repo   │                    │ 1. Checkout repo   │
+│ 2. Upload . (root) │ ← entire repo     │ 2. npm ci          │ ← NEW
+│ 3. Deploy to Pages │                    │ 3. npm run build   │ ← NEW
+│                    │                    │ 4. Upload dist/    │ ← changed
+└────────────────────┘                    │ 5. Deploy to Pages │
+                                          └────────────────────┘
+         │                                           │
+         ▼                                           ▼
+┌────────────────────┐                    ┌────────────────────┐
+│ GitHub Pages       │                    │ GitHub Pages       │
+│ serves raw files   │                    │ serves built files │
+│ (unminified)       │                    │ (minified, hashed) │
+└────────────────────┘                    └────────────────────┘
+```
+
+### Current Workflow (What You Have)
+
+```yaml
+# .github/workflows/pages.yml (current — 45 lines)
+name: Deploy Web UI to GitHub Pages
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "Editor/**"
+      - "Monitoring/**"
+      - "TaskSequence/**"
+      - "Config/**"
+      - "index.html"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .              # ← uploads ENTIRE repo (387 MB!)
+      - uses: actions/deploy-pages@v4
+```
+
+**Problems with the current approach:**
+- Uploads the **entire repo** (387 MB including drivers) as a Pages artifact
+- Serves raw, unminified HTML/CSS/JS
+- No minification, no tree-shaking, no hashing
+- No SRI (Subresource Integrity) hashes
+
+### Proposed Workflow (With Build Step)
+
+```yaml
+# .github/workflows/pages.yml (proposed — with build step)
+name: Deploy Web UI to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "Editor/**"
+      - "Monitoring/**"
+      - "AmpCloud-UI/**"
+      - "Progress/**"
+      - "TaskSequence/**"
+      - "Config/**"
+      - "index.html"
+      - "package.json"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web assets
+        run: npm run build          # Vite builds to dist/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist                # ← only built assets (~500 KB)
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+```
+
+### What Changes for the Developer
+
+| Aspect | Today | With Build System |
+|--------|-------|-------------------|
+| **Edit a UI file** | Edit `Editor/index.html`, push to `main` | Edit `src/editor/App.ts`, push to `main` |
+| **Local development** | Open `index.html` in browser | `npm run dev` (Vite dev server with HMR) |
+| **Deploy** | Automatic on push | Automatic on push (build step added) |
+| **Pages URL** | Same | Same — `https://araduti.github.io/AmpCloud/` |
+| **Build time** | 0s (no build) | ~5-10s (Vite is extremely fast) |
+| **Deployed size** | 387 MB (entire repo) | ~500 KB (only web assets) |
+
+### What Does NOT Change
+
+- **GitHub Pages URL** — stays `https://araduti.github.io/AmpCloud/`
+- **User experience** — same pages, same URLs, same functionality
+- **Deployment trigger** — still automatic on push to `main`
+- **Free tier** — GitHub Pages free tier has no restrictions on build systems
+- **Custom domain** — `osd.raduti.com` (if configured) continues to work
+
+### Why Vite Is the Right Choice
+
+| Feature | Why It Matters for AmpCloud |
+|---------|---------------------------|
+| **Zero-config** | Detects HTML entry points automatically — your existing `index.html` files work as-is |
+| **Multi-page mode** | Native support for Editor, Monitoring, AmpCloud-UI, Progress as separate pages |
+| **CSS extraction** | Pulls inline `<style>` blocks into optimized, hashed `.css` files |
+| **JS minification** | Minifies and tree-shakes JavaScript — reduces 92 KB Monitoring page significantly |
+| **SRI hashes** | Generates integrity hashes for all assets (security improvement) |
+| **Dev server** | `npm run dev` with hot module replacement for instant feedback |
+| **GitHub Pages plugin** | [`vite-plugin-github-pages`](https://github.com/nicolo-ribaudo/vite-plugin-github-pages) handles base path automatically |
+
+### Minimal Vite Config for AmpCloud
+
+```javascript
+// vite.config.js
+import { defineConfig } from 'vite';
+import { resolve } from 'path';
+
+export default defineConfig({
+  base: '/AmpCloud/',    // GitHub Pages serves from /AmpCloud/
+  build: {
+    outDir: 'dist',
+    rollupOptions: {
+      input: {
+        main:       resolve(__dirname, 'index.html'),
+        editor:     resolve(__dirname, 'Editor/index.html'),
+        monitoring: resolve(__dirname, 'Monitoring/index.html'),
+      },
+    },
+  },
+});
+```
+
+> **Note:** AmpCloud-UI and Progress are embedded in WinPE by Trigger.ps1, not served via GitHub Pages. They stay as single-file HTML pages since they run offline inside WinPE — no build system needed for those.
+
+### Incremental Adoption Path
+
+You don't have to convert everything at once. This is a safe, incremental path:
+
+```
+Step 1: Add package.json + vite.config.js (no code changes)
+        Vite can build existing HTML files as-is
+        ↓
+Step 2: Update pages.yml to add build step
+        Pages now serves optimized output — same files, smaller
+        ↓
+Step 3: Extract inline CSS/JS from monolithic HTML files
+        Move <style> and <script> blocks to separate .css/.js files
+        Vite bundles them back together, but now they're editable
+        ↓
+Step 4: (Optional) Migrate to TypeScript, add components
+        Full modern development experience
+```
+
+**Step 1 is risk-free** — Vite treats plain HTML files as valid entry points and copies them to `dist/` with no changes. You can add the build step and verify that Pages still works identically before making any code changes.
+
+### FAQ
+
+**Q: Does GitHub Pages run Node.js or any server-side code?**  
+A: No. GitHub Pages is a pure static file server. The build step runs in **GitHub Actions CI** (the workflow), not on Pages itself. Pages only serves the output.
+
+**Q: Will my Pages URL change?**  
+A: No. The URL stays `https://araduti.github.io/AmpCloud/`. The `base: '/AmpCloud/'` in `vite.config.js` ensures all asset paths are correct.
+
+**Q: What about the TaskSequence JSON files and Config directory?**  
+A: Vite's `public/` directory copies files as-is to `dist/`. Move `TaskSequence/` and `Config/` into `public/` (or configure Vite to include them) and they'll be served at the same URLs.
+
+**Q: Does this affect the PowerShell scripts (Trigger.ps1, Bootstrap.ps1, AmpCloud.ps1)?**  
+A: No. The PowerShell scripts are downloaded via `raw.githubusercontent.com` URLs (GitHub raw content), not via GitHub Pages. The build system only affects the web UIs served via Pages.
+
+**Q: What about the WinPE-embedded UIs (AmpCloud-UI, Progress)?**  
+A: These are downloaded by Trigger.ps1 and embedded directly into the WinPE image (lines 1187-1217). They run offline from `X:\` and are **not** served via GitHub Pages. They should stay as single-file HTML — no build system needed.
+
+**Q: Is there a cost increase?**  
+A: No. GitHub Actions minutes for public repos are free. The build step adds ~30 seconds to deployment. GitHub Pages has no additional cost regardless of whether files are built or raw.
+
+---
+
 ## Next-Gen Recommendations
 
 ### 1. Modularize PowerShell into Modules
@@ -842,11 +1086,12 @@ A: Same as today — the `irm` call fails and PowerShell shows an error. The scr
 
 **Why:** Shipping raw, unminified, monolithic files is not performant or maintainable.
 
-**How:**
+**How:** Use **Vite** with the GitHub Pages deployment pattern described in [GitHub Pages Compatibility with a Build System](#github-pages-compatibility-with-a-build-system):
 - **Vite** for web UIs: Build Editor, Monitoring, and UI pages with HMR for development
 - **esbuild** for OAuth proxy: TypeScript compilation and bundling
 - **Asset pipeline:** CSS extraction, minification, SRI hash generation
 - **Dev server:** `npm run dev` for local development with hot reload
+- GitHub Pages fully supports this — the build runs in CI, Pages serves the output
 
 ### 4. Migrate OAuth Proxy to TypeScript
 
