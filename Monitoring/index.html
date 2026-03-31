@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AmpCloud — Deployment Monitoring</title>
+    <title>Nova — Deployment Monitoring</title>
     <style>
         /* ── Reset & base ─────────────────────────────────────────────── */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -888,7 +888,7 @@
         <div class="dash-header-left">
             <a href="../" class="dash-logo">
                 <span class="dash-logo-icon">&#9729;</span>
-                AmpCloud
+                Nova
             </a>
             <span class="dash-subtitle">Deployment Monitoring</span>
         </div>
@@ -1079,7 +1079,7 @@
                     <div class="alert-field">
                         <label class="alert-field-label">From Address</label>
                         <input type="email" class="alert-field-input" id="emailFrom"
-                               placeholder="ampcloud@contoso.com"
+                               placeholder="nova@contoso.com"
                                oninput="saveAlertConfig()">
                     </div>
                     <div class="alert-field">
@@ -1126,7 +1126,7 @@
             <div class="diag-body">
                 <div class="diag-intro">
                     Running connection checks to diagnose why deployment data may not be appearing.
-                    Each check tests a link in the data pipeline from the AmpCloud engine to this dashboard.
+                    Each check tests a link in the data pipeline from the Nova engine to this dashboard.
                 </div>
                 <div id="diagChecks" class="diag-checks"></div>
             </div>
@@ -1141,9 +1141,9 @@
     'use strict';
 
     /* ── Constants ──────────────────────────────────────────────────── */
-    var STORAGE_KEY = 'ampcloud_deploy_history';
-    var ACTIVE_KEY  = 'ampcloud_active_deploys';
-    var ALERTS_KEY  = 'ampcloud_alert_config';
+    var STORAGE_KEY = 'nova_deploy_history';
+    var ACTIVE_KEY  = 'nova_active_deploys';
+    var ALERTS_KEY  = 'nova_alert_config';
 
     /* GitHub repo for fetching deployment data pushed by the engine */
     var GH_OWNER  = 'araduti';
@@ -1748,7 +1748,7 @@
         var blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'ampcloud-deployments-' + new Date().toISOString().slice(0, 10) + '.csv';
+        a.download = 'nova-deployments-' + new Date().toISOString().slice(0, 10) + '.csv';
         a.click();
         URL.revokeObjectURL(a.href);
     }
@@ -1822,8 +1822,8 @@
         var cfg = getAlertConfig();
         var json = JSON.stringify(cfg, null, 4);
 
-        var snippet = '# Save this as Config/alerts.json in your AmpCloud repository.\n' +
-            '# The AmpCloud engine reads this file to send deployment notifications.\n' +
+        var snippet = '# Save this as Config/alerts.json in your Nova repository.\n' +
+            '# The Nova engine reads this file to send deployment notifications.\n' +
             json;
 
         document.getElementById('configSnippet').textContent = snippet;
@@ -1839,7 +1839,7 @@
                 alert('Please enter a webhook URL first.');
                 return;
             }
-            alert('Test notification would be sent to ' + channel.charAt(0).toUpperCase() + channel.slice(1) + '.\n\nIn production, the AmpCloud deployment engine sends the notification via the webhook URL:\n' + c.webhook);
+            alert('Test notification would be sent to ' + channel.charAt(0).toUpperCase() + channel.slice(1) + '.\n\nIn production, the Nova deployment engine sends the notification via the webhook URL:\n' + c.webhook);
         } else if (channel === 'email') {
             if (!c.smtp || !c.from || !c.to) {
                 alert('Please fill in SMTP server, From address, and To address first.');
@@ -1870,7 +1870,7 @@
     /* ── Sample data generator ─────────────────────────────────────── */
     function addSampleData() {
         var devices = ['PC-DEPLOY-01', 'PC-DEPLOY-02', 'LAPTOP-HR-03', 'DESKTOP-IT-04', 'PC-SALES-05', 'LAPTOP-DEV-06', 'PC-EXEC-07', 'KIOSK-LOBBY-08'];
-        var sequences = ['Default AmpCloud Task Sequence', 'Windows 11 Enterprise', 'Windows 10 LTSC Kiosk', 'Autopilot Standard'];
+        var sequences = ['Default Nova Task Sequence', 'Windows 11 Enterprise', 'Windows 10 LTSC Kiosk', 'Autopilot Standard'];
         var errors = [
             'Network timeout during image download',
             'Disk partitioning failed: access denied',
@@ -1919,7 +1919,7 @@
             {
                 id: 'active_1',
                 deviceName: 'PC-DEPLOY-NEW',
-                taskSequence: 'Default AmpCloud Task Sequence',
+                taskSequence: 'Default Nova Task Sequence',
                 status: 'running',
                 progress: 42,
                 currentStep: 'Downloading Windows 11 23H2 image...',
@@ -2127,7 +2127,7 @@
                         }
                     });
                 } else if (r.status === 404) {
-                    finish('reportsDir', 'warn', 'Deployments/reports/ directory not found. This is normal if no deployment has been completed yet. The AmpCloud engine creates this directory automatically when it pushes the first report.');
+                    finish('reportsDir', 'warn', 'Deployments/reports/ directory not found. This is normal if no deployment has been completed yet. The Nova engine creates this directory automatically when it pushes the first report.');
                 } else {
                     finish('reportsDir', 'fail', 'Cannot access Deployments/reports/ (HTTP ' + r.status + '). Check repository permissions.');
                 }
@@ -2150,7 +2150,7 @@
                         }
                     });
                 } else if (r.status === 404) {
-                    finish('activeDir', 'warn', 'Deployments/active/ directory not found. This is normal if no deployment is in progress. The AmpCloud engine creates this directory when a device starts imaging.');
+                    finish('activeDir', 'warn', 'Deployments/active/ directory not found. This is normal if no deployment is in progress. The Nova engine creates this directory when a device starts imaging.');
                 } else {
                     finish('activeDir', 'fail', 'Cannot access Deployments/active/ (HTTP ' + r.status + '). Check repository permissions.');
                 }

@@ -1,7 +1,7 @@
 /* ─────────────────────────────────────────────────────────────────────
-   AmpCloud Task Sequence Editor — app.js
+   Nova Task Sequence Editor — app.js
    SCCM-style web UI for building and editing JSON task sequences that
-   the AmpCloud engine (AmpCloud.ps1) can read and execute.
+   the Nova engine (AmpCloud.ps1) can read and execute.
    ────────────────────────────────────────────────────────────────────── */
 
 'use strict';
@@ -206,7 +206,7 @@ const BUILT_IN_STEP_TEMPLATES = [
     }
 ];
 
-const TEMPLATES_KEY = 'ampcloud_step_templates';
+const TEMPLATES_KEY = 'nova_step_templates';
 
 /** Load user-saved templates from localStorage. */
 function loadUserTemplates() {
@@ -245,9 +245,9 @@ const STEP_GROUP_DEFAULTS = {
 
 /* ── State ────────────────────────────────────────────────────────── */
 let taskSequence = {
-    name: 'Default AmpCloud Task Sequence',
+    name: 'Default Nova Task Sequence',
     version: '1.0',
-    description: 'Standard cloud-native Windows deployment via AmpCloud',
+    description: 'Standard cloud-native Windows deployment via Nova',
     steps: []
 };
 let selectedIndex = -1;
@@ -256,8 +256,8 @@ let dragSrcIndex = -1;
 let githubConfig = { owner: '', repo: '', clientId: '', oauthProxy: '' };
 let dirty = false;
 let autoSaveTimer = null;
-const DRAFT_KEY = 'ampcloud_editor_draft';
-const COLLAPSED_KEY = 'ampcloud_collapsed_groups';
+const DRAFT_KEY = 'nova_editor_draft';
+const COLLAPSED_KEY = 'nova_collapsed_groups';
 let undoStack = [];
 let redoStack = [];
 const MAX_UNDO = 50;
@@ -269,7 +269,7 @@ let collapsedGroups = new Set();
 try {
     const stored = localStorage.getItem(COLLAPSED_KEY);
     if (stored) collapsedGroups = new Set(JSON.parse(stored));
-} catch (e) { console.warn('[AmpCloud] Failed to load collapsed groups:', e.message); }
+} catch (e) { console.warn('[Nova] Failed to load collapsed groups:', e.message); }
 
 /* ── DOM refs ─────────────────────────────────────────────────────── */
 const $stepList     = document.getElementById('stepList');
@@ -355,17 +355,17 @@ STEP_TYPES.forEach(t => {
 function updateDirtyUI() {
     if (dirty) {
         $btnSave.classList.add('dirty');
-        document.title = '\u25CF AmpCloud Task Sequence Editor';
+        document.title = '\u25CF Nova Task Sequence Editor';
     } else {
         $btnSave.classList.remove('dirty');
-        document.title = 'AmpCloud Task Sequence Editor';
+        document.title = 'Nova Task Sequence Editor';
     }
 }
 
 function scheduleDraftSave() {
     clearTimeout(autoSaveTimer);
     autoSaveTimer = setTimeout(function () {
-        try { localStorage.setItem(DRAFT_KEY, JSON.stringify(taskSequence)); } catch (e) { console.warn('[AmpCloud] Auto-save draft failed:', e.message); }
+        try { localStorage.setItem(DRAFT_KEY, JSON.stringify(taskSequence)); } catch (e) { console.warn('[Nova] Auto-save draft failed:', e.message); }
     }, 1000);
 }
 
@@ -548,7 +548,7 @@ const STEP_BADGE_LABELS = {
 };
 
 function saveCollapsedGroups() {
-    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedGroups])); } catch (e) { console.warn('[AmpCloud] Failed to save collapsed groups:', e.message); }
+    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedGroups])); } catch (e) { console.warn('[Nova] Failed to save collapsed groups:', e.message); }
 }
 
 function toggleGroup(groupName) {
@@ -1379,7 +1379,7 @@ function getGitHubTokenViaPAT(fallbackReason) {
             e.preventDefault();
             var v = input.value.trim();
             if (v) {
-                sessionStorage.setItem('ampcloud_github_token', v);
+                sessionStorage.setItem('nova_github_token', v);
                 cleanup(v);
             }
         });
@@ -1465,7 +1465,7 @@ function showDeviceCodeDialog(deviceData, resolve) {
             if (!polling) return;
             networkErrors = 0;
             if (data.access_token) {
-                sessionStorage.setItem('ampcloud_github_token', data.access_token);
+                sessionStorage.setItem('nova_github_token', data.access_token);
                 cleanup(data.access_token);
             } else if (data.error === 'slow_down') {
                 /* GitHub asks us to increase the polling interval. */
@@ -1480,7 +1480,7 @@ function showDeviceCodeDialog(deviceData, resolve) {
             }
         })
         .catch(function (err) {
-            console.warn('[AmpCloud] Device Flow token poll error:', err);
+            console.warn('[Nova] Device Flow token poll error:', err);
             networkErrors++;
             if (polling && networkErrors < maxNetworkErrors) {
                 setTimeout(poll, interval);
@@ -1500,7 +1500,7 @@ function showDeviceCodeDialog(deviceData, resolve) {
  */
 function getGitHubToken() {
     return new Promise(function (resolve) {
-        var existing = sessionStorage.getItem('ampcloud_github_token');
+        var existing = sessionStorage.getItem('nova_github_token');
         if (existing) { resolve(existing); return; }
 
         /* If both a GitHub OAuth App client ID and CORS proxy are configured,
@@ -1523,7 +1523,7 @@ function getGitHubToken() {
                 showDeviceCodeDialog(data, resolve);
             })
             .catch(function (err) {
-                console.warn('[AmpCloud] GitHub Device Flow failed, falling back to PAT.', err);
+                console.warn('[Nova] GitHub Device Flow failed, falling back to PAT.', err);
                 var reason = err && err.message === 'Failed to fetch'
                     ? 'Could not reach the OAuth proxy (CORS or network error). Using Personal Access Token instead.'
                     : 'GitHub Device Flow failed: ' + (err && err.message ? err.message : 'unknown error');
@@ -1567,7 +1567,7 @@ document.getElementById('btnSave').addEventListener('click', async () => {
         /* Get current SHA */
         const getResp = await fetch(apiBase, { headers: headers });
         if (getResp.status === 401 || getResp.status === 403) {
-            sessionStorage.removeItem('ampcloud_github_token');
+            sessionStorage.removeItem('nova_github_token');
             throw new Error('Invalid or expired GitHub token. Please try saving again.');
         }
         if (!getResp.ok) throw new Error('Failed to read file from GitHub (HTTP ' + getResp.status + ')');
@@ -1578,13 +1578,13 @@ document.getElementById('btnSave').addEventListener('click', async () => {
             method: 'PUT',
             headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
             body: JSON.stringify({
-                message: 'Update default.json via AmpCloud Editor',
+                message: 'Update default.json via Nova Editor',
                 content: toBase64(json),
                 sha: fileData.sha
             })
         });
         if (putResp.status === 401 || putResp.status === 403) {
-            sessionStorage.removeItem('ampcloud_github_token');
+            sessionStorage.removeItem('nova_github_token');
             throw new Error('GitHub token lacks write permission. Please try saving again with a valid token.');
         }
         if (!putResp.ok) {

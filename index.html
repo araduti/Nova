@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AmpCloud — Task Sequence Dashboard</title>
+    <title>Nova — Task Sequence Dashboard</title>
     <style>
         /* ── Reset & base ─────────────────────────────────────────────── */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -380,7 +380,7 @@
         <div class="dash-header-left">
             <span class="dash-logo">
                 <span class="dash-logo-icon">&#9729;</span>
-                AmpCloud
+                Nova
             </span>
             <span class="dash-subtitle">Task Sequence Dashboard</span>
         </div>
@@ -560,11 +560,11 @@
 
     /** Save a task sequence to localStorage recent list. */
     function saveToRecent(ts) {
-        var recents = JSON.parse(localStorage.getItem('ampcloud_recent_ts') || '[]');
+        var recents = JSON.parse(localStorage.getItem('nova_recent_ts') || '[]');
         var key = 'ts_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
         recents.unshift({ key: key, data: ts, timestamp: Date.now() });
         if (recents.length > MAX_RECENT_ITEMS) recents = recents.slice(0, MAX_RECENT_ITEMS);
-        localStorage.setItem('ampcloud_recent_ts', JSON.stringify(recents));
+        localStorage.setItem('nova_recent_ts', JSON.stringify(recents));
         /* Also store the actual data for editor retrieval */
         sessionStorage.setItem(key, JSON.stringify(ts));
         return key;
@@ -572,16 +572,16 @@
 
     /** Remove a recently opened task sequence. */
     function removeRecent(key) {
-        var recents = JSON.parse(localStorage.getItem('ampcloud_recent_ts') || '[]');
+        var recents = JSON.parse(localStorage.getItem('nova_recent_ts') || '[]');
         recents = recents.filter(function (r) { return r.key !== key; });
-        localStorage.setItem('ampcloud_recent_ts', JSON.stringify(recents));
+        localStorage.setItem('nova_recent_ts', JSON.stringify(recents));
         sessionStorage.removeItem(key);
         loadRecentSequences();
     }
 
     /** Load and display recently opened task sequences. */
     function loadRecentSequences() {
-        var recents = JSON.parse(localStorage.getItem('ampcloud_recent_ts') || '[]');
+        var recents = JSON.parse(localStorage.getItem('nova_recent_ts') || '[]');
         var section = document.getElementById('recentSection');
         var grid = document.getElementById('recentGrid');
 

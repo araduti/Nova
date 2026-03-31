@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AmpCloud</title>
+    <title>Nova</title>
     <style>
         /* ── Reset & base ──────────────────────────────────────────── */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -522,7 +522,7 @@
                         <path d="M6.5 18.5C3.46 18.5 1 16.04 1 13c0-2.6 1.81-4.77 4.24-5.33A7.5 7.5 0 0 1 19.22 9.5 5.5 5.5 0 0 1 18 20.5H6.5Z" fill="#fff"/>
                     </svg>
                 </span>
-                <span>AmpCloud</span>
+                <span>Nova</span>
             </div>
 
             <!-- Hero illustration — device setup scene -->
@@ -618,7 +618,7 @@
         <button class="btn-small" onclick="sendAction('shutdown')">&#9211; Shutdown</button>
     </div>
 
-    <span class="brand">AmpCloud &bull; Cloud Imaging Engine</span>
+    <span class="brand">Nova &bull; Cloud Imaging Engine</span>
     <span class="hint">Press F8 for command prompt</span>
 
     <!-- Device Code auth modal overlay -->
@@ -699,7 +699,7 @@
     </div>
 
     <script>
-        /* ── AmpCloud Interactive UI ─────────────────────────────────
+        /* ── Nova Interactive UI ─────────────────────────────────────
          *  Polls X:\AmpCloud-Status.json (written by Bootstrap.ps1 and
          *  AmpCloud.ps1) and updates the on-screen progress display.
          *  Sends user actions to Bootstrap.ps1 via HTTP on localhost:8080.
@@ -1003,7 +1003,7 @@
              * the popup closes, so the next poll won't re-trigger. */
             if (data.AuthUrl && !authNavigating) {
                 authNavigating = true;
-                var authPopup = window.open(data.AuthUrl, 'AmpCloudAuth',
+                var authPopup = window.open(data.AuthUrl, 'NovaAuth',
                     'width=520,height=700,menubar=no,toolbar=no,location=yes,status=no');
                 if (!authPopup) {
                     /* Popup blocked — reset flag so the next poll can retry. */
