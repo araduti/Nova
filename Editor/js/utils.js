@@ -55,8 +55,8 @@ export function formatXml(xml) {
  * @returns {string[]}
  */
 export function validateStep(step) {
-  var warnings = [];
-  var p = step.parameters || {};
+  const warnings = [];
+  const p = step.parameters || {};
   switch (step.type) {
     case 'PartitionDisk':
       if (p.diskNumber < 0) warnings.push('Disk number must be >= 0');
@@ -84,7 +84,7 @@ export function validateStep(step) {
       break;
   }
   /* Validate condition if present */
-  var cond = step.condition;
+  const cond = step.condition;
   if (cond && cond.type) {
     if (cond.type === 'variable' && !cond.variable) {
       warnings.push('Condition: variable name is empty');
@@ -106,8 +106,8 @@ export function validateStep(step) {
  * @returns {Array<{ level: string, message: string }>}
  */
 export function validateTaskSequence(taskSequence) {
-  var results = [];
-  var steps = taskSequence.steps || [];
+  const results = [];
+  const steps = taskSequence.steps || [];
 
   if (steps.length === 0) {
     results.push({ level: 'warning', message: 'Task sequence has no steps' });
@@ -116,20 +116,20 @@ export function validateTaskSequence(taskSequence) {
 
   /* Helper: find the first enabled step index of a given type */
   function firstEnabled(type) {
-    for (var i = 0; i < steps.length; i++) {
+    for (let i = 0; i < steps.length; i++) {
       if (steps[i].type === type && steps[i].enabled !== false) return i;
     }
     return -1;
   }
 
   /* ── Required steps ─────────────────────────────────────────────── */
-  var partIdx   = firstEnabled('PartitionDisk');
-  var applyIdx  = firstEnabled('ApplyImage');
-  var bootIdx   = firstEnabled('SetBootloader');
-  var dlIdx     = firstEnabled('DownloadImage');
-  var cnIdx     = firstEnabled('SetComputerName');
-  var rsIdx     = firstEnabled('SetRegionalSettings');
-  var oobeIdx   = firstEnabled('CustomizeOOBE');
+  const partIdx   = firstEnabled('PartitionDisk');
+  const applyIdx  = firstEnabled('ApplyImage');
+  const bootIdx   = firstEnabled('SetBootloader');
+  const dlIdx     = firstEnabled('DownloadImage');
+  const cnIdx     = firstEnabled('SetComputerName');
+  const rsIdx     = firstEnabled('SetRegionalSettings');
+  const oobeIdx   = firstEnabled('CustomizeOOBE');
 
   if (applyIdx >= 0 && partIdx < 0) {
     results.push({ level: 'error', message: 'ApplyImage is enabled but no PartitionDisk step is enabled — disk must be partitioned first' });
@@ -156,7 +156,7 @@ export function validateTaskSequence(taskSequence) {
   }
 
   /* ── Duplicate IDs ──────────────────────────────────────────────── */
-  var idsSeen = {};
+  const idsSeen = {};
   steps.forEach(function (s, i) {
     if (s.id) {
       if (idsSeen[s.id] !== undefined) {
