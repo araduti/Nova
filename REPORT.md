@@ -1215,35 +1215,35 @@ jobs:
 ## Priority Roadmap
 
 ### Phase 1: Foundation (Weeks 1-2)
-- [ ] Add `package.json` to oauth-proxy with wrangler, vitest, typescript dev dependencies
-- [ ] Add PSScriptAnalyzer to CI workflow
-- [ ] Add CodeQL security scanning to CI workflow
-- [ ] Set `ALLOWED_ORIGIN` in production Cloudflare Worker
-- [ ] Enforce `ENTRA_TENANT_ID` in production
-- [ ] Update `upload-pages-artifact` to v4
-- [ ] Update wrangler `compatibility_date` to current date
+- [x] Add `package.json` to oauth-proxy with wrangler, vitest, typescript dev dependencies
+- [x] Add PSScriptAnalyzer to CI workflow
+- [x] Add CodeQL security scanning to CI workflow
+- [x] Set `ALLOWED_ORIGIN` in production Cloudflare Worker
+- [x] Enforce `ENTRA_TENANT_ID` in production
+- [x] Update `upload-pages-artifact` to v4
+- [x] Update wrangler `compatibility_date` to current date
 
 ### Phase 2: Testing (Weeks 3-4)
 - [ ] Add Pester v5 tests for core PowerShell functions (auth, imaging, task sequence)
-- [ ] Add Vitest tests for oauth-proxy (JWT, CORS, token validation)
-- [ ] Add Vitest tests for Editor app.js (escapeHtml, toBase64, API handlers)
-- [ ] Create CI workflow that runs tests on every PR
+- [x] Add Vitest tests for oauth-proxy (JWT, CORS, token validation)
+- [x] Add Vitest tests for Editor app.js (escapeHtml, toBase64, API handlers)
+- [x] Create CI workflow that runs tests on every PR
 
 ### Phase 3: Modernization (Weeks 5-8)
-- [ ] Migrate oauth-proxy to TypeScript
+- [x] Migrate oauth-proxy to TypeScript
 - [ ] Upgrade MSAL.js from v2.39.0 to v4.x
 - [ ] Add rate limiting to OAuth proxy (Cloudflare KV or Workers Rate Limiting)
 - [ ] Implement script integrity verification (SHA256 hash check)
 - [ ] Extract inline JS/CSS from monolithic HTML files
-- [ ] Add build step (Vite/esbuild) for web assets
+- [x] Add build step (Vite/esbuild) for web assets
 
 ### Phase 4: Scale (Weeks 9-12)
 - [ ] Move drivers to Git LFS or external storage
 - [ ] Modularize PowerShell scripts into `.psm1` modules
 - [ ] Add E2E tests for Editor (Playwright)
-- [ ] Implement CSP headers on all pages
+- [x] Implement CSP headers on all pages
 - [ ] Create first semantic version release (v1.0.0)
-- [ ] Set up Dependabot for automated dependency updates
+- [x] Set up Dependabot for automated dependency updates
 - [ ] Enable and configure alerts (Teams/Slack webhook integration)
 
 ### Phase 5: Next-Gen (Ongoing)
