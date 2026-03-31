@@ -34,6 +34,28 @@ jobs:
       - name: Run tests
         run: npm test
 
+  lint-powershell:
+    name: PowerShell — PSScriptAnalyzer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
+          $results = @()
+          $scripts = Get-ChildItem -Path . -Include '*.ps1','*.psm1' -Recurse
+          foreach ($script in $scripts) {
+            $results += Invoke-ScriptAnalyzer -Path $script.FullName -Severity Warning,Error -ExcludeRule PSAvoidUsingWriteHost
+          }
+          if ($results.Count -gt 0) {
+            $results | Format-Table -AutoSize
+            Write-Error "PSScriptAnalyzer found $($results.Count) issue(s)."
+            exit 1
+          }
+          Write-Host "PSScriptAnalyzer: all scripts passed."
+
   build-web:
     name: Web UI — Build
     runs-on: ubuntu-latest
