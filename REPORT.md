@@ -1,4 +1,4 @@
-# AmpCloud — Complete Codebase Review & Next-Gen Roadmap
+# Nova — Complete Codebase Review & Next-Gen Roadmap
 
 > **Date:** 2026-03-31  
 > **Scope:** Full audit of codebase, package versions, folder structures, security, performance  
@@ -28,7 +28,7 @@
 
 ## Executive Summary
 
-AmpCloud is a cloud-native Windows OS deployment platform built around a 3-stage pipeline (Trigger → Bootstrap → Imaging Engine). The codebase is **functional, well-documented, and security-conscious** with modern OAuth 2.0 flows (PKCE, Device Code, Entra token exchange). However, it currently operates as a **monolithic set of scripts and single-file web apps** without a package manager, build pipeline, test suite, or modular architecture.
+Nova is a cloud-native Windows OS deployment platform built around a 3-stage pipeline (Trigger → Bootstrap → Imaging Engine). The codebase is **functional, well-documented, and security-conscious** with modern OAuth 2.0 flows (PKCE, Device Code, Entra token exchange). However, it currently operates as a **monolithic set of scripts and single-file web apps** without a package manager, build pipeline, test suite, or modular architecture.
 
 ### Current State: Solid Foundation
 
@@ -72,11 +72,11 @@ AmpCloud is a cloud-native Windows OS deployment platform built around a 3-stage
 | File | Lines | Size | Role |
 |------|-------|------|------|
 | `Trigger.ps1` | 2,248 | 108 KB | Stage 1 — WinPE builder |
-| `AmpCloud.ps1` | 2,077 | 92 KB | Stage 3 — Imaging engine |
+| `Nova.ps1` | 2,077 | 92 KB | Stage 3 — Imaging engine |
 | `Bootstrap.ps1` | 1,830 | 88 KB | Stage 2 — Network & auth |
 | `Editor/js/app.js` | 2,800 | ~95 KB | Task sequence editor SPA |
 | `Monitoring/index.html` | 2,181 | 96 KB | Deployment monitoring dashboard |
-| `AmpCloud-UI/index.html` | 1,174 | 56 KB | Real-time progress UI |
+| `Nova-UI/index.html` | 1,174 | 56 KB | Real-time progress UI |
 | `index.html` (root) | 652 | 28 KB | Landing page / dashboard |
 | `oauth-proxy/worker.js` | 383 | ~15 KB | Cloudflare Worker OAuth proxy |
 | `products.xml` | 1,626 | 84 KB | Windows ESD catalog (30 entries) |
@@ -88,10 +88,10 @@ AmpCloud is a cloud-native Windows OS deployment platform built around a 3-stage
 ### Current Structure (As-Is)
 
 ```
-AmpCloud/
+Nova/
 ├── .github/workflows/pages.yml   # CI: GitHub Pages deploy only
-├── AmpCloud-UI/index.html         # Monolithic SPA (56 KB)
-├── AmpCloud.ps1                   # Monolithic script (92 KB)
+├── Nova-UI/index.html         # Monolithic SPA (56 KB)
+├── Nova.ps1                   # Monolithic script (92 KB)
 ├── Autopilot/                     # Utility scripts + binaries
 │   ├── Invoke-ImportAutopilot.ps1
 │   ├── Utils.ps1
@@ -134,12 +134,12 @@ AmpCloud/
 | **Vendored libraries** — MSAL.js checked in, no version management | Stale versions, no update path | Medium |
 | **No package manager** — No package.json anywhere | No dependency management or auditing | High |
 | **Mixed concerns in root** — Scripts, XML, HTML, docs all at top level | Poor discoverability | Medium |
-| **Legacy `Progress/` directory** — Appears superseded by `AmpCloud-UI/` | Confusing for contributors | Low |
+| **Legacy `Progress/` directory** — Appears superseded by `Nova-UI/` | Confusing for contributors | Low |
 
 ### Recommended Structure (Next-Gen)
 
 ```
-AmpCloud/
+Nova/
 ├── .github/
 │   ├── workflows/
 │   │   ├── pages.yml              # Pages deployment
@@ -149,7 +149,7 @@ AmpCloud/
 │   └── ISSUE_TEMPLATE/
 ├── src/
 │   ├── engine/                    # PowerShell modules
-│   │   ├── AmpCloud.psm1          # Main imaging module
+│   │   ├── Nova.psm1          # Main imaging module
 │   │   ├── Bootstrap.psm1         # Network & auth module
 │   │   ├── Trigger.psm1           # WinPE builder module
 │   │   └── Private/               # Internal helper functions
@@ -186,7 +186,7 @@ AmpCloud/
 │   └── default.json
 ├── tests/
 │   ├── engine/                    # Pester tests
-│   │   ├── AmpCloud.Tests.ps1
+│   │   ├── Nova.Tests.ps1
 │   │   ├── Bootstrap.Tests.ps1
 │   │   └── Trigger.Tests.ps1
 │   └── oauth-proxy/               # Vitest tests
@@ -261,10 +261,10 @@ STAGE 2: Bootstrap.ps1 (1,830 lines)
 ├── Initializes network (Ethernet → Wi-Fi fallback)
 ├── Launches Edge kiosk UI
 ├── Handles M365 authentication (PKCE + Device Code)
-├── Downloads AmpCloud.ps1 from GitHub
+├── Downloads Nova.ps1 from GitHub
 └── Hands off to imaging engine
 
-STAGE 3: AmpCloud.ps1 (2,077 lines)
+STAGE 3: Nova.ps1 (2,077 lines)
 ├── Reads task sequence JSON
 ├── Executes each step sequentially
 ├── Reports progress to UI and GitHub
@@ -293,7 +293,7 @@ STAGE 3: AmpCloud.ps1 (2,077 lines)
 | **`irm \| iex` entry point** | Trigger.ps1 (line 49) | Critical | Downloads and executes script from GitHub without hash/signature verification |
 | **Input validation gaps** | Autopilot/Utils.ps1:43 | Medium | Serial number sanitization removes basic chars but doesn't validate length or prevent injection |
 | **Error info disclosure** | Bootstrap.ps1:1342 | Medium | Full exception messages logged to auth log; may leak endpoint URLs or response data |
-| **Hardcoded paths** | Multiple | Low | `X:\AmpCloud-Status.json`, `X:\AmpCloud-Auth.log` — fine for WinPE but not configurable |
+| **Hardcoded paths** | Multiple | Low | `X:\Nova-Status.json`, `X:\Nova-Auth.log` — fine for WinPE but not configurable |
 | **No PSScriptAnalyzer** | — | Medium | No static analysis in CI; potential for anti-patterns |
 | **Global state via `$script:`** | All scripts | Medium | Heavy use of script-scoped variables; makes reasoning about state difficult |
 
@@ -315,7 +315,7 @@ STAGE 3: AmpCloud.ps1 (2,077 lines)
 |-----------|------|-------|------|
 | Task Sequence Editor | `Editor/js/app.js` | 2,800 | Full SPA — drag-and-drop step builder, GitHub save/load, M365 auth |
 | Monitoring Dashboard | `Monitoring/index.html` | 2,181 | Inline JS/CSS — deployment cards, staleness detection, diagnostics |
-| Imaging Progress UI | `AmpCloud-UI/index.html` | 1,174 | Inline JS/CSS — real-time step progress, spinner, status updates |
+| Imaging Progress UI | `Nova-UI/index.html` | 1,174 | Inline JS/CSS — real-time step progress, spinner, status updates |
 | Landing Page | `index.html` | 652 | Inline JS/CSS — navigation hub |
 | OAuth Proxy | `oauth-proxy/worker.js` | 383 | Cloudflare Worker — GitHub OAuth proxy, Entra token exchange |
 
@@ -342,7 +342,7 @@ STAGE 3: AmpCloud.ps1 (2,077 lines)
 | **No CSP headers** | All HTML files | Medium | No Content Security Policy; relies on GitHub Pages defaults |
 | **Vendored library** | Editor/lib/msal-browser.min.js | Medium | No version management; no SRI hash; manual updates only |
 | **No lazy loading** | All UIs | Low | All content loaded eagerly; no code splitting |
-| **Legacy Progress/ dir** | Progress/index.html | Low | Appears superseded by AmpCloud-UI/; may confuse contributors |
+| **Legacy Progress/ dir** | Progress/index.html | Low | Appears superseded by Nova-UI/; may confuse contributors |
 
 ### Recommendations
 
@@ -407,7 +407,7 @@ oauth-proxy/worker.js (383 lines)
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                    AmpCloud Authentication Flows                      │
+│                    Nova Authentication Flows                      │
 ├──────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  FLOW 1: Kiosk PKCE (Bootstrap.ps1)                                 │
@@ -601,7 +601,7 @@ if (!success) return new Response('Rate limited', { status: 429 });
 
 ### The Question
 
-AmpCloud's entry point is a beloved one-liner:
+Nova's entry point is a beloved one-liner:
 
 ```powershell
 irm osd.raduti.com | iex
@@ -676,7 +676,7 @@ Here's exactly how the modularized `Trigger.ps1` launcher would work:
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    AmpCloud one-liner entry point.
+    Nova one-liner entry point.
 .EXAMPLE
     irm osd.raduti.com | iex
 #>
@@ -685,7 +685,7 @@ param(
     [string] $GitHubUser   = 'araduti',
     [string] $GitHubRepo   = 'AmpCloud',
     [string] $GitHubBranch = 'main',
-    [string] $WorkDir      = 'C:\AmpCloud',
+    [string] $WorkDir      = 'C:\Nova',
     [string] $WindowsISOUrl = '',
     [switch] $NoReboot
 )
@@ -723,7 +723,7 @@ foreach ($mod in $modules) {
 }
 
 # ── Run ────────────────────────────────────────────────────────────
-Invoke-AmpCloudTrigger @PSBoundParameters
+Invoke-NovaTrigger @PSBoundParameters
 ```
 
 ### Key Design Decisions
@@ -734,7 +734,7 @@ Invoke-AmpCloudTrigger @PSBoundParameters
 | **`$PSScriptRoot` check preserved** | Same pattern already used in current Trigger.ps1 (line 1106). If running from a local clone, use files on disk. If running via `irm \| iex`, download from GitHub. |
 | **Download to `$WorkDir/modules/`** | Provides a cached local copy for the rest of the session, and makes the downloaded modules inspectable. |
 | **Module list is explicit** | No glob/directory-listing needed. The launcher knows exactly which files to fetch. Deterministic, auditable, and cacheable. |
-| **Single entry function `Invoke-AmpCloudTrigger`** | All parameters forwarded via splatting. Clean separation between launcher and logic. |
+| **Single entry function `Invoke-NovaTrigger`** | All parameters forwarded via splatting. Clean separation between launcher and logic. |
 
 ### What This Enables
 
@@ -784,14 +784,14 @@ This gives you **signed module loading** — something that was impossible with 
 The launcher pattern applies to all three stages:
 
 ```
-Stage 1: Trigger.ps1 (launcher) → downloads Private/*.ps1 → runs Invoke-AmpCloudTrigger
+Stage 1: Trigger.ps1 (launcher) → downloads Private/*.ps1 → runs Invoke-NovaTrigger
           ↓ embeds into WinPE:
-Stage 2: Bootstrap.ps1 (launcher) → dot-sources Private/*.ps1 → runs Invoke-AmpCloudBootstrap
+Stage 2: Bootstrap.ps1 (launcher) → dot-sources Private/*.ps1 → runs Invoke-NovaBootstrap
           ↓ invokes:
-Stage 3: AmpCloud.ps1 (launcher) → dot-sources Private/*.ps1 → runs Invoke-AmpCloudImaging
+Stage 3: Nova.ps1 (launcher) → dot-sources Private/*.ps1 → runs Invoke-NovaImaging
 ```
 
-Since Trigger.ps1 already pre-stages Bootstrap.ps1 and AmpCloud.ps1 into the WinPE image (lines 1139-1151), it would simply also stage their module files alongside them. Bootstrap.ps1 and AmpCloud.ps1 launchers would dot-source from the local WinPE filesystem — no internet required at boot time, exactly as today.
+Since Trigger.ps1 already pre-stages Bootstrap.ps1 and Nova.ps1 into the WinPE image (lines 1139-1151), it would simply also stage their module files alongside them. Bootstrap.ps1 and Nova.ps1 launchers would dot-source from the local WinPE filesystem — no internet required at boot time, exactly as today.
 
 ### FAQ
 
@@ -811,7 +811,7 @@ irm https://raw.githubusercontent.com/YOURUSER/AmpCloud/main/Trigger.ps1 | iex
 ```
 
 **Q: What if the user is offline?**  
-A: Same as today — the `irm` call fails and PowerShell shows an error. The scripts that run *inside* WinPE (Bootstrap.ps1, AmpCloud.ps1) are pre-staged into the image by Trigger.ps1, so they work offline.
+A: Same as today — the `irm` call fails and PowerShell shows an error. The scripts that run *inside* WinPE (Bootstrap.ps1, Nova.ps1) are pre-staged into the image by Trigger.ps1, so they work offline.
 
 ---
 
@@ -821,7 +821,7 @@ A: Same as today — the `irm` call fails and PowerShell shows an error. The scr
 
 ### The Concern
 
-The REPORT.md recommends adding a Vite/esbuild build system (Recommendation #3, Phase 3). Since AmpCloud's web UIs are hosted on GitHub Pages, does this even work? **Yes** — and the current `pages.yml` workflow already has the exact structure needed. Only one small change is required.
+The REPORT.md recommends adding a Vite/esbuild build system (Recommendation #3, Phase 3). Since Nova's web UIs are hosted on GitHub Pages, does this even work? **Yes** — and the current `pages.yml` workflow already has the exact structure needed. Only one small change is required.
 
 ### How GitHub Pages Works
 
@@ -832,7 +832,7 @@ GitHub Pages is a **static file server**. It doesn't run any server-side code �
 | **Static (current)** | Deploy raw files directly from the repo | Simple sites with no build step |
 | **Build + Deploy** | CI builds assets → outputs to `dist/` → Pages serves `dist/` | Projects using Vite, esbuild, Webpack, etc. |
 
-AmpCloud currently uses the "static" model. The proposed build system uses the "build + deploy" model. Both deploy the same thing: **static HTML, CSS, and JS files**. The only difference is *where those files come from*.
+Nova currently uses the "static" model. The proposed build system uses the "build + deploy" model. Both deploy the same thing: **static HTML, CSS, and JS files**. The only difference is *where those files come from*.
 
 ### Current vs. Proposed Workflow
 
@@ -907,7 +907,7 @@ on:
     paths:
       - "Editor/**"
       - "Monitoring/**"
-      - "AmpCloud-UI/**"
+      - "Nova-UI/**"
       - "Progress/**"
       - "TaskSequence/**"
       - "Config/**"
@@ -981,17 +981,17 @@ jobs:
 
 ### Why Vite Is the Right Choice
 
-| Feature | Why It Matters for AmpCloud |
+| Feature | Why It Matters for Nova |
 |---------|---------------------------|
 | **Zero-config** | Detects HTML entry points automatically — your existing `index.html` files work as-is |
-| **Multi-page mode** | Native support for Editor, Monitoring, AmpCloud-UI, Progress as separate pages |
+| **Multi-page mode** | Native support for Editor, Monitoring, Nova-UI, Progress as separate pages |
 | **CSS extraction** | Pulls inline `<style>` blocks into optimized, hashed `.css` files |
 | **JS minification** | Minifies and tree-shakes JavaScript — reduces 92 KB Monitoring page significantly |
 | **SRI hashes** | Generates integrity hashes for all assets (security improvement) |
 | **Dev server** | `npm run dev` with hot module replacement for instant feedback |
 | **GitHub Pages plugin** | [`vite-plugin-github-pages`](https://github.com/nicolo-ribaudo/vite-plugin-github-pages) handles base path automatically |
 
-### Minimal Vite Config for AmpCloud
+### Minimal Vite Config for Nova
 
 ```javascript
 // vite.config.js
@@ -1013,7 +1013,7 @@ export default defineConfig({
 });
 ```
 
-> **Note:** AmpCloud-UI and Progress are embedded in WinPE by Trigger.ps1, not served via GitHub Pages. They stay as single-file HTML pages since they run offline inside WinPE — no build system needed for those.
+> **Note:** Nova-UI and Progress are embedded in WinPE by Trigger.ps1, not served via GitHub Pages. They stay as single-file HTML pages since they run offline inside WinPE — no build system needed for those.
 
 ### Incremental Adoption Path
 
@@ -1047,10 +1047,10 @@ A: No. The URL stays `https://araduti.github.io/AmpCloud/`. The `base: '/AmpClou
 **Q: What about the TaskSequence JSON files and Config directory?**  
 A: Vite's `public/` directory copies files as-is to `dist/`. Move `TaskSequence/` and `Config/` into `public/` (or configure Vite to include them) and they'll be served at the same URLs.
 
-**Q: Does this affect the PowerShell scripts (Trigger.ps1, Bootstrap.ps1, AmpCloud.ps1)?**  
+**Q: Does this affect the PowerShell scripts (Trigger.ps1, Bootstrap.ps1, Nova.ps1)?**  
 A: No. The PowerShell scripts are downloaded via `raw.githubusercontent.com` URLs (GitHub raw content), not via GitHub Pages. The build system only affects the web UIs served via Pages.
 
-**Q: What about the WinPE-embedded UIs (AmpCloud-UI, Progress)?**  
+**Q: What about the WinPE-embedded UIs (Nova-UI, Progress)?**  
 A: These are downloaded by Trigger.ps1 and embedded directly into the WinPE image (lines 1187-1217). They run offline from `X:\` and are **not** served via GitHub Pages. They should stay as single-file HTML — no build system needed.
 
 **Q: Is there a cost increase?**  
@@ -1258,7 +1258,7 @@ jobs:
 
 ## Conclusion
 
-AmpCloud is a **solid, functional platform** with thoughtful security practices and comprehensive documentation. The core deployment pipeline works well and follows modern OAuth 2.0 best practices. However, to become a **truly performant, secure, and next-gen open-source project**, it needs investment in three key areas:
+Nova is a **solid, functional platform** with thoughtful security practices and comprehensive documentation. The core deployment pipeline works well and follows modern OAuth 2.0 best practices. However, to become a **truly performant, secure, and next-gen open-source project**, it needs investment in three key areas:
 
 1. **Engineering infrastructure** — Testing, linting, CI/CD, package management
 2. **Architecture modernization** — Modularization, TypeScript, build system, component-based UI
@@ -1266,4 +1266,4 @@ AmpCloud is a **solid, functional platform** with thoughtful security practices 
 
 The good news is that the foundation is strong. The authentication architecture is well-designed, error handling is comprehensive, and the codebase is well-documented. The recommendations above build on this foundation rather than requiring a rewrite.
 
-**Bottom line:** With the Phase 1-3 improvements (~8 weeks of work), AmpCloud would be competitive with commercial Windows deployment tools while offering the transparency and customizability of open source.
+**Bottom line:** With the Phase 1-3 improvements (~8 weeks of work), Nova would be competitive with commercial Windows deployment tools while offering the transparency and customizability of open source.
