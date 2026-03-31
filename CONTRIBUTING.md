@@ -6,7 +6,7 @@ Thank you for your interest in contributing to AmpCloud! This document provides 
 
 ## Code of Conduct
 
-By participating in this project, you agree to treat all contributors and users with respect and professionalism. We are committed to providing a welcoming and inclusive experience for everyone.
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to uphold its standards.
 
 ---
 
@@ -95,11 +95,7 @@ Since the core scripts interact with hardware (disk partitioning, DISM, BCD), ma
 
 ### Reporting Vulnerabilities
 
-If you discover a security vulnerability, **do not open a public issue**. Instead:
-
-1. Email the maintainers privately (see repository contact information)
-2. Include a description of the vulnerability and steps to reproduce
-3. Allow reasonable time for a fix before public disclosure
+Please see [**SECURITY.md**](SECURITY.md) for our full security policy and how to report vulnerabilities privately.
 
 ### Security-Sensitive Areas
 

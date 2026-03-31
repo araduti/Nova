@@ -13,7 +13,7 @@
 **Zero-media, cloud-native Windows imaging — no USB, no ISO, no PXE.**
 Stream the entire deployment engine from GitHub, reimage any PC over WiFi or Ethernet.
 
-[Quick Start](#quick-start) · [How It Works](#how-it-works) · [Task Sequence Editor](#task-sequence-editor) · [Security](#security) · [Contributing](CONTRIBUTING.md)
+[Quick Start](#quick-start) · [How It Works](#how-it-works) · [Task Sequence Editor](#task-sequence-editor) · [Security](#security) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
 </div>
 
@@ -328,7 +328,7 @@ For a comprehensive review of the codebase covering architecture, performance, a
 
 ### Responsible disclosure
 
-If you discover a security vulnerability, please report it privately. See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+If you discover a security vulnerability, please report it privately. See [**SECURITY.md**](SECURITY.md) for our full security policy.
 
 ---
 
