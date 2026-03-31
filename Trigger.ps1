@@ -2,7 +2,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    AmpCloud Trigger - GitHub-native OSDCloud replacement entry point.
+    Nova Trigger - GitHub-native OSDCloud replacement entry point.
 
 .DESCRIPTION
     One-liner entry point. Runs on any Windows PC.
@@ -24,7 +24,7 @@
     - Reboots into the cloud boot environment.
 
 .PARAMETER GitHubUser
-    GitHub account that hosts the AmpCloud repository. Default: araduti
+    GitHub account that hosts the Nova repository. Default: araduti
 
 .PARAMETER GitHubRepo
     Repository name. Default: AmpCloud
@@ -33,7 +33,7 @@
     Branch to pull Bootstrap.ps1 from. Default: main
 
 .PARAMETER WorkDir
-    Root working directory for all artefacts. Default: C:\AmpCloud
+    Root working directory for all artefacts. Default: C:\Nova
 
 .PARAMETER WindowsISOUrl
     Optional path to a local Windows ISO file, or an HTTPS URL to download one.
@@ -49,7 +49,7 @@
     irm https://raw.githubusercontent.com/araduti/AmpCloud/main/Trigger.ps1 | iex
 
 .EXAMPLE
-    .\Trigger.ps1 -NoReboot -WorkDir D:\AmpCloud
+    .\Trigger.ps1 -NoReboot -WorkDir D:\Nova
 
 .EXAMPLE
     .\Trigger.ps1 -WindowsISOUrl 'D:\ISOs\Win11_x86.iso'
@@ -64,7 +64,7 @@ param(
     [ValidateNotNullOrEmpty()]
     [string] $GitHubBranch    = 'main',
     [ValidateNotNullOrEmpty()]
-    [string] $WorkDir         = 'C:\AmpCloud',
+    [string] $WorkDir         = 'C:\Nova',
     [string] $WindowsISOUrl   = '',
     [switch] $NoReboot
 )
@@ -97,8 +97,8 @@ function Get-WinPEArchitecture {
     <#
     .SYNOPSIS
         Maps the current OS CPU architecture to the WinPE folder/package name
-        used by the ADK. AmpCloud supports amd64 and x86 only — ARM is not
-        supported because AmpCloud is a cloud-only deployment engine targeting
+        used by the ADK. Nova supports amd64 and x86 only — ARM is not
+        supported because Nova is a cloud-only deployment engine targeting
         x86-64 enterprise hardware.
     #>
     $map = @{
@@ -108,7 +108,7 @@ function Get-WinPEArchitecture {
     $proc = $env:PROCESSOR_ARCHITECTURE   # AMD64 | x86
     $arch = $map[$proc]
     if (-not $arch) {
-        throw "Unsupported processor architecture '$proc'. AmpCloud supports amd64 and x86 only. ARM is not supported."
+        throw "Unsupported processor architecture '$proc'. Nova supports amd64 and x86 only. ARM is not supported."
     }
     return $arch
 }
@@ -188,7 +188,7 @@ function Get-WinREPath {
     }
 
     $mountPoint = "${freeLetter}:\"
-    $tempWim    = Join-Path $env:TEMP "ampcloud_winre_$([guid]::NewGuid().Guid).wim"
+    $tempWim    = Join-Path $env:TEMP "nova_winre_$([guid]::NewGuid().Guid).wim"
     $found      = $false
     try {
         $part | Add-PartitionAccessPath -AccessPath $mountPoint -ErrorAction Stop
@@ -289,7 +289,7 @@ function Get-WinREPathFromWindowsISO {
             }
 
             $isoPath = Join-Path $env:TEMP `
-                "ampcloud_win_iso_${Architecture}_$([System.Guid]::NewGuid().ToString('N')).iso"
+                "nova_win_iso_${Architecture}_$([System.Guid]::NewGuid().ToString('N')).iso"
             Write-Step "Downloading Windows ISO for $Architecture — this file is several GB and may take a while..."
             try {
                 Invoke-WebRequest -Uri $ISOUrl -OutFile $isoPath -UseBasicParsing `
@@ -324,7 +324,7 @@ function Get-WinREPathFromWindowsISO {
 
         # ── Step 4: Mount the installation image read-only (first index) ──────────
         $wimMountDir = Join-Path $env:TEMP `
-            "ampcloud_iso_wim_$([System.Guid]::NewGuid().ToString('N'))"
+            "nova_iso_wim_$([System.Guid]::NewGuid().ToString('N'))"
         $null = New-Item -ItemType Directory -Path $wimMountDir -Force
         $imageIndex = (Get-WindowsImage -ImagePath $wimPath |
                         Select-Object -First 1 -ExpandProperty ImageIndex)
@@ -342,7 +342,7 @@ function Get-WinREPathFromWindowsISO {
             throw "WinRE.wim not found inside the mounted Windows image at: $winreSrc"
         }
         $winreDest = Join-Path $env:TEMP `
-            "ampcloud_iso_winre_$([System.Guid]::NewGuid().ToString('N')).wim"
+            "nova_iso_winre_$([System.Guid]::NewGuid().ToString('N')).wim"
         Write-Step 'Copying WinRE.wim from Windows installation image...'
         Copy-Item $winreSrc $winreDest -Force
         Write-Success 'WinRE.wim extracted from Windows ISO.'
@@ -950,7 +950,7 @@ function Build-WinPE {
             if ($virtioArch) {
                 $driverRepoPath = "Drivers/NetKVM/w10/$virtioArch"
                 $apiUrl         = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/$driverRepoPath`?ref=$GitHubBranch"
-                $driverTmpDir   = Join-Path $env:TEMP "ampcloud_netkvm_$([System.Guid]::NewGuid().ToString('N'))"
+                $driverTmpDir   = Join-Path $env:TEMP "nova_netkvm_$([System.Guid]::NewGuid().ToString('N'))"
                 Write-Step "Fetching VirtIO netkvm driver from repo ($driverRepoPath)..."
                 try {
                     $fileList = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
@@ -1116,7 +1116,7 @@ function Build-WinPE {
         } else {
             # iex (irm ...) scenario — $PSScriptRoot is empty and local files are
             # unavailable.  Download Autopilot tools directly from the GitHub repo,
-            # matching the pattern used for Bootstrap.ps1 and AmpCloud.ps1 above.
+            # matching the pattern used for Bootstrap.ps1 and Nova.ps1 above.
             $null = New-Item -Path $customDest -ItemType Directory -Force
             foreach ($f in $autopilotFiles) {
                 $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Autopilot/$f"
@@ -1142,21 +1142,21 @@ function Build-WinPE {
         Write-Step "Fetching Bootstrap.ps1 from $bootstrapUrl"
         Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing
 
-        # ── 5b. Pre-stage AmpCloud.ps1 ──────────────────────────────────────
-        # Embedding AmpCloud.ps1 eliminates the internet dependency at boot time.
+        # ── 5b. Pre-stage Nova.ps1 ──────────────────────────────────────
+        # Embedding Nova.ps1 eliminates the internet dependency at boot time.
         # Bootstrap.ps1 will use this local copy instead of downloading it.
-        $ampCloudUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
-        $ampCloudDest = Join-Path $paths.MountDir 'Windows\System32\AmpCloud.ps1'
-        Write-Step "Fetching AmpCloud.ps1 from $ampCloudUrl"
-        Invoke-WebRequest -Uri $ampCloudUrl -OutFile $ampCloudDest -UseBasicParsing
+        $novaUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Nova.ps1"
+        $novaDest = Join-Path $paths.MountDir 'Windows\System32\Nova.ps1'
+        Write-Step "Fetching Nova.ps1 from $novaUrl"
+        Invoke-WebRequest -Uri $novaUrl -OutFile $novaDest -UseBasicParsing
 
         # ── 5c. Generate default background image ──────────────────────────────
         # Create a 1920x1080 gradient PNG matching the Bootstrap.ps1 OOBE theme
-        # and embed it as X:\Windows\System32\AmpCloud-bg.png.  Administrators
+        # and embed it as X:\Windows\System32\Nova-bg.png.  Administrators
         # can replace this file in the mounted WIM with custom branding before
         # the image is finalised.  Bootstrap.ps1 loads it at startup and paints
         # it as the form background when present.
-        $bgDest = Join-Path $paths.MountDir 'Windows\System32\AmpCloud-bg.png'
+        $bgDest = Join-Path $paths.MountDir 'Windows\System32\Nova-bg.png'
         try {
             Add-Type -AssemblyName System.Drawing -ErrorAction Stop
             $bgW = 1920; $bgH = 1080
@@ -1172,7 +1172,7 @@ function Build-WinPE {
             $bgBr.Dispose(); $bgG.Dispose()
             $bgBmp.Save($bgDest, [System.Drawing.Imaging.ImageFormat]::Png)
             $bgBmp.Dispose()
-            Write-Success 'Default background image (AmpCloud-bg.png) embedded.'
+            Write-Success 'Default background image (Nova-bg.png) embedded.'
         } catch {
             Write-Warn "Background image generation failed (non-fatal): $_"
         }
@@ -1181,7 +1181,7 @@ function Build-WinPE {
         # Stage Progress/index.html into the WinPE image so the batch launcher
         # can open it in Edge kiosk mode before PowerShell starts.  This covers
         # the screen immediately and prevents any command-prompt flash.
-        $progressDest = Join-Path $paths.MountDir 'AmpCloud\Progress'
+        $progressDest = Join-Path $paths.MountDir 'Nova\Progress'
         $null = New-Item -Path $progressDest -ItemType Directory -Force
 
         $progressSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'Progress' } else { '' }
@@ -1199,25 +1199,25 @@ function Build-WinPE {
             }
         }
 
-        # ── 5e. Embed AmpCloud-UI (main HTML UI) ──────────────────────────────
-        # Stage AmpCloud-UI/index.html into the WinPE image so the batch
-        # launcher (ampcloud-start.cmd) can open it in Edge kiosk mode at
+        # ── 5e. Embed Nova-UI (main HTML UI) ──────────────────────────────
+        # Stage Nova-UI/index.html into the WinPE image so the batch
+        # launcher (nova-start.cmd) can open it in Edge kiosk mode at
         # boot, covering the screen before any console window is visible.
-        $uiDest = Join-Path $paths.MountDir 'AmpCloud-UI'
+        $uiDest = Join-Path $paths.MountDir 'Nova-UI'
         $null = New-Item -Path $uiDest -ItemType Directory -Force
 
-        $uiSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'AmpCloud-UI' } else { '' }
+        $uiSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'Nova-UI' } else { '' }
         if ($uiSrc -and (Test-Path (Join-Path $uiSrc 'index.html'))) {
             Copy-Item -Path "$uiSrc\*" -Destination $uiDest -Recurse -Force
-            Write-Success 'AmpCloud-UI embedded from local repo.'
+            Write-Success 'Nova-UI embedded from local repo.'
         } else {
-            $uiUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud-UI/index.html"
+            $uiUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Nova-UI/index.html"
             $uiFile = Join-Path $uiDest 'index.html'
             try {
                 Invoke-WebRequest -Uri $uiUrl -OutFile $uiFile -UseBasicParsing -ErrorAction Stop
-                Write-Success 'AmpCloud-UI downloaded and embedded.'
+                Write-Success 'Nova-UI downloaded and embedded.'
             } catch {
-                Write-Warn "AmpCloud-UI not available (non-fatal): $_"
+                Write-Warn "Nova-UI not available (non-fatal): $_"
             }
         }
 
@@ -1255,16 +1255,16 @@ function Build-WinPE {
             throw 'PowerShell executable not found in the mounted image (Windows\System32\WindowsPowerShell\v1.0\powershell.exe). Ensure WinPE-PowerShell.cab is compatible with the base WIM.'
         }
 
-        $launcherPath = Join-Path $paths.MountDir 'Windows\System32\ampcloud-start.cmd'
+        $launcherPath = Join-Path $paths.MountDir 'Windows\System32\nova-start.cmd'
         @'
 @echo off
-title AmpCloud Bootstrap
+title Nova Bootstrap
 
 REM ── Launch the new HTML UI in Edge kiosk mode ─────────────────────────
 REM Covers the screen before any console window is visible at boot.
-if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\AmpCloud-UI\index.html" (
+if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\Nova-UI\index.html" (
     start "" "X:\WebView2\Edge\msedge.exe" ^
-        --kiosk "file:///X:/AmpCloud-UI/index.html" ^
+        --kiosk "file:///X:/Nova-UI/index.html" ^
         --kiosk-type=fullscreen ^
         --allow-run-as-system ^
         --user-data-dir="X:\Temp\EdgeKiosk" ^
@@ -1296,7 +1296,7 @@ X:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionP
         $winpeshlPath = Join-Path $paths.MountDir 'Windows\System32\winpeshl.ini'
         @'
 [LaunchApps]
-X:\Windows\System32\cmd.exe, /k X:\Windows\System32\ampcloud-start.cmd
+X:\Windows\System32\cmd.exe, /k X:\Windows\System32\nova-start.cmd
 '@ | Set-Content -Path $winpeshlPath -Encoding Ascii
 
     } catch {
@@ -1463,14 +1463,14 @@ function New-BCDRamdiskEntry {
 
     # BCD path components
     $drive  = Split-Path $RamdiskDir -Qualifier          # C:
-    $relDir = (Split-Path $RamdiskDir -NoQualifier).TrimEnd('\') # \AmpCloud\Boot
+    $relDir = (Split-Path $RamdiskDir -NoQualifier).TrimEnd('\') # \Nova\Boot
     $wimBcd = "$relDir\boot.wim"
     $sdiBcd = "$relDir\boot.sdi"
 
     Write-Step 'Writing BCD entries...'
 
     # ── Ramdisk device options ────────────────────────────────────────────────
-    $rdGuid = New-BcdEntry '/create', '/d', 'AmpCloud Ramdisk Options', '/device'
+    $rdGuid = New-BcdEntry '/create', '/d', 'Nova Ramdisk Options', '/device'
     $null = Invoke-Bcdedit '/set', $rdGuid, 'ramdisksdidevice', "partition=$drive"
     $null = Invoke-Bcdedit '/set', $rdGuid, 'ramdisksdipath',   $sdiBcd
     Write-Success "Ramdisk options: $rdGuid"
@@ -1482,7 +1482,7 @@ function New-BCDRamdiskEntry {
     Write-Step "Firmware type: $fw  →  $winload"
 
     $ramdiskVal = "[$drive]$wimBcd,$rdGuid"
-    $osGuid     = New-BcdEntry '/create', '/d', 'AmpCloud Boot', '/application', 'osloader'
+    $osGuid     = New-BcdEntry '/create', '/d', 'Nova Boot', '/application', 'osloader'
 
     $null = Invoke-Bcdedit '/set', $osGuid, 'device',     "ramdisk=$ramdiskVal"
     $null = Invoke-Bcdedit '/set', $osGuid, 'osdevice',   "ramdisk=$ramdiskVal"
@@ -1587,8 +1587,8 @@ function Publish-BootImage {
         $timestamp = [DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')
         $body = @{
             tag_name   = $Tag
-            name       = 'AmpCloud Boot Image'
-            body       = "Pre-built WinPE boot image for AmpCloud deployment.`nGenerated: $timestamp UTC"
+            name       = 'Nova Boot Image'
+            body       = "Pre-built WinPE boot image for Nova deployment.`nGenerated: $timestamp UTC"
             draft      = $false
             prerelease = $false
         } | ConvertTo-Json
@@ -1688,7 +1688,7 @@ function Install-WebView2SDK {
     .OUTPUTS
         Path to the directory containing the WebView2 DLLs, or $null on failure.
     #>
-    $sdkDir  = Join-Path $env:TEMP 'AmpCloud-WebView2SDK'
+    $sdkDir  = Join-Path $env:TEMP 'Nova-WebView2SDK'
     $coreDll = Join-Path $sdkDir 'Microsoft.Web.WebView2.Core.dll'
 
     # Reuse cached copy.
@@ -1772,7 +1772,7 @@ function Show-WebView2AuthPopup {
 
     # ── Create the WebView2 environment ────────────────────────────────────
     # Use a temporary user-data directory to isolate cookies and cache.
-    $userDataDir = Join-Path $env:TEMP 'AmpCloud-WebView2Auth'
+    $userDataDir = Join-Path $env:TEMP 'Nova-WebView2Auth'
     if (-not (Test-Path $userDataDir)) {
         $null = New-Item -Path $userDataDir -ItemType Directory -Force
     }
@@ -1796,7 +1796,7 @@ function Show-WebView2AuthPopup {
 
     # ── Build the form ─────────────────────────────────────────────────────
     $form = New-Object System.Windows.Forms.Form
-    $form.Text            = 'AmpCloud — Sign In'
+    $form.Text            = 'Nova — Sign In'
     $form.Size            = New-Object System.Drawing.Size(520, 680)
     $form.StartPosition   = 'CenterScreen'
     $form.FormBorderStyle = 'FixedDialog'
@@ -2034,7 +2034,7 @@ function Invoke-M365DeviceCodeAuth {
         $html = if ($code) {
             '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
             '<h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
-            '<p>You can close this window and return to AmpCloud.</p>' +
+            '<p>You can close this window and return to Nova.</p>' +
             '<script>setTimeout(function(){window.close()},2000)</script></body></html>'
         } else {
             '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
@@ -2092,12 +2092,12 @@ function Invoke-M365DeviceCodeAuth {
 
 Write-Host @"
 
-  █████╗ ███╗   ███╗██████╗  ██████╗██╗      ██████╗ ██╗   ██╗██████╗
- ██╔══██╗████╗ ████║██╔══██╗██╔════╝██║     ██╔═══██╗██║   ██║██╔══██╗
- ███████║██╔████╔██║██████╔╝██║     ██║     ██║   ██║██║   ██║██║  ██║
- ██╔══██║██║╚██╔╝██║██╔═══╝ ██║     ██║     ██║   ██║██║   ██║██║  ██║
- ██║  ██║██║ ╚═╝ ██║██║     ╚██████╗███████╗╚██████╔╝╚██████╔╝██████╔╝
- ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝      ╚═════╝╚══════╝ ╚═════╝  ╚═════╝ ╚═════╝
+ ███╗   ██╗ ██████╗ ██╗   ██╗ █████╗
+ ████╗  ██║██╔═══██╗██║   ██║██╔══██╗
+ ██╔██╗ ██║██║   ██║██║   ██║███████║
+ ██║╚██╗██║██║   ██║╚██╗ ██╔╝██╔══██║
+ ██║ ╚████║╚██████╔╝ ╚████╔╝ ██║  ██║
+ ╚═╝  ╚═══╝ ╚═════╝   ╚═══╝  ╚═╝  ╚═╝
 
  Cloud-only OSDCloud replacement · amd64/x86 · https://github.com/$GitHubUser/$GitHubRepo
 "@ -ForegroundColor Cyan
@@ -2227,15 +2227,15 @@ try {
             -MediaDir   $paths.MediaDir
     }
 
-    Write-Host "`n  [AmpCloud] All done — system is primed for cloud boot." -ForegroundColor Green
+    Write-Host "`n  [Nova] All done — system is primed for cloud boot." -ForegroundColor Green
 
     if (-not $NoReboot) {
-        Write-Host '  [AmpCloud] Rebooting in 10 seconds ... Press Ctrl+C to cancel.' `
+        Write-Host '  [Nova] Rebooting in 10 seconds ... Press Ctrl+C to cancel.' `
             -ForegroundColor Yellow
         Start-Sleep -Seconds 10
         Restart-Computer -Force
     } else {
-        Write-Host '  [AmpCloud] -NoReboot specified. Reboot manually to enter the boot environment.' `
+        Write-Host '  [Nova] -NoReboot specified. Reboot manually to enter the boot environment.' `
             -ForegroundColor Yellow
     }
 
