@@ -1,5 +1,5 @@
 {
-    "Header": "A M P C L O U D",
+    "Header": "N O V A",
     "Subtitle": "Moteur d'imagerie cloud",
     "Step1": "Réseau",
     "Step2": "Connexion",
@@ -8,7 +8,7 @@
     "StatusInit": "Initialisation de la pile réseau...",
     "StatusNoNet": "Pas de connexion filaire détectée\nAppuyez ci-dessous pour le Wi-Fi",
     "Connected": "Connecté — vérification de l'identité",
-    "Download": "Téléchargement AmpCloud.ps1  ({0}%)",
+    "Download": "Téléchargement Nova.ps1  ({0}%)",
     "Complete": "Prêt à déployer",
     "Reboot": "Redémarrer maintenant",
     "PowerOff": "Éteindre",

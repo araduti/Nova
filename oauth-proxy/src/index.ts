@@ -1,11 +1,11 @@
 /**
- * AmpCloud GitHub OAuth CORS Proxy — Cloudflare Worker
+ * Nova GitHub OAuth CORS Proxy — Cloudflare Worker
  *
  * This worker proxies GitHub's OAuth Device Flow endpoints and adds CORS
- * headers so the browser-hosted AmpCloud Editor can use them.
+ * headers so the browser-hosted Nova Editor can use them.
  *
  * It also provides an Entra ID → GitHub token exchange endpoint so that
- * the AmpCloud engine and Monitoring dashboard can reuse the Entra ID
+ * the Nova engine and Monitoring dashboard can reuse the Entra ID
  * token obtained during sign-in instead of requiring a separate GitHub
  * Personal Access Token.
  *
@@ -38,7 +38,7 @@ export default {
     } catch (e) {
       /* Absolute last resort — if corsHeaders itself throws, build
          minimal CORS headers so the browser still gets a response. */
-      console.error('[AmpCloud-OAuth-Proxy] corsHeaders error:', e);
+      console.error('[Nova-OAuth-Proxy] corsHeaders error:', e);
       cors = FALLBACK_CORS;
     }
 

@@ -1,7 +1,7 @@
 {
-  "name": "Default AmpCloud Task Sequence (Copy)",
+  "name": "Default Nova Task Sequence (Copy)",
   "version": "1.0",
-  "description": "Standard cloud-native Windows deployment via AmpCloud",
+  "description": "Standard cloud-native Windows deployment via Nova",
   "steps": [
     {
       "id": "set-computer-name",

@@ -1,5 +1,5 @@
 {
-    "Header": "A M P C L O U D",
+    "Header": "N O V A",
     "Subtitle": "Cloud Imaging Engine",
     "Step1": "Network",
     "Step2": "Connect",
@@ -8,7 +8,7 @@
     "StatusInit": "Initialising network stack...",
     "StatusNoNet": "No wired connection detected\nTap below to join Wi-Fi",
     "Connected": "Connected — verifying identity",
-    "Download": "Downloading AmpCloud.ps1  ({0}%)",
+    "Download": "Downloading Nova.ps1  ({0}%)",
     "Complete": "Ready to deploy",
     "Reboot": "Restart now",
     "PowerOff": "Shut down",

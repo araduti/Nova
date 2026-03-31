@@ -1,4 +1,4 @@
-# AmpCloud GitHub OAuth CORS Proxy — Cloudflare Worker configuration
+# Nova GitHub OAuth CORS Proxy — Cloudflare Worker configuration
 #
 # Deploy with:
 #   cd oauth-proxy
@@ -10,7 +10,7 @@
 #   wrangler secret put GITHUB_APP_PRIVATE_KEY
 #   wrangler secret put GITHUB_APP_INSTALLATION_ID
 
-name = "ampcloud-oauth-proxy"
+name = "nova-oauth-proxy"
 main = "src/index.ts"
 compatibility_date = "2025-03-01"
 compatibility_flags = ["nodejs_compat"]

@@ -1,8 +1,8 @@
 {
-  "name": "ampcloud",
+  "name": "nova",
   "version": "1.0.0",
   "private": true,
-  "description": "AmpCloud — Cloud-native Windows OS deployment platform",
+  "description": "Nova — Cloud-native Windows OS deployment platform",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

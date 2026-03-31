@@ -1,16 +1,16 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    AmpCloud Bootstrap - WinRE/WinPE loader with HTML UI.
+    Nova Bootstrap - WinRE/WinPE loader with HTML UI.
 .DESCRIPTION
     Runs inside the WinRE/WinPE boot environment via winpeshl.ini.
     - Calls wpeinit.exe to initialise the WinPE network stack and DHCP.
-    - The main visible UI runs in Edge kiosk mode (AmpCloud-UI/index.html).
+    - The main visible UI runs in Edge kiosk mode (Nova-UI/index.html).
     - Communicates with the HTML UI via a JSON status file and HTTP API.
     - Applies high-performance network tuning.
     - Offers an interactive graphical WiFi selector when wired internet is unavailable.
     - Shows a unified configuration dialog (language + Windows edition) once connected.
-    - Downloads and executes AmpCloud.ps1 from GitHub once connected.
+    - Downloads and executes Nova.ps1 from GitHub once connected.
 #>
 
 [CmdletBinding()]
@@ -33,15 +33,15 @@ $ErrorActionPreference = 'Stop'
 $script:PsBin = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
 # ── Logging ─────────────────────────────────────────────────────────────────
-$LogPath = "X:\AmpCloud-Bootstrap.log"
+$LogPath = "X:\Nova-Bootstrap.log"
 $null = Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyContinue
 
-$script:AuthLogPath = "X:\AmpCloud-Auth.log"
+$script:AuthLogPath = "X:\Nova-Auth.log"
 function Write-AuthLog {
     <#
     .SYNOPSIS  Write a timestamped entry to the dedicated auth log file.
     .DESCRIPTION
-        Always writes to X:\AmpCloud-Auth.log regardless of the Verbose
+        Always writes to X:\Nova-Auth.log regardless of the Verbose
         preference.  This ensures authentication diagnostics are captured
         even when the script is not run with -Verbose.
     #>
@@ -85,9 +85,9 @@ $script:ConnectCheckIntervalMs = 5000  # 5  seconds
 $script:BulletChar             = [char]0x2022  # '•' used in progress text
 
 # ── HTML UI IPC ─────────────────────────────────────────────────────────────
-# When the HTML Progress UI is running (launched by ampcloud-start.cmd
+# When the HTML Progress UI is running (launched by nova-start.cmd
 # before PowerShell), Bootstrap.ps1 writes status to the same JSON file that
-# AmpCloud.ps1 uses.  This flag is cleared once AmpCloud.ps1 starts so that
+# Nova.ps1 uses.  This flag is cleared once Nova.ps1 starts so that
 # Bootstrap.ps1 stops writing and only reads (avoiding write conflicts).
 $script:HtmlUiActive = $true
 
@@ -95,9 +95,9 @@ function Update-HtmlUi {
     <#
     .SYNOPSIS  Write status to the JSON IPC file for the HTML UI.
     .DESCRIPTION
-        Mirrors status updates to X:\AmpCloud-Status.json so the HTML UI
+        Mirrors status updates to X:\Nova-Status.json so the HTML UI
         (running in Edge kiosk mode) can display real-time progress during the
-        bootstrap phase before AmpCloud.ps1 takes over.
+        bootstrap phase before Nova.ps1 takes over.
     #>
     param(
         [string]$Message  = '',
@@ -176,12 +176,12 @@ foreach ($lc in @('EN', 'FR', 'ES')) {
 if (-not $Strings.ContainsKey('EN')) {
     # Minimal inline fallback — only used when the network fetch fails for EN.
     $Strings['EN'] = @{
-        Header="A M P C L O U D"; Subtitle="Cloud Imaging Engine";
+        Header="N O V A"; Subtitle="Cloud Imaging Engine";
         Step1="Network"; Step2="Connect"; Step3="Sign in"; Step4="Deploy";
         StatusInit="Initialising network stack...";
         StatusNoNet="No wired connection detected`nTap below to join Wi-Fi";
         Connected="Connected — verifying identity";
-        Download="Downloading AmpCloud.ps1  ({0}%)";
+        Download="Downloading Nova.ps1  ({0}%)";
         Complete="Ready to deploy";
         Reboot="Restart now"; PowerOff="Shut down"; Shell="Command prompt";
         Imaging="Imaging in progress...";
@@ -375,7 +375,7 @@ function Connect-WiFiNetwork {
 "@
     }
 
-    $tmp = Join-Path $env:TEMP "ampcloud_wifi_$([guid]::NewGuid().Guid).xml"
+    $tmp = Join-Path $env:TEMP "nova_wifi_$([guid]::NewGuid().Guid).xml"
     try {
         $xml | Set-Content -Path $tmp -Encoding UTF8 -Force
         $prev = $ErrorActionPreference
@@ -454,7 +454,7 @@ function Show-WiFiSelector {
 
 
 #region ── HTTP API for HTML UI two-way communication ────────────────────────
-# The HTML UI (AmpCloud-UI/index.html running in Edge kiosk mode) sends user
+# The HTML UI (Nova-UI/index.html running in Edge kiosk mode) sends user
 # actions via HTTP to this listener.  Bootstrap.ps1 processes them on the
 # WinForms message pump thread to safely interact with modal dialogs.
 
@@ -469,8 +469,8 @@ if ($script:HttpListener.IsListening) {
     $script:_httpAsync = $script:HttpListener.BeginGetContext($null, $null)
 }
 
-# ── Status file path (shared with AmpCloud.ps1) ────────────────────────────
-$script:StatusFile = "X:\AmpCloud-Status.json"
+# ── Status file path (shared with Nova.ps1) ─────────────────────────────────
+$script:StatusFile = "X:\Nova-Status.json"
 
 # ── Helper functions (route through HTML UI) ────────────────────────────────
 function Write-Status {
@@ -519,11 +519,11 @@ $script:actionTimer.Add_Tick({
                     $msg = 'ok'
                 }
                 '/ui' {
-                    # Serve AmpCloud-UI/index.html so the browser can return
+                    # Serve Nova-UI/index.html so the browser can return
                     # from an HTTP context (e.g. after OAuth redirect) without
                     # requiring a blocked http→file:// navigation.
                     $handled = $true
-                    $uiFile  = 'X:\AmpCloud-UI\index.html'
+                    $uiFile  = 'X:\Nova-UI\index.html'
                     if (Test-Path $uiFile) {
                         $uiBytes = [System.IO.File]::ReadAllBytes($uiFile)
                         $context.Response.ContentType     = 'text/html; charset=utf-8'
@@ -537,7 +537,7 @@ $script:actionTimer.Add_Tick({
                     $context.Response.Close()
                 }
                 '/status' {
-                    # Serve AmpCloud-Status.json for pages loaded via HTTP
+                    # Serve Nova-Status.json for pages loaded via HTTP
                     # (file:// pages read it directly via XHR).
                     $handled = $true
                     if (Test-Path $script:StatusFile) {
@@ -602,7 +602,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
-public class AmpCloudHotkeyWindow : NativeWindow, IDisposable {
+public class NovaHotkeyWindow : NativeWindow, IDisposable {
     [DllImport("user32.dll")]
     private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
     [DllImport("user32.dll")]
@@ -614,7 +614,7 @@ public class AmpCloudHotkeyWindow : NativeWindow, IDisposable {
 
     public event Action HotkeyPressed;
 
-    public AmpCloudHotkeyWindow() {
+    public NovaHotkeyWindow() {
         CreateHandle(new CreateParams());
         RegisterHotKey(Handle, HOTKEY_ID, 0, VK_F8);
     }
@@ -634,7 +634,7 @@ public class AmpCloudHotkeyWindow : NativeWindow, IDisposable {
 }
 '@ -ReferencedAssemblies System.Windows.Forms -ErrorAction Stop
 
-    $script:hotkeyWindow = New-Object AmpCloudHotkeyWindow
+    $script:hotkeyWindow = New-Object NovaHotkeyWindow
     $script:hotkeyWindow.add_HotkeyPressed({
         Write-Verbose 'F8 hotkey pressed — opening PowerShell'
         Start-Process $script:PsBin -ArgumentList '-NoProfile', '-NoExit'
@@ -674,7 +674,7 @@ public class AmpCloudHotkeyWindow : NativeWindow, IDisposable {
 $script:EdgeExe  = 'X:\WebView2\Edge\msedge.exe'
 $script:EdgeUserDataDir = 'X:\Temp\EdgeKiosk'
 $script:EdgeArgs = @(
-    '--kiosk',           'file:///X:/AmpCloud-UI/index.html',
+    '--kiosk',           'file:///X:/Nova-UI/index.html',
     '--kiosk-type=fullscreen',
     '--allow-run-as-system',
     "--user-data-dir=$($script:EdgeUserDataDir)",
@@ -774,7 +774,7 @@ function Show-ConfigurationMenu {
     Write-Status $S.CatalogFetch 'Cyan'
     [System.Windows.Forms.Application]::DoEvents()
 
-    $scratchPath = 'X:\AmpCloud'
+    $scratchPath = 'X:\Nova'
     if (-not (Test-Path $scratchPath)) {
         $null = New-Item -ItemType Directory -Path $scratchPath -Force
     }
@@ -1179,7 +1179,7 @@ function Invoke-M365EdgeAuth {
         A temporary localhost HTTP listener captures the redirect carrying the
         authorization code, then exchanges it for tokens using PKCE.
         After authentication completes (or fails), the listener redirects the
-        browser back to the AmpCloud-UI page.
+        browser back to the Nova-UI page.
         WinPE-safe — no separate Edge process or WinForms dialog is created.
     .PARAMETER ClientId
         Azure AD application (client) ID.
@@ -1591,10 +1591,10 @@ function ProceedToEngine {
     # Fall back to downloading from GitHub when the local copy is absent.
     $engineFailed = $false
     try {
-        $localAmpCloud = Join-Path $env:SystemRoot 'System32\AmpCloud.ps1'
-        if (-not (Test-Path $localAmpCloud)) {
-            $url    = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/AmpCloud.ps1"
-            $localAmpCloud = 'X:\AmpCloud.ps1'
+        $localNova = Join-Path $env:SystemRoot 'System32\Nova.ps1'
+        if (-not (Test-Path $localNova)) {
+            $url    = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Nova.ps1"
+            $localNova = 'X:\Nova.ps1'
             Write-Status ($S.Download -f 0)
             $web = New-Object System.Net.WebClient
             $web.add_DownloadProgressChanged({
@@ -1602,7 +1602,7 @@ function ProceedToEngine {
                 $null = $eventSender  # Required by .NET delegate signature
                 Write-Status ($S.Download -f $e.ProgressPercentage)
             })
-            $task = $web.DownloadFileTaskAsync($url, $localAmpCloud)
+            $task = $web.DownloadFileTaskAsync($url, $localNova)
             while (-not $task.IsCompleted) {
                 [System.Windows.Forms.Application]::DoEvents()
                 Start-Sleep -Milliseconds 100
@@ -1610,9 +1610,9 @@ function ProceedToEngine {
             if ($task.IsFaulted) { throw $task.Exception.InnerException }
         }
 
-        # Run AmpCloud.ps1 in a dedicated process so the UI thread
+        # Run Nova.ps1 in a dedicated process so the UI thread
         # stays responsive and the spinner keeps animating.
-        # Detect firmware type so AmpCloud partitions and configures the
+        # Detect firmware type so Nova partitions and configures the
         # bootloader correctly (UEFI → GPT + bcdboot /f UEFI,
         # BIOS → MBR + bcdboot /f BIOS).  wpeutil UpdateBootInfo already
         # populated the PEFirmwareType registry value during WinPE init.
@@ -1623,7 +1623,7 @@ function ProceedToEngine {
             if ($fwVal -eq 1) { $detectedFirmware = 'BIOS' }
         } catch { Write-Verbose "PEFirmwareType unavailable: $_" }
 
-        $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $localAmpCloud,
+        $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $localNova,
                     '-StatusFile', $script:StatusFile,
                     '-FirmwareType', $detectedFirmware,
                     '-TaskSequencePath', $script:TaskSequencePath)
@@ -1639,7 +1639,7 @@ function ProceedToEngine {
 
         Update-HtmlUi -Message $S.Imaging -Step 4
 
-        # Stop writing to the status JSON from Bootstrap — AmpCloud.ps1 takes
+        # Stop writing to the status JSON from Bootstrap — Nova.ps1 takes
         # over the file from this point to avoid write conflicts.
         $script:HtmlUiActive = $false
 
