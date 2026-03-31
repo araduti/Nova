@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Utility functions for Autopilot device import.
 .DESCRIPTION

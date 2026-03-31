@@ -27,8 +27,10 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# Referenced in nested functions via closure (Resolve-LocaleStrings, Show-WinPEConfiguration, etc.)
+$null = $GitHubUser, $GitHubRepo, $GitHubBranch, $MaxWaitSeconds
 
-# ── Shell path ───────────────────────────────────────────────────────────────
+# ── Shell path───────────────────────────────────────────────────────────────
 # Resolved once at startup so WinPE's fixed X:\ path is used reliably.
 $script:PsBin = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
@@ -99,6 +101,7 @@ function Update-HtmlUi {
         (running in Edge kiosk mode) can display real-time progress during the
         bootstrap phase before Nova.ps1 takes over.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$Message  = '',
         [string]$Detail   = '',
@@ -132,10 +135,10 @@ function Update-HtmlUi {
         if ($ConfigData) { $obj['ConfigData'] = $ConfigData }
         $obj | ConvertTo-Json -Depth 4 -Compress |
             Set-Content -Path $script:StatusFile -Force -ErrorAction SilentlyContinue
-    } catch {}
+    } catch { $null = $_ }
 }
 
-#region ── Language System ───────────────────────────────────────────────────
+#region ── Language System───────────────────────────────────────────────────
 $script:Lang = 'EN'
 
 # Locale strings are loaded from Config/locale/<lang>.json.  The function
@@ -222,18 +225,11 @@ function Invoke-Sound {
 #region ── Fluent Theme (dialog essentials) ──────────────────────────────────
 # Colours and fonts retained for interactive WinForms dialogs (WiFi selector,
 # configuration menu, M365 auth).  The main visible form is now in HTML.
-$LightBlue   = [System.Drawing.Color]::FromArgb(0, 120, 212)
-$DarkBg      = [System.Drawing.Color]::FromArgb(32, 32, 32)
 $LightCard   = [System.Drawing.Color]::White
 $DarkCard    = [System.Drawing.Color]::FromArgb(45, 45, 45)
-$TextLight   = [System.Drawing.Color]::FromArgb(32, 32, 32)
-$TextDark    = [System.Drawing.Color]::White
 
 $script:IsDarkMode  = $false
-$TitleFont   = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
 $BodyFont    = New-Object System.Drawing.Font("Segoe UI", 11)
-$SmallFont   = New-Object System.Drawing.Font("Segoe UI", 9.5)
-$InfoFont    = New-Object System.Drawing.Font("Segoe UI", 9)
 #endregion
 
 #region ── Network + WiFi Functions ─────────────────────────────────────────
@@ -291,9 +287,12 @@ function Test-InternetConnectivity {
 }
 
 function Start-WlanService {
+    [CmdletBinding(SupportsShouldProcess)] param()
     if (-not (Get-Service -Name wlansvc -ErrorAction SilentlyContinue)) { return $false }
     if ((Get-Service wlansvc).Status -ne 'Running') {
+        if ($PSCmdlet.ShouldProcess('wlansvc', 'Start-Service')) {
         Start-Service wlansvc -ErrorAction SilentlyContinue
+        }
         Start-Sleep -Seconds 3
     }
     return $true
@@ -479,7 +478,7 @@ function Write-Status {
     Update-HtmlUi -Message $Message
 }
 
-function Update-Step { param([int]$s)
+function Update-Step { [CmdletBinding(SupportsShouldProcess)] param([int]$s)
     Update-HtmlUi -Step $s
 }
 
@@ -705,10 +704,11 @@ function Restart-Edge {
     <#
     .SYNOPSIS  Kill all Edge processes and relaunch the kiosk UI.
     #>
+    [CmdletBinding(SupportsShouldProcess)] param()
     Write-Verbose 'Edge watchdog — restarting Edge'
     # Terminate every msedge process
     Get-Process -Name 'msedge' -ErrorAction SilentlyContinue |
-        ForEach-Object { try { $_.Kill() } catch {} }
+        ForEach-Object { try { $_.Kill() } catch { $null = $_ } }
     Start-Sleep -Seconds 2
     # Remove stale lock files so Edge starts cleanly
     Remove-Item (Join-Path $script:EdgeUserDataDir 'lockfile')     -Force -ErrorAction SilentlyContinue
@@ -879,20 +879,20 @@ function Show-ConfigurationMenu {
                         $base = ''
                         switch ($source) {
                             'serialNumber' {
-                                try { $base = (Get-WmiObject Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch { $base = '' }
+                                try { $base = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch { $base = '' }
                             }
                             'assetTag' {
-                                try { $base = (Get-WmiObject Win32_SystemEnclosure).SMBIOSAssetTag -replace '[^A-Za-z0-9]','' } catch { $base = '' }
+                                try { $base = (Get-CimInstance -ClassName Win32_SystemEnclosure).SMBIOSAssetTag -replace '[^A-Za-z0-9]','' } catch { $base = '' }
                             }
                             'macAddress' {
                                 try {
-                                    $mac = (Get-WmiObject Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1).MACAddress
+                                    $mac = (Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1).MACAddress
                                     $mac = if ($mac) { $mac -replace '[:\-]','' } else { '' }
                                     if ($mac.Length -ge 12) { $base = $mac.Substring(6) }
                                 } catch { $base = '' }
                             }
                             'deviceModel' {
-                                try { $base = (Get-WmiObject Win32_ComputerSystem).Model -replace '[^A-Za-z0-9]','' } catch { $base = '' }
+                                try { $base = (Get-CimInstance -ClassName Win32_ComputerSystem).Model -replace '[^A-Za-z0-9]','' } catch { $base = '' }
                             }
                             'randomDigits' {
                                 $count = if ($sp.randomDigitCount -gt 0) { [math]::Min($sp.randomDigitCount, 10) } else { 4 }
@@ -1005,6 +1005,7 @@ function Update-TaskSequenceFromConfig {
         CustomizeOOBE step's unattendContent XML, keeping the task sequence
         as the single source of truth for unattend.xml content.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)]
         [string]$TaskSequencePath,
@@ -1315,7 +1316,7 @@ function Invoke-M365EdgeAuth {
     Update-HtmlUi -Message $S.AuthSigning -Step 3
 
     } finally {
-        try { $listener.Stop(); $listener.Close() } catch {}
+        try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
     }
 
     if ($script:_authCancelled -or -not $script:_edgeAuthCode) {
@@ -1823,8 +1824,8 @@ while (-not $script:ExitMainLoop) {
     [System.Windows.Forms.Application]::DoEvents()
     Start-Sleep -Milliseconds 50
 }
-try { $script:HttpListener.Stop() } catch {}
-try { $script:edgeWatchdogTimer.Stop() } catch {}
-try { if ($script:hotkeyWindow) { $script:hotkeyWindow.Dispose() } } catch {}
+try { $script:HttpListener.Stop() } catch { $null = $_ }
+try { $script:edgeWatchdogTimer.Stop() } catch { $null = $_ }
+try { if ($script:hotkeyWindow) { $script:hotkeyWindow.Dispose() } } catch { $null = $_ }
 Stop-Transcript -ErrorAction SilentlyContinue
 #endregion

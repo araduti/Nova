@@ -1,4 +1,4 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 #Requires -Version 5.1
 <#
 .SYNOPSIS
@@ -738,8 +738,10 @@ function Remove-WinRERecoveryPackage {
         package do not block removal of the others.
     .PARAMETER MountDir  Path to the mounted WIM image.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param([string] $MountDir)
 
+    if (-not $PSCmdlet.ShouldProcess($MountDir, 'Remove-WinRERecoveryPackage')) { return }
     Write-Step 'Removing WinRE recovery packages to reduce image size...'
 
     $removePrefixes = @(
@@ -1390,7 +1392,9 @@ function New-BcdEntry {
     <#
     .SYNOPSIS  Creates a BCD entry and returns its GUID string, e.g. {abc123…}.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param([string[]] $CreateArgs)
+    if (-not $PSCmdlet.ShouldProcess($CreateArgs, 'New-BcdEntry')) { return }
     $output = Invoke-Bcdedit $CreateArgs
     if ($output -match '\{([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})\}') {
         return "{$($Matches[1])}"
@@ -1435,6 +1439,7 @@ function New-BCDRamdiskEntry {
     .SYNOPSIS  Stages boot files and creates a one-time BCD ramdisk boot entry.
     .OUTPUTS   [string] OS loader GUID.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string] $BootWim,
         [string] $RamdiskDir,
@@ -1816,8 +1821,8 @@ function Show-WebView2AuthPopup {
         Start-Sleep -Milliseconds 100
     }
     if (-not $initTask.IsCompleted -or $initTask.IsFaulted) {
-        try { $wv2.Dispose() } catch {}
-        try { $form.Dispose() } catch {}
+        try { $wv2.Dispose() } catch { $null = $_ }
+        try { $form.Dispose() } catch { $null = $_ }
         $ex = if ($initTask.Exception) { $initTask.Exception.InnerException } else { $null }
         throw "WebView2 control initialisation failed: $ex"
     }
@@ -1829,7 +1834,8 @@ function Show-WebView2AuthPopup {
     $script:_wv2RedirectBase  = $RedirectUriBase
 
     $wv2.CoreWebView2.add_NavigationStarting({
-        param($sender, $e)
+        param($eventSender, $e)
+        $null = $eventSender
         if ($e.Uri.StartsWith($script:_wv2RedirectBase, [System.StringComparison]::OrdinalIgnoreCase)) {
             $e.Cancel = $true
             try {
@@ -1841,7 +1847,7 @@ function Show-WebView2AuthPopup {
                         if ($kv[0] -eq 'error') { $script:_wv2PopupError = [uri]::UnescapeDataString($kv[1]) }
                     }
                 }
-            } catch {}
+            } catch { $null = $_ }
             $script:_wv2PopupForm.DialogResult = if ($script:_wv2PopupCode) { 'OK' } else { 'Abort' }
             $script:_wv2PopupForm.Close()
         }
@@ -1852,8 +1858,8 @@ function Show-WebView2AuthPopup {
     $dialogResult = $form.ShowDialog()
 
     # ── Clean up ───────────────────────────────────────────────────────────
-    try { $wv2.Dispose() } catch {}
-    try { $form.Dispose() } catch {}
+    try { $wv2.Dispose() } catch { $null = $_ }
+    try { $form.Dispose() } catch { $null = $_ }
 
     # Remove cached cookies/data to prevent credential leakage.
     if (Test-Path $userDataDir) {

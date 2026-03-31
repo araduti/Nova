@@ -127,6 +127,7 @@ function Update-BootstrapStatus {
         with the message, progress percentage, and step number.  When imaging is
         done, set -Done to signal the spinner to stop.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$Message  = '',
         [string]$Detail   = '',
@@ -206,6 +207,7 @@ function Update-ActiveDeploymentReport {
         Call with -Clear to remove the file after the deployment finishes or
         fails, signalling that the device is no longer actively deploying.
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$DeviceName   = $env:COMPUTERNAME,
         [string]$TaskSequence = '',
@@ -450,7 +452,7 @@ function Get-GitHubTokenViaEntra {
                     $reader  = New-Object System.IO.StreamReader($resp.GetResponseStream())
                     $errBody = $reader.ReadToEnd()
                     $reader.Close()
-                } catch { }
+                } catch { $null = $_ }
             }
             Write-Warning "Entra→GitHub token exchange failed (HTTP $statusCode): $(if ($errBody) { $errBody.Substring(0, [math]::Min($errBody.Length, 200)) } else { '(no response body)' })"
             $script:EntraExchangeLastFailure = Get-Date
@@ -568,6 +570,7 @@ function Push-ReportToGitHub {
 }
 
 function New-ScratchDirectory {
+    [CmdletBinding(SupportsShouldProcess)]
     param([string]$Path)
     if (-not (Test-Path $Path)) {
         $null = New-Item -ItemType Directory -Path $Path -Force
@@ -815,6 +818,7 @@ function Find-WindowsESD {
         [string]$FirmwareType
     )
 
+    $null = $FirmwareType
     $arch = $Architecture
     $allFiles = $Catalog.MCT.Catalogs.Catalog.PublishedMedia.Files.File
     $matchedEsd = $allFiles |
@@ -970,12 +974,14 @@ function Install-WindowsImage {
 #region ── BCD / Bootloader ─────────────────────────────────────────────────────
 
 function Set-Bootloader {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$OSDriveLetter,
         [string]$FirmwareType,
         [int]$DiskNumber
     )
 
+    if (-not $PSCmdlet.ShouldProcess($OSDriveLetter, 'Set-Bootloader')) { return }
     Write-Step 'Configuring bootloader...'
 
     $osDrive = "${OSDriveLetter}:"
@@ -1265,6 +1271,7 @@ function Invoke-OemDriverInjection {
 #region ── Autopilot / Intune ───────────────────────────────────────────────────
 
 function Set-AutopilotConfig {
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$JsonUrl,
         [string]$JsonPath,
@@ -1325,7 +1332,7 @@ function Invoke-AutopilotImport {
 
     # ── 1. Get serial number ────────────────────────────────────────────
     $serial = $null
-    try { $serial = (Get-WmiObject -Class Win32_BIOS).SerialNumber } catch {}
+    try { $serial = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber } catch { $null = $_ }
     if (-not $serial -or $serial.Trim() -eq '') {
         throw 'Autopilot import failed: device serial number is empty or unavailable.'
     }
@@ -1499,6 +1506,7 @@ function Set-OOBECustomization {
         This function simply writes the final XML to disk (or downloads /
         copies from an external source).
     #>
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$UnattendUrl,
         [string]$UnattendPath,
@@ -1556,6 +1564,7 @@ function Invoke-PostScript {
         [string]$ScratchDir
     )
 
+    $null = $ScratchDir
     if (-not $ScriptUrls -or $ScriptUrls.Count -eq 0) {
         Write-Warn 'No post-provisioning scripts specified. Skipping.'
         return
@@ -1824,20 +1833,20 @@ function Invoke-TaskSequenceStep {
                 $base = ''
                 switch ($source) {
                     'serialNumber' {
-                        try { $base = (Get-WmiObject Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch {}
+                        try { $base = (Get-CimInstance -ClassName Win32_BIOS).SerialNumber -replace '[^A-Za-z0-9]','' } catch { $null = $_ }
                     }
                     'assetTag' {
-                        try { $base = (Get-WmiObject Win32_SystemEnclosure).SMBIOSAssetTag -replace '[^A-Za-z0-9]','' } catch {}
+                        try { $base = (Get-CimInstance -ClassName Win32_SystemEnclosure).SMBIOSAssetTag -replace '[^A-Za-z0-9]','' } catch { $null = $_ }
                     }
                     'macAddress' {
                         try {
-                            $mac = (Get-WmiObject Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1).MACAddress
+                            $mac = (Get-CimInstance -ClassName Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.MACAddress } | Select-Object -First 1).MACAddress
                             $mac = if ($mac) { $mac -replace '[:\-]','' } else { '' }
                             if ($mac.Length -ge 12) { $base = $mac.Substring(6) }
-                        } catch {}
+                        } catch { $null = $_ }
                     }
                     'deviceModel' {
-                        try { $base = (Get-WmiObject Win32_ComputerSystem).Model -replace '[^A-Za-z0-9]','' } catch {}
+                        try { $base = (Get-CimInstance -ClassName Win32_ComputerSystem).Model -replace '[^A-Za-z0-9]','' } catch { $null = $_ }
                     }
                     'randomDigits' {
                         $count = if ($p.PSObject.Properties['randomDigitCount'] -and $p.randomDigitCount -gt 0) { [math]::Min($p.randomDigitCount, 10) } else { 4 }
