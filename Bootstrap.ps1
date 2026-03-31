@@ -1634,7 +1634,7 @@ function ProceedToEngine {
         # SYSTEM account runs and no other user processes exist, so environment
         # variable exposure is acceptable.
         if ($script:GraphAccessToken) {
-            $env:AMPCLOUD_GRAPH_TOKEN = $script:GraphAccessToken
+            $env:NOVA_GRAPH_TOKEN = $script:GraphAccessToken
         }
 
         Update-HtmlUi -Message $S.Imaging -Step 4

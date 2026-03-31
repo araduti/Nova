@@ -1,7 +1,7 @@
 /* ─────────────────────────────────────────────────────────────────────
    Nova Task Sequence Editor — app.js
    SCCM-style web UI for building and editing JSON task sequences that
-   the Nova engine (AmpCloud.ps1) can read and execute.
+   the Nova engine (Nova.ps1) can read and execute.
    ────────────────────────────────────────────────────────────────────── */
 
 'use strict';

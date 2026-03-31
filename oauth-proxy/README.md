@@ -1,14 +1,14 @@
-# AmpCloud GitHub OAuth CORS Proxy
+# Nova GitHub OAuth CORS Proxy
 
 GitHub's OAuth Device Flow endpoints (`/login/device/code`,
 `/login/oauth/access_token`) do **not** return CORS headers, so browsers
-block direct calls from the AmpCloud Editor.
+block direct calls from the Nova Editor.
 
 This directory contains a lightweight **Cloudflare Worker** that:
 
 1. Proxies the Device Flow endpoints with CORS headers (no secrets stored).
 2. Provides an **Entra ID → GitHub token exchange** endpoint so the
-   AmpCloud engine and Monitoring dashboard can reuse the Entra ID token
+   Nova engine and Monitoring dashboard can reuse the Entra ID token
    from sign-in instead of requiring a separate GitHub PAT.
 
 ---
@@ -37,7 +37,7 @@ npm run deploy
 Wrangler prints the Worker URL, for example:
 
 ```
-https://ampcloud-oauth-proxy.<you>.workers.dev
+https://nova-oauth-proxy.<you>.workers.dev
 ```
 
 ### 3. Configure environment variables
@@ -106,7 +106,7 @@ can mint short-lived installation access tokens.
 
    | Field | Value |
    |-------|-------|
-   | **GitHub App name** | e.g. `AmpCloud Deploy` |
+   | **GitHub App name** | e.g. `Nova Deploy` |
    | **Homepage URL** | Your GitHub Pages URL or repository URL |
    | **Webhook** | Uncheck **Active** (no webhook needed) |
 
@@ -134,7 +134,7 @@ can mint short-lived installation access tokens.
 
    - Go to the app's settings → **Install App** (left sidebar).
    - Select your account and choose **Only select repositories** → pick
-     your AmpCloud fork.
+     your Nova fork.
    - After installation, the URL will contain the **Installation ID**
      (the number at the end of the URL, e.g.
      `https://github.com/settings/installations/12345678` → `12345678`).
@@ -147,13 +147,13 @@ can mint short-lived installation access tokens.
    wrangler secret put GITHUB_APP_INSTALLATION_ID   # e.g. 12345678
    ```
 
-### 5. Configure AmpCloud
+### 5. Configure Nova
 
 Add the Worker URL to `Config/auth.json`:
 
 ```json
 {
-    "githubOAuthProxy": "https://ampcloud-oauth-proxy.<you>.workers.dev"
+    "githubOAuthProxy": "https://nova-oauth-proxy.<you>.workers.dev"
 }
 ```
 
@@ -194,7 +194,7 @@ Content-Type: application/json
 **How it works:**
 
 ```
-AmpCloud Engine / Dashboard               Cloudflare Worker                GitHub
+Nova Engine / Dashboard               Cloudflare Worker                GitHub
        │                                         │                          │
        │  POST /api/token-exchange               │                          │
        │  Authorization: Bearer <entra-token>     │                          │

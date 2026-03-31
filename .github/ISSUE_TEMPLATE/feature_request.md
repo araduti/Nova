@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest an idea or improvement for AmpCloud
+about: Suggest an idea or improvement for Nova
 title: "[Feature] "
 labels: enhancement
 assignees: ''
@@ -15,7 +15,7 @@ A clear and concise description of what you want to happen.
 **Which component does this affect?**
 - [ ] Trigger.ps1 (WinPE builder)
 - [ ] Bootstrap.ps1 (network / auth)
-- [ ] AmpCloud.ps1 (imaging engine)
+- [ ] Nova.ps1 (imaging engine)
 - [ ] Task Sequence Editor (web)
 - [ ] Monitoring Dashboard
 - [ ] Configuration / auth.json
