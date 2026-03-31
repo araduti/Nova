@@ -7,8 +7,10 @@
 *An [Ampliosoft](https://ampliosoft.com) open-source project*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/araduti/AmpCloud/actions/workflows/ci.yml/badge.svg)](https://github.com/araduti/AmpCloud/actions/workflows/ci.yml)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue?logo=powershell&logoColor=white)](https://docs.microsoft.com/en-us/powershell/)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11%2FServer-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
 **Zero-media, cloud-native Windows imaging — no USB, no ISO, no PXE.**
 Stream the entire deployment engine from GitHub, reimage any PC over WiFi or Ethernet.
@@ -119,24 +121,43 @@ AmpCloud/
 ├── Trigger.ps1              # Stage 1 — entry point, WinPE builder
 ├── Bootstrap.ps1            # Stage 2 — network, auth, engine launcher
 ├── AmpCloud.ps1             # Stage 3 — full imaging engine
-├── AmpCloud-UI/             # Real-time progress UI (HTML/CSS/JS)
+├── AmpCloud-UI/             # Real-time progress UI (HTML/CSS/JS, WinPE embedded)
 ├── Editor/                  # Task sequence editor (GitHub Pages SPA)
 │   ├── index.html
 │   ├── js/app.js
 │   ├── css/style.css
-│   └── lib/                 # MSAL.js, moment.js (vendored)
+│   └── lib/                 # MSAL.js (vendored)
+├── Monitoring/              # Live deployment monitoring dashboard
+│   └── index.html
 ├── Config/
 │   ├── auth.json            # OAuth / M365 configuration
+│   ├── alerts.json          # Notification settings (Teams, Slack, email)
 │   └── locale/              # UI localization (en, es, fr)
 ├── TaskSequence/
 │   └── default.json         # Default deployment task sequence
 ├── Autopilot/               # Autopilot device import utilities
 ├── Drivers/                 # Bundled NetKVM drivers (Hyper-V / KVM)
 ├── Unattend/                # Default unattend.xml template
-├── Progress/                # Legacy progress UI
+├── Progress/                # Pre-boot progress UI (WinPE embedded)
 ├── oauth-proxy/             # Cloudflare Worker — GitHub OAuth CORS proxy
+│   ├── src/                 # TypeScript source (modular)
+│   │   ├── index.ts         # Worker entry point
+│   │   ├── cors.ts          # CORS header builder
+│   │   ├── crypto.ts        # PKCS key handling, JWT creation
+│   │   ├── types.ts         # TypeScript interfaces
+│   │   └── handlers/        # Route handlers
+│   │       ├── device-flow.ts
+│   │       └── token-exchange.ts
+│   ├── test/                # Vitest unit tests
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── wrangler.toml
+├── vite.config.js           # Vite build config (Editor, Monitoring, Dashboard)
+├── package.json             # Root project (Vite build system)
 ├── products.xml             # Microsoft Windows ESD catalog
-└── CODEBASE_ANALYSIS.md     # Architecture & security analysis
+├── Deployments/             # Active + historical deployment data
+├── docs/                    # Improvement proposals
+└── index.html               # Root dashboard landing page
 ```
 
 ---
@@ -304,6 +325,44 @@ $params = @{
     )
 }
 ```
+
+---
+
+## Development
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) 22+ (for build system and oauth-proxy development)
+- [PowerShell](https://docs.microsoft.com/en-us/powershell/) 5.1+ (ships with Windows)
+
+### Web UI development
+
+```bash
+npm install        # install Vite
+npm run dev        # start local dev server with hot reload
+npm run build      # production build → dist/
+npm run preview    # preview production build locally
+```
+
+The Vite build processes the **Editor**, **Monitoring**, and root **Dashboard** pages. AmpCloud-UI and Progress are embedded into WinPE by Trigger.ps1 and run offline — they are not part of the web build.
+
+### OAuth proxy development
+
+```bash
+cd oauth-proxy
+npm install        # install dependencies (wrangler, TypeScript, vitest)
+npm run typecheck  # TypeScript type checking
+npm test           # run unit tests
+npm run dev        # local Cloudflare Worker dev server
+npm run deploy     # deploy to Cloudflare Workers
+```
+
+### CI/CD
+
+| Workflow | Trigger | Purpose |
+|----------|---------|---------|
+| `ci.yml` | Push/PR to `main` | TypeScript lint, unit tests, web build verification |
+| `pages.yml` | Push to `main` (web files) | Build and deploy web UIs to GitHub Pages |
 
 ---
 
