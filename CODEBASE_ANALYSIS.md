@@ -1,4 +1,4 @@
-# AmpCloud — Codebase Analysis
+# Nova — Codebase Analysis
 
 > **Date:** 2026-03-27
 > **Scope:** Full codebase review covering architecture, performance, design, and security
@@ -22,7 +22,7 @@
 
 ## Executive Summary
 
-AmpCloud is a well-architected, cloud-native Windows OS deployment platform. The three-stage design (Trigger → Bootstrap → Imaging Engine) is clean and effective. Authentication follows modern OAuth 2.0 best practices (PKCE, minimal scopes, ephemeral tokens). The codebase is functional, well-documented internally, and ready for open-source release with the documentation improvements delivered alongside this analysis.
+Nova is a well-architected, cloud-native Windows OS deployment platform. The three-stage design (Trigger → Bootstrap → Imaging Engine) is clean and effective. Authentication follows modern OAuth 2.0 best practices (PKCE, minimal scopes, ephemeral tokens). The codebase is functional, well-documented internally, and ready for open-source release with the documentation improvements delivered alongside this analysis.
 
 **Overall assessment:** The project is in strong shape for open-sourcing. The findings below are categorized as improvements, not blockers. No critical vulnerabilities were found.
 
@@ -42,7 +42,7 @@ AmpCloud is a well-architected, cloud-native Windows OS deployment platform. The
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      AmpCloud Architecture                          │
+│                      Nova Architecture                              │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  STAGE 1: Trigger.ps1 (2,245 lines)                                │
@@ -58,7 +58,7 @@ AmpCloud is a well-architected, cloud-native Windows OS deployment platform. The
 │  M365 auth gate (PKCE or Device Code), downloads and launches       │
 │  the imaging engine.                                                 │
 │                                                                     │
-│  STAGE 3: AmpCloud.ps1 (1,443 lines)                               │
+│  STAGE 3: Nova.ps1 (1,443 lines)                                   │
 │  ─────────────────────────────────                                   │
 │  Full imaging engine streamed from GitHub. Partitions disk,         │
 │  downloads Windows image, applies with DISM, injects drivers,       │
@@ -68,12 +68,12 @@ AmpCloud is a well-architected, cloud-native Windows OS deployment platform. The
 │  PARALLEL WEB COMPONENTS:                                           │
 │  ─────────────────────────                                           │
 │  • Editor (GitHub Pages SPA) — visual task sequence builder         │
-│  • AmpCloud-UI — real-time progress dashboard in Edge kiosk         │
+│  • Nova-UI — real-time progress dashboard in Edge kiosk             │
 │  • OAuth Proxy (Cloudflare Worker) — CORS bridge for GitHub OAuth   │
 │                                                                     │
 │  IPC:                                                               │
 │  ────                                                               │
-│  Bootstrap.ps1 ↔ AmpCloud.ps1 via X:\AmpCloud-Status.json          │
+│  Bootstrap.ps1 ↔ Nova.ps1 via X:\Nova-Status.json                  │
 │  Bootstrap.ps1 ↔ HTML UI via JSON polling (650ms) + HTTP API       │
 │  (localhost:8080)                                                    │
 │                                                                     │
@@ -94,26 +94,25 @@ AmpCloud is a well-architected, cloud-native Windows OS deployment platform. The
 
 ### Current state
 
-The name **AmpCloud** is short, memorable, and well-suited for this specific product. However, the concern is valid: if Ampliosoft releases other cloud-based products (e.g. a cloud monitoring tool, a cloud configuration manager), "AmpCloud" alone could become ambiguous.
+The name **Nova** is short, memorable, and well-suited for this specific product. The rebrand from the original working name "AmpCloud" was completed to better distinguish this deployment platform from other Ampliosoft products and to establish a clearer identity.
 
-### Recommendation
+### Branding
 
-**Keep the AmpCloud name** but pair it with a clear product descriptor in all branding contexts:
+The **Nova** name is paired with a clear product descriptor in all branding contexts:
 
-| Context | Current | Recommended |
-|---------|---------|-------------|
-| Full brand name | AmpCloud | **AmpCloud** — Cloud-Native Windows OS Deployment |
-| Short tagline | _(none)_ | **"Zero-media Windows deployment from GitHub"** |
-| Company attribution | _(none)_ | **An Ampliosoft open-source project** |
-| Locale UI header | `A M P C L O U D` | Keep as-is; no change needed |
+| Context | Value |
+|---------|-------|
+| Full brand name | **Nova** — Cloud-Native Windows OS Deployment |
+| Short tagline | **"Zero-media Windows deployment from GitHub"** |
+| Company attribution | **An Ampliosoft open-source project** |
+| Locale UI header | `N O V A` |
 
 This approach:
-- Preserves the name that already exists in code, file paths, status files, and locale strings
-- Avoids a disruptive rename across the entire codebase
-- Clearly separates AmpCloud from any future "Amp*" products through the descriptor
+- Provides a distinct, memorable name for the deployment platform
+- Clearly separates Nova from any future Ampliosoft products
 - Positions Ampliosoft as the parent company brand
 
-If a full rename is ever desired, alternative names to consider: **AmpDeploy**, **AmpImage**, **AmpBoot**. Any rename would require changes to file names (`AmpCloud.ps1`, `AmpCloud-UI/`, `AmpCloud-Status.json`), status file paths, locale strings, BCD entries, and the GitHub repository name — a significant but non-breaking effort.
+The rebrand from "AmpCloud" to "Nova" included updates to file names (`Nova.ps1`, `Nova-UI/`, `Nova-Status.json`), status file paths, locale strings, and documentation. Alternative names that were considered included **AmpDeploy**, **AmpImage**, and **AmpBoot**.
 
 ---
 
@@ -153,9 +152,9 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 
 ### S-04: No script integrity verification (Medium)
 
-**Component:** `Bootstrap.ps1` → downloading `AmpCloud.ps1`
+**Component:** `Bootstrap.ps1` → downloading `Nova.ps1`
 **Severity:** Medium
-**Description:** `AmpCloud.ps1` is downloaded from GitHub and executed without verifying a checksum or digital signature. This relies entirely on HTTPS transport security.
+**Description:** `Nova.ps1` is downloaded from GitHub and executed without verifying a checksum or digital signature. This relies entirely on HTTPS transport security.
 **Recommendation:**
 - Publish SHA-256 checksums alongside releases
 - Add an optional `-VerifyChecksum` parameter to Bootstrap.ps1
@@ -163,7 +162,7 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 
 ### S-05: Status file has no ACL restriction (Low)
 
-**Component:** `X:\AmpCloud-Status.json`
+**Component:** `X:\Nova-Status.json`
 **Severity:** Low
 **Description:** The JSON status file used for IPC between Bootstrap.ps1 and the HTML UI is written to the WinPE RAM drive without explicit ACLs.
 **Mitigations:** WinPE is a single-user, single-session environment. No sensitive data (passwords, tokens) flows through the status file.
@@ -180,7 +179,7 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 
 **Component:** `Trigger.ps1`
 **Severity:** Low
-**Description:** Both `Bootstrap.ps1` and `AmpCloud.ps1` explicitly set `[Net.ServicePointManager]::SecurityProtocol = Tls12`. `Trigger.ps1` does not, relying on the OS default. On older PowerShell 5.1 installations, the default may include SSL3/TLS 1.0.
+**Description:** Both `Bootstrap.ps1` and `Nova.ps1` explicitly set `[Net.ServicePointManager]::SecurityProtocol = Tls12`. `Trigger.ps1` does not, relying on the OS default. On older PowerShell 5.1 installations, the default may include SSL3/TLS 1.0.
 **Recommendation:** Add the TLS 1.2 enforcement line near the top of `Trigger.ps1` for consistency.
 
 ### S-08: products.xml uses SHA-1 hashes (Low)
@@ -196,7 +195,7 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 
 ### P-01: No HTTP resume for large downloads (Medium)
 
-**Component:** `AmpCloud.ps1` — Windows image download
+**Component:** `Nova.ps1` — Windows image download
 **Impact:** Medium
 **Description:** Windows ESD/WIM files are 4–5 GB. `Invoke-WebRequest` downloads the entire file in one pass. If the connection drops, the download starts over.
 **Recommendation:** Implement HTTP Range header support for resumable downloads. PowerShell's `Start-BitsTransfer` supports resume natively but may not be available in WinPE.
@@ -210,9 +209,9 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 
 ### P-03: JSON status polling interval is fixed (Low)
 
-**Component:** `Bootstrap.ps1` + `AmpCloud-UI/index.html`
+**Component:** `Bootstrap.ps1` + `Nova-UI/index.html`
 **Impact:** Low
-**Description:** The HTML UI polls `AmpCloud-Status.json` every 650ms. In WinPE (RAM disk), this is negligible overhead. However, for future scalability (e.g. remote status monitoring), a push-based mechanism (WebSocket or Server-Sent Events) would be more efficient.
+**Description:** The HTML UI polls `Nova-Status.json` every 650ms. In WinPE (RAM disk), this is negligible overhead. However, for future scalability (e.g. remote status monitoring), a push-based mechanism (WebSocket or Server-Sent Events) would be more efficient.
 **Recommendation:** No change needed for current use. The polling interval is appropriate for local IPC in WinPE.
 
 ### P-04: WIM not cached between runs (Low)
@@ -242,7 +241,7 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 
 ### D-02: No dry-run mode (Medium)
 
-**Component:** `AmpCloud.ps1`
+**Component:** `Nova.ps1`
 **Impact:** Medium
 **Description:** There is no way to validate a deployment configuration without actually partitioning the disk. A dry-run mode would be valuable for testing task sequences and catching configuration errors.
 **Recommendation:** Add a `-DryRun` / `-WhatIf` parameter that validates all configuration, resolves download URLs, and logs the planned steps without executing destructive operations (partitioning, image application).
@@ -257,14 +256,14 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 
 ### D-04: Unattend.xml precedence is implicit (Low)
 
-**Component:** `AmpCloud.ps1`
+**Component:** `Nova.ps1`
 **Impact:** Low
 **Description:** The imaging engine accepts `UnattendPath`, `UnattendContent`, and `UnattendUrl` — three ways to provide an unattend.xml. The precedence order is not documented.
 **Recommendation:** Document the precedence explicitly: `UnattendPath` > `UnattendContent` > `UnattendUrl` > built-in default.
 
 ### D-05: OEM driver auto-detection coverage (Low)
 
-**Component:** `AmpCloud.ps1` — `InjectOemDrivers` step
+**Component:** `Nova.ps1` — `InjectOemDrivers` step
 **Impact:** Low
 **Description:** OEM driver auto-detection supports Dell, HP, and Lenovo. Other manufacturers (Acer, ASUS, Microsoft Surface) are not covered.
 **Recommendation:** Document supported manufacturers. Consider adding Surface driver catalog support given its prevalence in enterprise environments.
@@ -291,7 +290,7 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 
 - **Consistent style:** PowerShell scripts follow a uniform style with `#region` blocks, consistent parameter declarations, and well-named functions.
 - **Error handling:** All three core scripts use `try/catch/finally` blocks with meaningful error messages. Failed deployments do not force a reboot.
-- **Logging:** Transcript logging (`Start-Transcript`) is used in all three stages, producing detailed logs at `X:\AmpCloud-*.log`.
+- **Logging:** Transcript logging (`Start-Transcript`) is used in all three stages, producing detailed logs at `X:\Nova-*.log`.
 - **State machine pattern:** Bootstrap.ps1's DHCP/connectivity flow uses a clean state machine (`INIT → WPEINIT → SETTLE → DHCP → CHECK`) that is easy to follow and extend.
 - **Separation of concerns:** Each script has a single responsibility. The IPC mechanism (JSON + HTTP) keeps them decoupled.
 - **Vendored dependencies:** MSAL.js and moment.js are self-hosted rather than loaded from CDNs, which is correct for WinPE and air-gapped scenarios.
@@ -350,7 +349,7 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 - [ ] Add TLS 1.2 enforcement to Trigger.ps1 (Finding S-07)
 - [ ] Add OAuth `state` parameter to Trigger.ps1 auth flow (SECURITY_ANALYSIS.md F-01)
 - [ ] Add `schemaVersion` to task sequence format (Finding D-01)
-- [ ] Add `-DryRun` mode to AmpCloud.ps1 (Finding D-02)
+- [ ] Add `-DryRun` mode to Nova.ps1 (Finding D-02)
 - [ ] Add resumable downloads for large images (Finding P-01)
 - [ ] Publish SHA-256 checksums with GitHub Releases (Finding S-04)
 
@@ -365,4 +364,4 @@ If a full rename is ever desired, alternative names to consider: **AmpDeploy**, 
 
 ---
 
-*This analysis was prepared for the open-source release of AmpCloud. It is intended as a living document — update it as findings are addressed.*
+*This analysis was prepared for the open-source release of Nova. It is intended as a living document — update it as findings are addressed.*
