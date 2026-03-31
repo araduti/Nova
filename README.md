@@ -8,6 +8,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/araduti/AmpCloud/actions/workflows/ci.yml/badge.svg)](https://github.com/araduti/AmpCloud/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/araduti/AmpCloud/actions/workflows/codeql.yml/badge.svg)](https://github.com/araduti/AmpCloud/actions/workflows/codeql.yml)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue?logo=powershell&logoColor=white)](https://docs.microsoft.com/en-us/powershell/)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11%2FServer-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -361,7 +362,8 @@ npm run deploy     # deploy to Cloudflare Workers
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `ci.yml` | Push/PR to `main` | TypeScript lint, unit tests, web build verification |
+| `ci.yml` | Push/PR to `main` | TypeScript lint, unit tests, PSScriptAnalyzer, web build |
+| `codeql.yml` | Push/PR to `main` + weekly | CodeQL security scanning (JavaScript/TypeScript) |
 | `pages.yml` | Push to `main` (web files) | Build and deploy web UIs to GitHub Pages |
 
 ---

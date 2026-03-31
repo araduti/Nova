@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- PSScriptAnalyzer linting job in CI workflow
+- CodeQL security scanning workflow (JavaScript/TypeScript)
+- Handler-level tests for OAuth proxy (device-flow, token-exchange, origin enforcement — 19 new tests)
 - Three-stage cloud-native deployment: Trigger → Bootstrap → Imaging Engine
 - WiFi support out-of-the-box via WinRE (Intel, Realtek, MediaTek, Qualcomm)
 - Browser-based Task Sequence Editor with drag-and-drop step builder
