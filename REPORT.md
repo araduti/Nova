@@ -19,8 +19,9 @@
 9. [Security Assessment](#security-assessment)  
 10. [Performance Assessment](#performance-assessment)  
 11. [Open-Source Readiness](#open-source-readiness)  
-12. [Next-Gen Recommendations](#next-gen-recommendations)  
-13. [Priority Roadmap](#priority-roadmap)  
+12. [Preserving `irm | iex` After Modularization](#preserving-irm--iex-after-modularization)  
+13. [Next-Gen Recommendations](#next-gen-recommendations)  
+14. [Priority Roadmap](#priority-roadmap)  
 
 ---
 
@@ -593,17 +594,238 @@ if (!success) return new Response('Rate limited', { status: 429 });
 
 ---
 
+## Preserving `irm | iex` After Modularization
+
+> **TL;DR — Yes, absolutely.** The one-liner stays identical. Modularization happens *behind* the launcher, not instead of it. The user types the same command; the launcher just downloads and assembles the modules instead of running a 2,000-line monolith.
+
+### The Question
+
+AmpCloud's entry point is a beloved one-liner:
+
+```powershell
+irm osd.raduti.com | iex
+#  or
+irm https://raw.githubusercontent.com/araduti/AmpCloud/main/Trigger.ps1 | iex
+```
+
+If the monolithic `Trigger.ps1` (2,248 lines) is broken into modules, does the one-liner still work? **Yes** — and it actually gets *better*.
+
+### Why It Works Today
+
+When a user runs `irm <url> | iex`, PowerShell:
+
+1. Downloads the full text of `Trigger.ps1` into memory
+2. Passes it to `Invoke-Expression`, which executes it as if typed at the console
+3. `$PSScriptRoot` is **empty** (there's no script file on disk)
+
+Trigger.ps1 already handles this — it checks `$PSScriptRoot` and, when it's empty, downloads all dependent files individually from GitHub:
+
+```
+Trigger.ps1 (line 1106-1131):
+├── if ($PSScriptRoot) → copy Autopilot/ from local clone
+└── else               → download each file from GitHub raw URLs
+
+Trigger.ps1 (line 1187-1199):
+├── if ($PSScriptRoot) → copy Progress/ from local clone
+└── else               → download from GitHub raw URL
+```
+
+This means **the download-and-assemble pattern already exists**. Modularization simply extends it.
+
+### The Launcher Pattern
+
+After modularization, the one-liner **stays the same**. What changes is that `Trigger.ps1` becomes a thin launcher (~100-150 lines) instead of a 2,248-line monolith:
+
+```
+BEFORE (Today):                          AFTER (Modularized):
+────────────────                          ────────────────────
+
+irm osd.raduti.com | iex                 irm osd.raduti.com | iex
+         │                                        │
+         ▼                                        ▼
+┌─────────────────────┐               ┌─────────────────────────┐
+│  Trigger.ps1        │               │  Trigger.ps1 (launcher) │
+│  2,248 lines        │               │  ~150 lines             │
+│  ALL code inline    │               │                         │
+│                     │               │  1. Parse params        │
+│  • Logging          │               │  2. Download modules    │
+│  • ADK install      │               │  3. Dot-source them    │
+│  • ISO handling     │               │  4. Call main function  │
+│  • WinPE build      │               └─────────────────────────┘
+│  • Driver inject    │                        │
+│  • File embedding   │                        ▼  downloads & dot-sources
+│  • Auth config      │               ┌─────────────────────────┐
+│  • Cleanup          │               │  Private/               │
+│  • ...everything    │               │  ├── Logging.ps1        │
+└─────────────────────┘               │  ├── ADK.ps1            │
+                                      │  ├── ISO.ps1            │
+                                      │  ├── WinPE.ps1          │
+                                      │  ├── Drivers.ps1        │
+                                      │  ├── Embed.ps1          │
+                                      │  └── Auth.ps1           │
+                                      └─────────────────────────┘
+```
+
+### Concrete Implementation
+
+Here's exactly how the modularized `Trigger.ps1` launcher would work:
+
+```powershell
+#Requires -RunAsAdministrator
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    AmpCloud one-liner entry point.
+.EXAMPLE
+    irm osd.raduti.com | iex
+#>
+[CmdletBinding()]
+param(
+    [string] $GitHubUser   = 'araduti',
+    [string] $GitHubRepo   = 'AmpCloud',
+    [string] $GitHubBranch = 'main',
+    [string] $WorkDir      = 'C:\AmpCloud',
+    [string] $WindowsISOUrl = '',
+    [switch] $NoReboot
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# ── Module list ────────────────────────────────────────────────────
+$modules = @(
+    'src/engine/Private/Logging.ps1',
+    'src/engine/Private/ADK.ps1',
+    'src/engine/Private/ISO.ps1',
+    'src/engine/Private/WinPE.ps1',
+    'src/engine/Private/Drivers.ps1',
+    'src/engine/Private/Embed.ps1',
+    'src/engine/Private/Auth.ps1',
+    'src/engine/Trigger.psm1'
+)
+
+$baseUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch"
+$tmpDir  = Join-Path $WorkDir 'modules'
+$null    = New-Item -Path $tmpDir -ItemType Directory -Force
+
+# ── Download and dot-source each module ────────────────────────────
+foreach ($mod in $modules) {
+    $localPath = if ($PSScriptRoot) {
+        Join-Path $PSScriptRoot $mod   # Local clone — use files on disk
+    } else {
+        $dest = Join-Path $tmpDir (Split-Path $mod -Leaf)
+        Invoke-WebRequest -Uri "$baseUrl/$mod" -OutFile $dest -UseBasicParsing
+        $dest                          # irm | iex — download from GitHub
+    }
+    . $localPath   # Dot-source into current scope
+}
+
+# ── Run ────────────────────────────────────────────────────────────
+Invoke-AmpCloudTrigger @PSBoundParameters
+```
+
+### Key Design Decisions
+
+| Decision | Why |
+|----------|-----|
+| **Dot-source (`. file.ps1`), not `Import-Module`** | Dot-sourcing loads functions into the current scope, which is what `iex` creates. `Import-Module` would also work but adds overhead for simple function libraries. |
+| **`$PSScriptRoot` check preserved** | Same pattern already used in current Trigger.ps1 (line 1106). If running from a local clone, use files on disk. If running via `irm \| iex`, download from GitHub. |
+| **Download to `$WorkDir/modules/`** | Provides a cached local copy for the rest of the session, and makes the downloaded modules inspectable. |
+| **Module list is explicit** | No glob/directory-listing needed. The launcher knows exactly which files to fetch. Deterministic, auditable, and cacheable. |
+| **Single entry function `Invoke-AmpCloudTrigger`** | All parameters forwarded via splatting. Clean separation between launcher and logic. |
+
+### What This Enables
+
+| Benefit | Detail |
+|---------|--------|
+| **Same one-liner** | `irm osd.raduti.com \| iex` — identical user experience |
+| **Unit testable** | Each module can be tested independently with Pester |
+| **Reviewable** | 200-line files instead of 2,248-line monolith |
+| **Integrity checking** | Launcher can verify SHA256 hashes of each module before dot-sourcing |
+| **Parallel downloads** | Launcher can download all modules concurrently via `Start-Job` or runspaces |
+| **Caching** | Downloaded modules persist in `$WorkDir/modules/` for the session |
+| **Selective updates** | Fix a bug in `Drivers.ps1` without touching `ADK.ps1` |
+| **Custom URL shortener** | `osd.raduti.com` still points to the same `Trigger.ps1` — now it's just smaller and faster to download |
+
+### Adding Integrity Verification
+
+The launcher pattern naturally supports the SHA256 hash verification recommended in the Security Assessment (Finding #1). A `modules.json` manifest can be added:
+
+```json
+{
+    "version": "1.0.0",
+    "modules": {
+        "src/engine/Private/Logging.ps1":  "a1b2c3d4e5f6...",
+        "src/engine/Private/ADK.ps1":      "f6e5d4c3b2a1...",
+        "src/engine/Trigger.psm1":         "1a2b3c4d5e6f..."
+    }
+}
+```
+
+```powershell
+# In launcher — verify each module after download
+$manifest = irm "$baseUrl/modules.json"
+foreach ($mod in $modules) {
+    $hash = (Get-FileHash -Path $localPath -Algorithm SHA256).Hash
+    $expected = $manifest.modules.$mod
+    if ($hash -ne $expected) {
+        throw "Integrity check failed for $mod (expected $expected, got $hash)"
+    }
+    . $localPath
+}
+```
+
+This gives you **signed module loading** — something that was impossible with the monolithic `irm | iex` pattern.
+
+### Same Pattern for All Three Stages
+
+The launcher pattern applies to all three stages:
+
+```
+Stage 1: Trigger.ps1 (launcher) → downloads Private/*.ps1 → runs Invoke-AmpCloudTrigger
+          ↓ embeds into WinPE:
+Stage 2: Bootstrap.ps1 (launcher) → dot-sources Private/*.ps1 → runs Invoke-AmpCloudBootstrap
+          ↓ invokes:
+Stage 3: AmpCloud.ps1 (launcher) → dot-sources Private/*.ps1 → runs Invoke-AmpCloudImaging
+```
+
+Since Trigger.ps1 already pre-stages Bootstrap.ps1 and AmpCloud.ps1 into the WinPE image (lines 1139-1151), it would simply also stage their module files alongside them. Bootstrap.ps1 and AmpCloud.ps1 launchers would dot-source from the local WinPE filesystem — no internet required at boot time, exactly as today.
+
+### FAQ
+
+**Q: Does `irm | iex` work with `Import-Module`?**  
+A: Yes — you can `Import-Module` a `.psm1` file from a downloaded path. Dot-sourcing is simpler but both work.
+
+**Q: What about `#Requires -RunAsAdministrator`?**  
+A: Stays in the launcher. `#Requires` directives are evaluated before execution, so they work identically whether the script is run from file or via `iex`.
+
+**Q: Does the module download add significant time?**  
+A: No. Downloading 7 small files (~5-15 KB each) takes <1 second on any modern connection. The current monolithic Trigger.ps1 (108 KB) takes the same time as 7 files totaling ~108 KB. You can even parallelize with `Start-Job`.
+
+**Q: Can I still fork-and-own?**  
+A: Yes. The `$GitHubUser`/`$GitHubRepo`/`$GitHubBranch` parameters still control where modules download from:
+```powershell
+irm https://raw.githubusercontent.com/YOURUSER/AmpCloud/main/Trigger.ps1 | iex
+```
+
+**Q: What if the user is offline?**  
+A: Same as today — the `irm` call fails and PowerShell shows an error. The scripts that run *inside* WinPE (Bootstrap.ps1, AmpCloud.ps1) are pre-staged into the image by Trigger.ps1, so they work offline.
+
+---
+
 ## Next-Gen Recommendations
 
 ### 1. Modularize PowerShell into Modules
 
 **Why:** 2,000+ line monolithic scripts are impossible to unit test, hard to review, and error-prone to maintain.
 
-**How:**
-- Convert each script into a `.psm1` module with exported functions
-- Extract shared utilities (auth, HTTP, status reporting) into a common module
-- Use `Import-Module` instead of monolithic execution
+**How:** Use the **launcher pattern** described in [Preserving `irm | iex` After Modularization](#preserving-irm--iex-after-modularization):
+- Keep `Trigger.ps1` as a thin launcher (~150 lines) that downloads and dot-sources module files
+- Extract functions into focused modules (`Logging.ps1`, `ADK.ps1`, `WinPE.ps1`, etc.)
 - Each function becomes independently testable with Pester
+- The `irm osd.raduti.com | iex` one-liner works identically — the launcher handles everything
+- Add a `modules.json` manifest for SHA256 integrity verification of each module
 
 ### 2. Add Comprehensive Testing
 
