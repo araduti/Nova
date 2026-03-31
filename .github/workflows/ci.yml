@@ -57,7 +57,7 @@ jobs:
           Write-Host "PSScriptAnalyzer: all scripts passed."
 
   build-web:
-    name: Web UI — Build
+    name: Web UI — Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -69,6 +69,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run Editor tests
+        run: npm test
 
       - name: Build
         run: npm run build
