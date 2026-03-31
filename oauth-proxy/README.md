@@ -15,11 +15,11 @@ This directory contains a lightweight **Cloudflare Worker** that:
 
 ## Deploy to Cloudflare Workers (free tier)
 
-### 1. Install Wrangler (Cloudflare CLI)
+### 1. Install dependencies
 
 ```bash
-npm install -g wrangler
-wrangler login          # opens browser to authenticate
+cd oauth-proxy
+npm install
 ```
 
 ### 2. Deploy the Worker
@@ -30,8 +30,8 @@ in `wrangler.toml` with your own Account ID (visible in `wrangler whoami`
 or in the Cloudflare dashboard).
 
 ```bash
-cd oauth-proxy
-wrangler deploy
+npx wrangler login      # opens browser to authenticate
+npm run deploy
 ```
 
 Wrangler prints the Worker URL, for example:
