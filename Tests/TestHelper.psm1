@@ -39,7 +39,7 @@ function Import-ScriptFunctions {
     # scripts wrapped in & { ... } for iex compatibility are supported).
     $functions = $ast.FindAll(
         { $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] },
-        $true
+        $true    # $true = recurse into nested scriptblocks
     )
 
     foreach ($fn in $functions) {
