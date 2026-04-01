@@ -8,8 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - Rebranded product from "AmpCloud" to "Nova" across all documentation
+- Extracted inline CSS/JS from `index.html` into `css/dashboard.css` and `js/dashboard.js`
+- Extracted inline CSS/JS from `Monitoring/index.html` into `Monitoring/css/style.css` and `Monitoring/js/app.js`
+- Replaced all inline event handlers (`onclick`, `onchange`, `oninput`) with `addEventListener`
+- Tightened CSP headers: removed `'unsafe-inline'` from `script-src` and `style-src` on `index.html` and `Monitoring/index.html`
 
 ### Added
+- Dev Container configuration (`.devcontainer/devcontainer.json`) for GitHub Codespaces and VS Code
+- OAuth proxy API reference documentation (`docs/oauth-proxy-api.md`)
 - PSScriptAnalyzer linting job in CI workflow
 - CodeQL security scanning workflow (JavaScript/TypeScript)
 - Handler-level tests for OAuth proxy (device-flow, token-exchange, origin enforcement — 19 new tests)
