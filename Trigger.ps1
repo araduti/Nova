@@ -1,4 +1,6 @@
-﻿#Requires -RunAsAdministrator
+# Scriptblock wrapper — allows iex (irm ...) to parse [CmdletBinding()] + param().
+& {
+#Requires -RunAsAdministrator
 #Requires -Version 5.1
 
 [CmdletBinding()]
@@ -2322,3 +2324,4 @@ try {
 }
 
 #endregion
+}
