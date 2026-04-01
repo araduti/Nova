@@ -282,7 +282,7 @@ function renderActiveDeployments() {
             '<div class="deploy-empty">' +
                 '<div class="deploy-empty-icon">&#128203;</div>' +
                 '<p>No active deployments. Deployment status will appear here in real time when devices are being imaged.</p>' +
-                '<p style="margin-top:8px"><button type="button" class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p>' +
+                '<p style="margin-top:8px"><button type="button" class="diag-link">&#128295; Troubleshoot connection</button></p>' +
             '</div>';
         return;
     }
@@ -303,7 +303,7 @@ function renderActiveDeployments() {
             staleBanner =
                 '<div class="deploy-stale-banner">' +
                     '<span>&#9888; Running for ' + elapsedStr + ' — this deployment may have completed or failed without updating its status.</span>' +
-                    '<button type="button" class="deploy-dismiss-btn" onclick="dismissStaleDeployment(\'' + escapeHtml(dep.id || '') + '\')">Dismiss</button>' +
+                    '<button type="button" class="deploy-dismiss-btn" data-device-id="' + escapeHtml(dep.id || '') + '">Dismiss</button>' +
                 '</div>';
         }
 
@@ -402,7 +402,7 @@ function renderDonutChart() {
     var total   = success + failed;
 
     if (total === 0) {
-        container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No deployment data yet.</p><p style="margin-top:8px"><button type="button" class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p></div>';
+        container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No deployment data yet.</p><p style="margin-top:8px"><button type="button" class="diag-link">&#128295; Troubleshoot connection</button></p></div>';
         return;
     }
 
@@ -460,7 +460,7 @@ function renderErrors() {
     }).sort(function (a, b) { return b.count - a.count; }).slice(0, 8);
 
     if (errors.length === 0) {
-        container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No errors recorded.</p><p style="margin-top:8px"><button type="button" class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></p></div>';
+        container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No errors recorded.</p><p style="margin-top:8px"><button type="button" class="diag-link">&#128295; Troubleshoot connection</button></p></div>';
         return;
     }
 
@@ -543,7 +543,7 @@ function renderHistory() {
     filtered.sort(function (a, b) { return (b.startedAt || 0) - (a.startedAt || 0); });
 
     if (filtered.length === 0) {
-        body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No deployment records found. <button type="button" class="diag-link" onclick="openDiagnostics()">&#128295; Troubleshoot connection</button></td></tr>';
+        body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No deployment records found. <button type="button" class="diag-link">&#128295; Troubleshoot connection</button></td></tr>';
         return;
     }
 
@@ -1050,6 +1050,17 @@ document.getElementById('tab-alerts').addEventListener('input', function () { sa
 /* Test alert buttons */
 document.querySelectorAll('[data-test-channel]').forEach(function (btn) {
     btn.addEventListener('click', function () { testAlert(btn.getAttribute('data-test-channel')); });
+});
+
+/* Delegated handlers for dynamically-generated elements */
+document.addEventListener('click', function (e) {
+    var link = e.target.closest('.diag-link');
+    if (link) { openDiagnostics(); return; }
+
+    var dismiss = e.target.closest('.deploy-dismiss-btn');
+    if (dismiss && dismiss.dataset.deviceId) {
+        dismissStaleDeployment(dismiss.dataset.deviceId);
+    }
 });
 
 /* ── Init ──────────────────────────────────────────────────────── */
