@@ -2,77 +2,18 @@
 <#
 .SYNOPSIS
     Pester v5 tests for Nova.ps1 utility / pure functions.
+.DESCRIPTION
+    Tests functions that remain in Nova.ps1 after modularization.
+    Write-Step/Success/Warn/Fail and Get-FileSizeReadable tests are in
+    Nova.Logging.Tests.ps1 and Nova.Platform.Tests.ps1 respectively.
 #>
 
 BeforeAll {
+    # Import shared modules first so Nova.ps1 functions can reference them
+    Import-Module "$PSScriptRoot/../Modules/Nova.Logging" -Force
+    Import-Module "$PSScriptRoot/../Modules/Nova.Platform" -Force
     Import-Module "$PSScriptRoot/TestHelper.psm1" -Force
     Import-ScriptFunctions -Path "$PSScriptRoot/../Nova.ps1"
-}
-
-Describe 'Get-FileSizeReadable' {
-    It 'formats gigabytes' {
-        Get-FileSizeReadable -Bytes 1073741824 | Should -Be '1.00 GB'
-    }
-
-    It 'formats fractional gigabytes' {
-        Get-FileSizeReadable -Bytes 1610612736 | Should -Be '1.50 GB'
-    }
-
-    It 'formats megabytes' {
-        Get-FileSizeReadable -Bytes 1048576 | Should -Be '1.00 MB'
-    }
-
-    It 'formats kilobytes' {
-        Get-FileSizeReadable -Bytes 1024 | Should -Be '1.00 KB'
-    }
-
-    It 'formats bytes' {
-        Get-FileSizeReadable -Bytes 42 | Should -Be '42 B'
-    }
-
-    It 'handles zero' {
-        Get-FileSizeReadable -Bytes 0 | Should -Be '0 B'
-    }
-}
-
-Describe 'Write-Step' {
-    It 'writes cyan message with [Nova] prefix' {
-        Mock Write-Host {}
-        Write-Step 'Installing drivers'
-        Should -Invoke Write-Host -Times 1 -ParameterFilter {
-            $Object -eq "`n[Nova] Installing drivers" -and $ForegroundColor -eq 'Cyan'
-        }
-    }
-}
-
-Describe 'Write-Success' {
-    It 'writes green message with [OK] prefix' {
-        Mock Write-Host {}
-        Write-Success 'Done'
-        Should -Invoke Write-Host -Times 1 -ParameterFilter {
-            $Object -eq '[OK] Done' -and $ForegroundColor -eq 'Green'
-        }
-    }
-}
-
-Describe 'Write-Warn' {
-    It 'writes yellow message with [WARN] prefix' {
-        Mock Write-Host {}
-        Write-Warn 'Slow network'
-        Should -Invoke Write-Host -Times 1 -ParameterFilter {
-            $Object -eq '[WARN] Slow network' -and $ForegroundColor -eq 'Yellow'
-        }
-    }
-}
-
-Describe 'Write-Fail' {
-    It 'writes red message with [FAIL] prefix' {
-        Mock Write-Host {}
-        Write-Fail 'Disk error'
-        Should -Invoke Write-Host -Times 1 -ParameterFilter {
-            $Object -eq '[FAIL] Disk error' -and $ForegroundColor -eq 'Red'
-        }
-    }
 }
 
 Describe 'Find-WindowsESD' {

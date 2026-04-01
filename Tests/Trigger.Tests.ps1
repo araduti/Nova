@@ -2,75 +2,18 @@
 <#
 .SYNOPSIS
     Pester v5 tests for Trigger.ps1 utility functions.
+.DESCRIPTION
+    Tests functions that remain in Trigger.ps1 after modularization.
+    Get-WinPEArchitecture and Get-FirmwareType tests are in
+    Nova.Platform.Tests.ps1.
 #>
 
 BeforeAll {
+    # Import shared modules first so Trigger.ps1 functions can reference them
+    Import-Module "$PSScriptRoot/../Modules/Nova.Logging" -Force
+    Import-Module "$PSScriptRoot/../Modules/Nova.Platform" -Force
     Import-Module "$PSScriptRoot/TestHelper.psm1" -Force
     Import-ScriptFunctions -Path "$PSScriptRoot/../Trigger.ps1"
-}
-
-Describe 'Get-WinPEArchitecture' {
-    AfterEach {
-        # Restore original value
-        $env:PROCESSOR_ARCHITECTURE = $script:origArch
-    }
-
-    BeforeAll {
-        $script:origArch = $env:PROCESSOR_ARCHITECTURE
-    }
-
-    It 'returns amd64 for AMD64' {
-        $env:PROCESSOR_ARCHITECTURE = 'AMD64'
-        Get-WinPEArchitecture | Should -Be 'amd64'
-    }
-
-    It 'returns x86 for x86' {
-        $env:PROCESSOR_ARCHITECTURE = 'x86'
-        Get-WinPEArchitecture | Should -Be 'x86'
-    }
-
-    It 'throws for unsupported architecture' {
-        $env:PROCESSOR_ARCHITECTURE = 'ARM64'
-        { Get-WinPEArchitecture } | Should -Throw '*Unsupported*ARM*'
-    }
-}
-
-Describe 'Get-FirmwareType' {
-    BeforeAll {
-        # Stub for cross-platform CI — Confirm-SecureBootUEFI only exists on Windows
-        if (-not (Get-Command Confirm-SecureBootUEFI -ErrorAction SilentlyContinue)) {
-            function global:Confirm-SecureBootUEFI { }
-        }
-    }
-
-    It 'returns UEFI when registry value is 2' {
-        Mock Get-ItemProperty { [pscustomobject]@{ PEFirmwareType = 2 } }
-        Get-FirmwareType | Should -Be 'UEFI'
-    }
-
-    It 'returns BIOS when registry value is 1' {
-        Mock Get-ItemProperty { [pscustomobject]@{ PEFirmwareType = 1 } }
-        Get-FirmwareType | Should -Be 'BIOS'
-    }
-
-    It 'falls back to Confirm-SecureBootUEFI when registry unavailable' {
-        Mock Get-ItemProperty { throw 'Not found' }
-        Mock Confirm-SecureBootUEFI { $true }
-        Get-FirmwareType | Should -Be 'UEFI'
-    }
-
-    It 'returns BIOS when SecureBoot throws PlatformNotSupportedException' {
-        Mock Get-ItemProperty { throw 'Not found' }
-        Mock Confirm-SecureBootUEFI { throw [System.PlatformNotSupportedException]::new('Not UEFI') }
-        Get-FirmwareType | Should -Be 'BIOS'
-    }
-
-    It 'defaults to BIOS on unknown errors' {
-        Mock Get-ItemProperty { throw 'Not found' }
-        Mock Confirm-SecureBootUEFI { throw [System.InvalidOperationException]::new('Unknown') }
-        Mock Write-Warn {}
-        Get-FirmwareType | Should -Be 'BIOS'
-    }
 }
 
 Describe 'Confirm-FileIntegrity' {

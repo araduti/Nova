@@ -97,27 +97,19 @@ $script:EntraExchangeLastFailure = $null
 # knows status reporting is disabled without flooding the log on every step.
 $script:GitHubTokenWarningShown = $false
 
+# ── Import shared modules ──────────────────────────────────────────────────────
+# Resolve module path: repo layout ($PSScriptRoot/Modules) or WinPE staging
+# (X:\Windows\System32\Modules).
+$script:ModulesRoot = if (Test-Path "$PSScriptRoot\Modules") {
+    "$PSScriptRoot\Modules"
+} else {
+    "$PSScriptRoot\Modules"   # Fallback — same path; Trigger.ps1 stages here
+}
+Import-Module "$script:ModulesRoot\Nova.Logging" -Force -ErrorAction Stop
+Import-Module "$script:ModulesRoot\Nova.Platform" -Force -ErrorAction Stop
+Set-NovaLogPrefix -Step "`n[Nova]" -Success '[OK]' -Warn '[WARN]' -Fail '[FAIL]'
+
 #region ── Helpers ──────────────────────────────────────────────────────────────
-
-function Write-Step {
-    param([string]$Message)
-    Write-Host "`n[Nova] $Message" -ForegroundColor Cyan
-}
-
-function Write-Success {
-    param([string]$Message)
-    Write-Host "[OK] $Message" -ForegroundColor Green
-}
-
-function Write-Warn {
-    param([string]$Message)
-    Write-Host "[WARN] $Message" -ForegroundColor Yellow
-}
-
-function Write-Fail {
-    param([string]$Message)
-    Write-Host "[FAIL] $Message" -ForegroundColor Red
-}
 
 function Update-BootstrapStatus {
     <#
@@ -594,13 +586,7 @@ function Add-SetupCompleteEntry {
     }
 }
 
-function Get-FileSizeReadable {
-    param([long]$Bytes)
-    if ($Bytes -ge 1GB) { return "{0:N2} GB" -f ($Bytes / 1GB) }
-    if ($Bytes -ge 1MB) { return "{0:N2} MB" -f ($Bytes / 1MB) }
-    if ($Bytes -ge 1KB) { return "{0:N2} KB" -f ($Bytes / 1KB) }
-    return "$Bytes B"
-}
+# Get-FileSizeReadable is now provided by the Nova.Platform module.
 
 function Invoke-DownloadWithProgress {
     param(
@@ -663,41 +649,7 @@ function Invoke-DownloadWithProgress {
 
 #endregion
 
-#region ── Firmware Detection ──────────────────────────────────────────────────
-
-function Get-FirmwareType {
-    <#
-    .SYNOPSIS  Returns 'UEFI' or 'BIOS' using multiple detection methods.
-
-    .NOTES
-        Primary:   PEFirmwareType registry value (1 = BIOS, 2 = UEFI).
-        Fallback:  Confirm-SecureBootUEFI — available on all Win8+ systems; throws
-                   System.PlatformNotSupportedException on non-UEFI firmware, returns
-                   $true/$false on UEFI (regardless of Secure Boot state).
-    #>
-    # Primary: PEFirmwareType registry value written by the kernel at boot
-    try {
-        $val = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control' `
-                                 -Name PEFirmwareType -ErrorAction Stop).PEFirmwareType
-        if ($val -eq 2) { return 'UEFI' }
-        if ($val -eq 1) { return 'BIOS' }
-        # Any other value (e.g. 0 = unknown) — fall through to secondary check
-    } catch { Write-Verbose "Registry firmware type unavailable: $_" }
-
-    # Fallback: Confirm-SecureBootUEFI throws PlatformNotSupportedException on BIOS
-    try {
-        $null = Confirm-SecureBootUEFI   # $true (SB on) or $false (SB off) on UEFI
-        return 'UEFI'
-    } catch [System.PlatformNotSupportedException] {
-        return 'BIOS'
-    } catch {
-        Write-Warn "Confirm-SecureBootUEFI failed ($($_.Exception.Message)) — assuming UEFI."
-    }
-
-    return 'UEFI'
-}
-
-#endregion
+# Get-FirmwareType is now provided by the Nova.Platform module.
 
 #region ── Disk Partitioning ────────────────────────────────────────────────────
 
