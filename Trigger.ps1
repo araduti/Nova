@@ -1,5 +1,20 @@
 ﻿#Requires -RunAsAdministrator
 #Requires -Version 5.1
+
+[CmdletBinding()]
+param(
+    [ValidateNotNullOrEmpty()]
+    [string] $GitHubUser      = 'araduti',
+    [ValidateNotNullOrEmpty()]
+    [string] $GitHubRepo      = 'AmpCloud',
+    [ValidateNotNullOrEmpty()]
+    [string] $GitHubBranch    = 'main',
+    [ValidateNotNullOrEmpty()]
+    [string] $WorkDir         = 'C:\Nova',
+    [string] $WindowsISOUrl   = '',
+    [switch] $NoReboot
+)
+
 <#
 .SYNOPSIS
     Nova Trigger - GitHub-native OSDCloud replacement entry point.
@@ -54,20 +69,6 @@
 .EXAMPLE
     .\Trigger.ps1 -WindowsISOUrl 'D:\ISOs\Win11_x86.iso'
 #>
-
-[CmdletBinding()]
-param(
-    [ValidateNotNullOrEmpty()]
-    [string] $GitHubUser      = 'araduti',
-    [ValidateNotNullOrEmpty()]
-    [string] $GitHubRepo      = 'AmpCloud',
-    [ValidateNotNullOrEmpty()]
-    [string] $GitHubBranch    = 'main',
-    [ValidateNotNullOrEmpty()]
-    [string] $WorkDir         = 'C:\Nova',
-    [string] $WindowsISOUrl   = '',
-    [switch] $NoReboot
-)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
