@@ -97,14 +97,25 @@ function Confirm-FileIntegrity {
     <#
     .SYNOPSIS  Verifies a downloaded file against its expected SHA256 hash.
     .DESCRIPTION
-        Downloads Config/hashes.json from the same GitHub source and compares the
-        SHA256 hash of the specified local file against the expected value.
-        On mismatch the file is deleted and an exception is thrown.
-    .PARAMETER Path       Local path of the file to verify.
-    .PARAMETER RelativeName  Repository-relative filename as it appears in hashes.json
-                             (e.g. 'Bootstrap.ps1', 'Nova.ps1').
-    .PARAMETER HashesJson Optionally pass a pre-loaded hashes object to avoid
-                          re-downloading the manifest for every file.
+        Compares the SHA256 hash of the specified local file against the expected
+        value from the hash manifest (Config/hashes.json).  On mismatch the file
+        is deleted and an exception is thrown.  If the manifest cannot be loaded
+        or the file has no hash entry, the check fails closed (throws) to prevent
+        execution of unverified code.
+
+        SECURITY NOTE — The manifest is fetched from the same GitHub repository
+        and branch as the scripts themselves.  This means integrity verification
+        detects accidental corruption and CDN/cache inconsistencies, but it does
+        NOT protect against a compromised repository (an attacker who can modify
+        the scripts can also update hashes.json).  For true tamper protection,
+        the manifest would need to be cryptographically signed with a key held
+        outside the repository, or hosted on a separate trust boundary.
+
+    .PARAMETER Path         Local path of the file to verify.
+    .PARAMETER RelativeName Repository-relative filename as it appears in hashes.json
+                            (e.g. 'Bootstrap.ps1', 'Nova.ps1').
+    .PARAMETER HashesJson   Optionally pass a pre-loaded hashes object to avoid
+                            re-downloading the manifest for every file.
     #>
     [CmdletBinding()]
     param(
@@ -121,22 +132,22 @@ function Confirm-FileIntegrity {
         throw "File not found for integrity check: $Path"
     }
 
-    # Load manifest if not supplied
+    # Load manifest if not supplied — fail closed if unavailable
     if (-not $HashesJson) {
         $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/hashes.json"
         try {
             $HashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
         } catch {
-            Write-Warn "Could not download hash manifest ($hashesUrl): $_"
-            Write-Warn "Skipping integrity verification for $RelativeName"
-            return
+            Remove-Item $Path -Force -ErrorAction SilentlyContinue
+            throw "Integrity check FAILED for $RelativeName — could not load hash manifest ($hashesUrl): $_"
         }
     }
 
     $expected = $HashesJson.files.$RelativeName
     if (-not $expected) {
-        Write-Warn "No hash entry for '$RelativeName' in manifest — skipping verification"
-        return
+        Remove-Item $Path -Force -ErrorAction SilentlyContinue
+        throw "Integrity check FAILED for $RelativeName — no hash entry found in manifest. " +
+              "Ensure Config/hashes.json contains an entry for '$RelativeName'."
     }
 
     $actual = (Get-FileHash -Path $Path -Algorithm SHA256).Hash
@@ -1199,13 +1210,17 @@ function Build-WinPE {
         }
 
         # ── 5. Load integrity manifest ─────────────────────────────────────────
+        # NOTE: The manifest comes from the same repo/branch as the scripts.
+        # This detects corruption and CDN inconsistencies but does not protect
+        # against a compromised repository.  For tamper protection, the manifest
+        # would need to be cryptographically signed or hosted separately.
         $hashesUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/hashes.json"
         $hashesJson = $null
         try {
             $hashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
             Write-Success 'Integrity manifest loaded.'
         } catch {
-            Write-Warn "Could not load integrity manifest: $_"
+            throw "Could not load integrity manifest from $hashesUrl — aborting build: $_"
         }
 
         # ── 5a. Embed Bootstrap.ps1 ───────────────────────────────────────────

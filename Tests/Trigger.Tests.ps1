@@ -100,16 +100,12 @@ Describe 'Confirm-FileIntegrity' {
             Should -Throw '*File not found*'
     }
 
-    It 'skips when hash entry is missing from manifest' {
+    It 'throws and deletes file when hash entry is missing from manifest' {
         $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "integrity_$(Get-Random).txt"
         Set-Content -Path $tmp -Value 'hello world' -NoNewline -Encoding UTF8
         $manifest = [pscustomobject]@{ files = [pscustomobject]@{} }
-        Mock Write-Warn {}
-        try {
-            { Confirm-FileIntegrity -Path $tmp -RelativeName 'unknown.txt' -HashesJson $manifest } |
-                Should -Not -Throw
-        } finally {
-            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-        }
+        { Confirm-FileIntegrity -Path $tmp -RelativeName 'unknown.txt' -HashesJson $manifest } |
+            Should -Throw '*no hash entry found*'
+        Test-Path $tmp | Should -BeFalse
     }
 }
