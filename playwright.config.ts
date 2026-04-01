@@ -14,7 +14,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? 'github' : 'html',
   use: {
-    baseURL: 'http://localhost:5173/AmpCloud/',
+    baseURL: 'http://localhost:5173/Nova/',
     trace: 'on-first-retry',
   },
   projects: [
@@ -25,7 +25,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:5173/AmpCloud/',
+    url: 'http://localhost:5173/Nova/',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
   },
