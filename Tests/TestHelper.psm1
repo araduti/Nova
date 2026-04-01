@@ -16,6 +16,8 @@ function Import-ScriptFunctions {
     .SYNOPSIS  Imports all function definitions from a .ps1 script.
     .PARAMETER Path  Full path to the script file.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = 'Imports multiple function definitions from a script file')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -40,9 +42,9 @@ function Import-ScriptFunctions {
     )
 
     foreach ($fn in $functions) {
-        # Define the function in the caller's scope (scope 1 from here = scope 0
-        # of the test script that called Import-ScriptFunctions).
-        Set-Item -Path "Function:script:$($fn.Name)" -Value ([scriptblock]::Create($fn.Body.Extent.Text))
+        # Define the function in the global scope so Pester tests can access it.
+        # Use GetScriptBlock() to get the function body without enclosing braces.
+        Set-Item -Path "Function:global:$($fn.Name)" -Value $fn.Body.GetScriptBlock()
     }
 }
 

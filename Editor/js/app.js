@@ -2759,8 +2759,10 @@ function updateBreadcrumb(name) {
             };
             const msalApp = new msal.PublicClientApplication(msalConfig);
 
-            /* Handle redirect response (for redirect flow). */
-            msalApp.handleRedirectPromise().then(response => {
+            /* MSAL v4+ requires explicit initialisation before any API call. */
+            msalApp.initialize().then(() => {
+                return msalApp.handleRedirectPromise();
+            }).then(response => {
                 if (response && response.account) {
                     msalApp.setActiveAccount(response.account);
                     showEditor(response.account);

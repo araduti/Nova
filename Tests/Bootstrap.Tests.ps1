@@ -59,6 +59,13 @@ Describe 'Test-InternetConnectivity' {
 }
 
 Describe 'Test-HasValidIP' {
+    BeforeAll {
+        # Stub for cross-platform CI — ipconfig only exists on Windows
+        if (-not (Get-Command ipconfig -ErrorAction SilentlyContinue)) {
+            function global:ipconfig { }
+        }
+    }
+
     It 'returns $true when ipconfig shows a routable IPv4 address' {
         Mock ipconfig {
             @(
