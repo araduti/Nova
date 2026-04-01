@@ -35,10 +35,11 @@ function Import-ScriptFunctions {
         $content, [ref]$tokens, [ref]$errors
     )
 
-    # Find every top-level function definition
+    # Find every function definition (recurse into nested scriptblocks so that
+    # scripts wrapped in & { ... } for iex compatibility are supported).
     $functions = $ast.FindAll(
         { $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] },
-        $false   # $false = do not recurse into nested functions
+        $true
     )
 
     foreach ($fn in $functions) {
