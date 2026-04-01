@@ -14,6 +14,11 @@
  *   POST /login/oauth/access_token   → GitHub Device Flow token poll
  *   POST /api/token-exchange          → Entra ID → GitHub installation token
  *
+ * Security:
+ *   - IP-based rate limiting (60 req/min per IP, sliding window)
+ *   - Optional origin locking via ALLOWED_ORIGIN
+ *   - CORS preflight handling
+ *
  * Environment variables (Cloudflare dashboard → Settings → Variables):
  *   ALLOWED_ORIGIN              – (optional) Lock to a single origin.
  *   GITHUB_APP_ID               – (required for /api/token-exchange)
@@ -27,7 +32,11 @@
 import { corsHeaders, FALLBACK_CORS } from './cors';
 import { handleDeviceFlow } from './handlers/device-flow';
 import { handleTokenExchange } from './handlers/token-exchange';
+import { RateLimiter, DEFAULT_RATE_LIMIT, rateLimitHeaders } from './rate-limit';
 import type { Env } from './types';
+
+/** Single rate-limiter instance shared across requests in this isolate. */
+const limiter = new RateLimiter();
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -43,9 +52,24 @@ export default {
     }
 
     try {
-      /* CORS preflight */
+      /* CORS preflight — exempt from rate limiting */
       if (request.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: cors });
+      }
+
+      /* ── IP-based rate limiting ──────────────────────────────── */
+      const clientIp = request.headers.get('CF-Connecting-IP') ?? 'unknown';
+      const rl = limiter.check(clientIp);
+      const rlHeaders = rateLimitHeaders(rl.remaining, DEFAULT_RATE_LIMIT, rl.retryAfter);
+
+      if (!rl.allowed) {
+        return new Response(
+          JSON.stringify({
+            error: 'rate_limit_exceeded',
+            error_description: 'Too many requests. Please try again later.',
+          }),
+          { status: 429, headers: { ...cors, ...rlHeaders, 'Content-Type': 'application/json' } },
+        );
       }
 
       /* ── Server-side origin enforcement ──────────────────────── */
@@ -58,29 +82,29 @@ export default {
               error: 'origin_not_allowed',
               error_description: 'Request origin is not allowed.',
             }),
-            { status: 403, headers: { ...cors, 'Content-Type': 'application/json' } },
+            { status: 403, headers: { ...cors, ...rlHeaders, 'Content-Type': 'application/json' } },
           );
         }
       }
 
       /* Only POST is accepted */
       if (request.method !== 'POST') {
-        return new Response('Method Not Allowed', { status: 405, headers: cors });
+        return new Response('Method Not Allowed', { status: 405, headers: { ...cors, ...rlHeaders } });
       }
 
       const url = new URL(request.url);
 
       /* ── Token exchange endpoint ─────────────────────────────── */
       if (url.pathname === '/api/token-exchange') {
-        return handleTokenExchange(request, env, cors);
+        return handleTokenExchange(request, env, { ...cors, ...rlHeaders });
       }
 
       /* ── Device Flow proxy endpoints ─────────────────────────── */
-      const deviceFlowResponse = await handleDeviceFlow(request, cors);
+      const deviceFlowResponse = await handleDeviceFlow(request, { ...cors, ...rlHeaders });
       if (deviceFlowResponse) return deviceFlowResponse;
 
       /* No matching route */
-      return new Response('Not Found', { status: 404, headers: cors });
+      return new Response('Not Found', { status: 404, headers: { ...cors, ...rlHeaders } });
     } catch {
       return new Response(
         JSON.stringify({

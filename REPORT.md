@@ -1232,7 +1232,7 @@ jobs:
 ### Phase 3: Modernization (Weeks 5-8)
 - [x] Migrate oauth-proxy to TypeScript
 - [ ] Upgrade MSAL.js from v2.39.0 to v4.x
-- [ ] Add rate limiting to OAuth proxy (Cloudflare KV or Workers Rate Limiting)
+- [x] Add rate limiting to OAuth proxy (Cloudflare KV or Workers Rate Limiting)
 - [ ] Implement script integrity verification (SHA256 hash check)
 - [x] Extract inline JS/CSS from monolithic HTML files
 - [x] Add build step (Vite/esbuild) for web assets

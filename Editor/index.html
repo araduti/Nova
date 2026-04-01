@@ -4,100 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy"
-          content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.github.com https://login.microsoftonline.com https://*.workers.dev; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'">
+          content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' https://api.github.com https://login.microsoftonline.com https://*.workers.dev; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'">
     <title>Nova Task Sequence Editor</title>
     <link rel="stylesheet" href="css/style.css">
-    <!-- Critical login-overlay styles embedded so the auth screen renders
-         correctly even before the external stylesheet is cached/applied. -->
-    <style>
-        .login-overlay {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: linear-gradient(160deg, #0d1b3e 0%, #1a1a2e 40%, #16213e 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 200;
-            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
-        }
-        .login-card {
-            background: rgba(22, 33, 62, 0.85);
-            border: 1px solid #2a3a5c;
-            border-radius: 14px;
-            padding: 48px 44px;
-            width: 440px;
-            max-width: 92vw;
-            text-align: center;
-            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-        }
-        .login-card .login-logo {
-            font-size: 26px;
-            font-weight: 700;
-            color: #0f7ae5;
-            margin-bottom: 28px;
-            letter-spacing: 0.5px;
-        }
-        .login-card .login-logo .logo-icon {
-            display: inline-block;
-            margin-right: 8px;
-            font-size: 28px;
-            vertical-align: -2px;
-        }
-        .login-card h2 {
-            font-size: 20px;
-            font-weight: 600;
-            margin-bottom: 10px;
-            color: #fff;
-        }
-        .login-card p {
-            color: #7b8da6;
-            margin-bottom: 24px;
-            font-size: 13.5px;
-            line-height: 1.6;
-        }
-        .login-card .login-divider {
-            border: none;
-            border-top: 1px solid #2a3a5c;
-            margin: 0 0 24px;
-        }
-        .login-btn {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            width: 100%;
-            padding: 13px 20px;
-            font-size: 14px;
-            font-weight: 600;
-            font-family: inherit;
-            color: #fff;
-            background: #0f7ae5;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: background 0.15s ease, box-shadow 0.15s ease;
-        }
-        .login-btn:hover {
-            background: #339af0;
-            box-shadow: 0 0 20px rgba(15, 122, 229, 0.35);
-        }
-        .login-btn svg { flex-shrink: 0; }
-        .login-error { color: #e03e3e; font-size: 12px; margin-top: 16px; margin-bottom: 0; }
-        .login-loading { color: #7b8da6; font-size: 12px; margin-top: 16px; margin-bottom: 0; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .login-spinner {
-            display: inline-block;
-            width: 14px; height: 14px;
-            border: 2px solid #2a3a5c;
-            border-top-color: #0f7ae5;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            vertical-align: -2px;
-            margin-right: 6px;
-        }
-    </style>
+    <link rel="stylesheet" href="css/login.css">
     <script src="lib/msal-browser.min.js"></script>
 </head>
 <body>
@@ -109,17 +19,17 @@
             <h2>Sign in required</h2>
             <p>You must sign in with your Microsoft 365 account to use the Task Sequence Editor.</p>
             <hr class="login-divider">
-            <button id="btnLogin" class="login-btn" style="display:none;">
+            <button id="btnLogin" class="login-btn hidden">
                 <svg width="18" height="18" viewBox="0 0 21 21" fill="none"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
                 Sign in with Microsoft
             </button>
-            <p id="loginError" class="login-error" style="display:none;"></p>
+            <p id="loginError" class="login-error hidden"></p>
             <p id="loginLoading" class="login-loading" role="status"><span class="login-spinner" aria-hidden="true"></span> Checking authentication&hellip;</p>
         </div>
     </div>
 
     <!-- ── Toolbar ──────────────────────────────────────────────────── -->
-    <header class="toolbar" style="display:none;">
+    <header class="toolbar hidden">
         <div class="toolbar-left">
             <a href="../" class="logo" title="Back to Dashboard"><span class="logo-icon">&#9729;</span> Nova</a>
             <span class="toolbar-sep"></span>
@@ -139,14 +49,14 @@
             <button id="btnRedo" class="tb-btn" title="Redo (Ctrl+Y)" disabled>&#8618; Redo</button>
         </div>
         <div class="toolbar-right">
-            <span id="userName" class="user-name" style="display:none;"></span>
-            <button id="btnLogout" class="tb-btn" title="Sign out" style="display:none;">Sign out</button>
+            <span id="userName" class="user-name hidden"></span>
+            <button id="btnLogout" class="tb-btn hidden" title="Sign out">Sign out</button>
             <span id="tsName" class="ts-name" contenteditable="true">Default Nova Task Sequence</span>
         </div>
     </header>
 
     <!-- ── Main layout ──────────────────────────────────────────────── -->
-    <div class="main" style="display:none;">
+    <div class="main hidden">
         <!-- Left: Step list -->
         <aside class="step-list-panel">
             <div class="panel-header">
@@ -173,7 +83,7 @@
                 <div class="props-empty-icon">&#128203;</div>
                 <p>Select a step to view its properties, or click <strong>+</strong> to add a new step.</p>
             </div>
-            <div id="propsEditor" class="props-editor" style="display:none;">
+            <div id="propsEditor" class="props-editor hidden">
                 <div class="prop-group">
                     <label for="propName">Name</label>
                     <input id="propName" type="text" placeholder="Step name">
@@ -201,7 +111,7 @@
                 </div>
 
                 <!-- Condition section -->
-                <div id="conditionSection" class="condition-section" style="display:none;">
+                <div id="conditionSection" class="condition-section hidden">
                     <div class="condition-header">
                         <span class="condition-header-label">&#9889; Condition</span>
                         <button id="btnRemoveCondition" class="condition-remove-btn" title="Remove condition">&#10005;</button>
@@ -218,26 +128,26 @@
                         <div id="condFields"></div>
                     </div>
                 </div>
-                <button id="btnAddCondition" class="btn-add-condition" style="display:none;" title="Add a condition to control when this step runs">&#9889; Add Condition</button>
+                <button id="btnAddCondition" class="btn-add-condition hidden" title="Add a condition to control when this step runs">&#9889; Add Condition</button>
 
                 <hr>
-                <div id="validationWarnings" class="validation-warnings" style="display:none;"></div>
+                <div id="validationWarnings" class="validation-warnings hidden"></div>
                 <div class="param-header">
                     <h3>Parameters</h3>
-                    <a id="helpLink" class="help-link" href="#" target="_blank" rel="noopener noreferrer" title="Open documentation" style="display:none;">&#63; Docs</a>
+                    <a id="helpLink" class="help-link hidden" href="#" target="_blank" rel="noopener noreferrer" title="Open documentation">&#63; Docs</a>
                     <button id="jsonToggle" class="json-toggle-btn" title="Switch to raw JSON view">{ } JSON</button>
                 </div>
                 <div id="paramFields"></div>
-                <div id="jsonRawEditor" class="json-raw-editor" style="display:none;">
+                <div id="jsonRawEditor" class="json-raw-editor hidden">
                     <textarea id="jsonRawTextarea" class="json-raw-textarea" spellcheck="false" wrap="off" rows="18"></textarea>
-                    <div id="jsonRawError" class="json-raw-error" style="display:none;"></div>
+                    <div id="jsonRawError" class="json-raw-error hidden"></div>
                 </div>
             </div>
         </section>
     </div>
 
     <!-- ── Add-step dialog ──────────────────────────────────────────── -->
-    <div id="addStepDialog" class="dialog-overlay" style="display:none;">
+    <div id="addStepDialog" class="dialog-overlay hidden">
         <div class="dialog dialog-wide">
             <h2>Add Step</h2>
             <div class="dialog-tabs">
@@ -248,10 +158,10 @@
                 <p>Choose a step type to add to the task sequence:</p>
                 <ul id="stepTypeList" class="step-type-list"></ul>
             </div>
-            <div id="tabTemplates" class="dialog-tab-content" style="display:none;">
+            <div id="tabTemplates" class="dialog-tab-content hidden">
                 <p>Select a pre-configured step template:</p>
                 <ul id="templateList" class="step-type-list"></ul>
-                <p id="noTemplates" class="no-templates" style="display:none;">No templates available. Save a step as a template using the <strong>&#128278;</strong> button in the step list panel.</p>
+                <p id="noTemplates" class="no-templates hidden">No templates available. Save a step as a template using the <strong>&#128278;</strong> button in the step list panel.</p>
             </div>
             <div class="dialog-actions">
                 <button id="btnAddStepCancel" class="btn">Cancel</button>
@@ -261,7 +171,7 @@
     </div>
 
     <!-- Hidden file input -->
-    <input type="file" id="fileInput" accept=".json" style="display:none">
+    <input type="file" id="fileInput" accept=".json" class="hidden">
 
     <script src="js/app.js"></script>
 </body>
