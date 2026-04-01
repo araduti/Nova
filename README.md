@@ -7,8 +7,8 @@
 *An [Ampliosoft](https://ampliosoft.com) open-source project*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![CI](https://github.com/araduti/AmpCloud/actions/workflows/ci.yml/badge.svg)](https://github.com/araduti/AmpCloud/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/araduti/AmpCloud/actions/workflows/codeql.yml/badge.svg)](https://github.com/araduti/AmpCloud/actions/workflows/codeql.yml)
+[![CI](https://github.com/araduti/Nova/actions/workflows/ci.yml/badge.svg)](https://github.com/araduti/Nova/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/araduti/Nova/actions/workflows/codeql.yml/badge.svg)](https://github.com/araduti/Nova/actions/workflows/codeql.yml)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-blue?logo=powershell&logoColor=white)](https://docs.microsoft.com/en-us/powershell/)
 [![Windows](https://img.shields.io/badge/Windows-10%2F11%2FServer-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -41,14 +41,14 @@ Nova is a **cloud-native Windows OS deployment platform** that replaces traditio
 Run this command on any Windows PC as **Administrator**:
 
 ```powershell
-irm https://raw.githubusercontent.com/araduti/AmpCloud/main/Trigger.ps1 | iex
+irm https://raw.githubusercontent.com/araduti/Nova/main/Trigger.ps1 | iex
 ```
 
 Nova installs the required tools, builds a compact boot image, reboots, connects to the network, and deploys Windows — all automatically.
 
 > **Tip:** Fork the repository and point the command at your fork to use your own defaults:
 > ```powershell
-> irm https://raw.githubusercontent.com/YOURUSER/AmpCloud/main/Trigger.ps1 | iex
+> irm https://raw.githubusercontent.com/YOURUSER/Nova/main/Trigger.ps1 | iex
 > ```
 
 ---
@@ -191,7 +191,7 @@ Nova/
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `GitHubUser` | `araduti` | GitHub username or organization |
-| `GitHubRepo` | `AmpCloud` | Repository name |
+| `GitHubRepo` | `Nova` | Repository name |
 | `GitHubBranch` | `main` | Branch to fetch scripts from |
 | `WinPEWorkDir` | `C:\Nova\WinPE` | Working directory for the WinPE build |
 | `RamdiskVHD` | `C:\Nova\boot.vhd` | Path for BCD ramdisk files |
@@ -206,7 +206,7 @@ Nova/
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `GitHubUser` | `araduti` | GitHub username |
-| `GitHubRepo` | `AmpCloud` | Repository name |
+| `GitHubRepo` | `Nova` | Repository name |
 | `GitHubBranch` | `main` | Branch to fetch from |
 | `MaxWaitSeconds` | `600` | Maximum seconds to wait for internet |
 | `RetryInterval` | `5` | Seconds between connectivity checks |
@@ -286,7 +286,7 @@ Nova supports an optional **Microsoft 365 authentication gate** using Entra ID. 
 
 Nova includes a browser-based **Task Sequence Editor** for visually creating deployment workflows — similar to SCCM/MECM task sequences.
 
-**Live editor:** [https://araduti.github.io/AmpCloud/Editor/](https://araduti.github.io/AmpCloud/Editor/)
+**Live editor:** [https://araduti.github.io/Nova/Editor/](https://araduti.github.io/Nova/Editor/)
 
 - Drag-and-drop step reordering
 - Configure each step with dedicated form fields
@@ -307,7 +307,7 @@ Nova includes a browser-based **Task Sequence Editor** for visually creating dep
 4. Run the trigger pointing at your fork:
 
 ```powershell
-irm https://raw.githubusercontent.com/YOURUSER/AmpCloud/main/Trigger.ps1 | iex
+irm https://raw.githubusercontent.com/YOURUSER/Nova/main/Trigger.ps1 | iex
 ```
 
 Changes to `Nova.ps1` take effect **immediately** — no rebuild cycle.

@@ -8,7 +8,7 @@ param(
     [ValidateNotNullOrEmpty()]
     [string] $GitHubUser      = 'araduti',
     [ValidateNotNullOrEmpty()]
-    [string] $GitHubRepo      = 'AmpCloud',
+    [string] $GitHubRepo      = 'Nova',
     [ValidateNotNullOrEmpty()]
     [string] $GitHubBranch    = 'main',
     [ValidateNotNullOrEmpty()]
@@ -44,7 +44,7 @@ param(
     GitHub account that hosts the Nova repository. Default: araduti
 
 .PARAMETER GitHubRepo
-    Repository name. Default: AmpCloud
+    Repository name. Default: Nova
 
 .PARAMETER GitHubBranch
     Branch to pull Bootstrap.ps1 from. Default: main
@@ -63,7 +63,7 @@ param(
     Build everything but do NOT reboot. Useful for testing.
 
 .EXAMPLE
-    irm https://raw.githubusercontent.com/araduti/AmpCloud/main/Trigger.ps1 | iex
+    irm https://raw.githubusercontent.com/araduti/Nova/main/Trigger.ps1 | iex
 
 .EXAMPLE
     .\Trigger.ps1 -NoReboot -WorkDir D:\Nova

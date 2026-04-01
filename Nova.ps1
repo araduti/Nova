@@ -22,7 +22,7 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$GitHubUser   = 'araduti',
     [ValidateNotNullOrEmpty()]
-    [string]$GitHubRepo   = 'AmpCloud',
+    [string]$GitHubRepo   = 'Nova',
     [ValidateNotNullOrEmpty()]
     [string]$GitHubBranch = 'main',
 

@@ -5,7 +5,7 @@ var ALERTS_KEY  = 'nova_alert_config';
 
 /* GitHub repo for fetching deployment data pushed by the engine */
 var GH_OWNER  = 'araduti';
-var GH_REPO   = 'AmpCloud';
+var GH_REPO   = 'Nova';
 var GH_BRANCH = 'main';
 var GH_API    = 'https://api.github.com';
 var REFRESH_INTERVAL = 30000; /* poll every 30 s */

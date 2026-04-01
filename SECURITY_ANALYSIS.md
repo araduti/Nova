@@ -69,7 +69,7 @@ All three flows request only `openid profile` scopes — they function as a **pu
 {
     "requireAuth": true,
     "clientId": "040045aa-2c28-42b5-9a10-3fce7778a454",
-    "redirectUri": "https://araduti.github.io/AmpCloud/Editor/"
+    "redirectUri": "https://araduti.github.io/Nova/Editor/"
 }
 ```
 
