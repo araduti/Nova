@@ -101,7 +101,11 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\Modules")
         foreach ($ext in $moduleExts) {
             $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Modules/$mod/$mod$ext"
             $dest = Join-Path $modDir "$mod$ext"
-            Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+            try {
+                Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+            } catch {
+                throw "Failed to download module $mod$ext from $url — $($_.Exception.Message)"
+            }
         }
     }
     $tmpModRoot
