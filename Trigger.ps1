@@ -91,6 +91,66 @@ function Write-Fail    { param([string]$Message) Write-Host "  [X] $Message"    
 
 #endregion
 
+#region ── Integrity Verification ───────────────────────────────────────────────
+
+function Confirm-FileIntegrity {
+    <#
+    .SYNOPSIS  Verifies a downloaded file against its expected SHA256 hash.
+    .DESCRIPTION
+        Downloads Config/hashes.json from the same GitHub source and compares the
+        SHA256 hash of the specified local file against the expected value.
+        On mismatch the file is deleted and an exception is thrown.
+    .PARAMETER Path       Local path of the file to verify.
+    .PARAMETER RelativeName  Repository-relative filename as it appears in hashes.json
+                             (e.g. 'Bootstrap.ps1', 'Nova.ps1').
+    .PARAMETER HashesJson Optionally pass a pre-loaded hashes object to avoid
+                          re-downloading the manifest for every file.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path,
+
+        [Parameter(Mandatory)]
+        [string]$RelativeName,
+
+        [psobject]$HashesJson
+    )
+
+    if (-not (Test-Path $Path)) {
+        throw "File not found for integrity check: $Path"
+    }
+
+    # Load manifest if not supplied
+    if (-not $HashesJson) {
+        $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/hashes.json"
+        try {
+            $HashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
+        } catch {
+            Write-Warn "Could not download hash manifest ($hashesUrl): $_"
+            Write-Warn "Skipping integrity verification for $RelativeName"
+            return
+        }
+    }
+
+    $expected = $HashesJson.files.$RelativeName
+    if (-not $expected) {
+        Write-Warn "No hash entry for '$RelativeName' in manifest — skipping verification"
+        return
+    }
+
+    $actual = (Get-FileHash -Path $Path -Algorithm SHA256).Hash
+    if ($actual -ne $expected) {
+        Remove-Item $Path -Force -ErrorAction SilentlyContinue
+        throw ("Integrity check FAILED for {0}`n  Expected: {1}`n  Actual:   {2}`n" -f $RelativeName, $expected, $actual) +
+              "The file has been removed. This may indicate the manifest is out of date or the download was tampered with."
+    }
+
+    Write-Success "Integrity verified: $RelativeName (SHA256 match)"
+}
+
+#endregion
+
 #region ── Architecture Detection ───────────────────────────────────────────────
 
 function Get-WinPEArchitecture {
@@ -1138,11 +1198,22 @@ function Build-WinPE {
             Write-Warn 'Autopilot directory found but no tool files present.'
         }
 
-        # ── 5. Embed Bootstrap.ps1 ────────────────────────────────────────────
+        # ── 5. Load integrity manifest ─────────────────────────────────────────
+        $hashesUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/hashes.json"
+        $hashesJson = $null
+        try {
+            $hashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
+            Write-Success 'Integrity manifest loaded.'
+        } catch {
+            Write-Warn "Could not load integrity manifest: $_"
+        }
+
+        # ── 5a. Embed Bootstrap.ps1 ───────────────────────────────────────────
         $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
         Write-Step "Fetching Bootstrap.ps1 from $bootstrapUrl"
         Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing
+        Confirm-FileIntegrity -Path $bootstrapDest -RelativeName 'Bootstrap.ps1' -HashesJson $hashesJson
 
         # ── 5b. Pre-stage Nova.ps1 ──────────────────────────────────────
         # Embedding Nova.ps1 eliminates the internet dependency at boot time.
@@ -1151,6 +1222,7 @@ function Build-WinPE {
         $novaDest = Join-Path $paths.MountDir 'Windows\System32\Nova.ps1'
         Write-Step "Fetching Nova.ps1 from $novaUrl"
         Invoke-WebRequest -Uri $novaUrl -OutFile $novaDest -UseBasicParsing
+        Confirm-FileIntegrity -Path $novaDest -RelativeName 'Nova.ps1' -HashesJson $hashesJson
 
         # ── 5c. Generate default background image ──────────────────────────────
         # Create a 1920x1080 gradient PNG matching the Bootstrap.ps1 OOBE theme
@@ -1195,6 +1267,7 @@ function Build-WinPE {
             $progressFile = Join-Path $progressDest 'index.html'
             try {
                 Invoke-WebRequest -Uri $progressUrl -OutFile $progressFile -UseBasicParsing -ErrorAction Stop
+                Confirm-FileIntegrity -Path $progressFile -RelativeName 'Progress/index.html' -HashesJson $hashesJson
                 Write-Success 'HTML Progress UI downloaded and embedded.'
             } catch {
                 Write-Warn "HTML Progress UI not available (non-fatal): $_"
@@ -1217,6 +1290,7 @@ function Build-WinPE {
             $uiFile = Join-Path $uiDest 'index.html'
             try {
                 Invoke-WebRequest -Uri $uiUrl -OutFile $uiFile -UseBasicParsing -ErrorAction Stop
+                Confirm-FileIntegrity -Path $uiFile -RelativeName 'Nova-UI/index.html' -HashesJson $hashesJson
                 Write-Success 'Nova-UI downloaded and embedded.'
             } catch {
                 Write-Warn "Nova-UI not available (non-fatal): $_"

@@ -1609,6 +1609,27 @@ function ProceedToEngine {
                 Start-Sleep -Milliseconds 100
             }
             if ($task.IsFaulted) { throw $task.Exception.InnerException }
+
+            # ── Verify downloaded Nova.ps1 integrity ──────────────────
+            $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/hashes.json"
+            try {
+                $manifest = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
+                $expected = $manifest.files.'Nova.ps1'
+                if ($expected) {
+                    $actual = [System.BitConverter]::ToString(
+                        [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+                            [System.IO.File]::ReadAllBytes($localNova)
+                        )
+                    ) -replace '-', ''
+                    if ($actual -ne $expected) {
+                        Remove-Item $localNova -Force -ErrorAction SilentlyContinue
+                        throw "Integrity check FAILED for Nova.ps1 — Expected: $expected, Got: $actual"
+                    }
+                    Write-AuthLog 'Nova.ps1 integrity verified (SHA256 match).'
+                }
+            } catch [System.Net.WebException] {
+                Write-AuthLog "Could not download hash manifest — skipping integrity check: $_"
+            }
         }
 
         # Run Nova.ps1 in a dedicated process so the UI thread
