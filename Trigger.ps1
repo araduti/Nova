@@ -86,10 +86,25 @@ $script:RamdiskDir   = Join-Path $WorkDir 'Boot'
 $script:WimArchIntMap = @{ 0 = 'x86'; 5 = 'arm'; 9 = 'amd64'; 12 = 'arm64' }
 
 # ── Import shared modules ──────────────────────────────────────────────────────
-$script:ModulesRoot = if (Test-Path "$PSScriptRoot\Modules") {
+$script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\Modules")) {
     "$PSScriptRoot\Modules"
 } elseif (Test-Path 'X:\Windows\System32\Modules') {
     'X:\Windows\System32\Modules'
+} elseif (-not $PSScriptRoot) {
+    # iex (irm ...) scenario — $PSScriptRoot is empty; download modules to temp dir
+    $tmpModRoot = Join-Path ([System.IO.Path]::GetTempPath()) "Nova-Modules-$(Get-Random)"
+    $moduleNames = @('Nova.Logging', 'Nova.Platform')
+    $moduleExts  = @('.psm1', '.psd1')
+    foreach ($mod in $moduleNames) {
+        $modDir = Join-Path $tmpModRoot $mod
+        $null = New-Item -Path $modDir -ItemType Directory -Force
+        foreach ($ext in $moduleExts) {
+            $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Modules/$mod/$mod$ext"
+            $dest = Join-Path $modDir "$mod$ext"
+            Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+        }
+    }
+    $tmpModRoot
 } else {
     "$PSScriptRoot\Modules"   # Best-effort fallback
 }
