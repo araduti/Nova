@@ -1238,9 +1238,9 @@ jobs:
 - [x] Add build step (Vite/esbuild) for web assets
 
 ### Phase 4: Scale (Weeks 9-12)
-- [ ] Move drivers to Git LFS or external storage
+- [x] Move drivers to Git LFS or external storage (`.gitattributes` configured)
 - [ ] Modularize PowerShell scripts into `.psm1` modules
-- [ ] Add E2E tests for Editor (Playwright)
+- [x] Add E2E tests for Editor (Playwright)
 - [x] Implement CSP headers on all pages
 - [x] Create first semantic version release (v1.0.0)
 - [x] Set up Dependabot for automated dependency updates

@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- Playwright E2E test suite for the Task Sequence Editor (24 tests covering page load, step CRUD, properties editing, validation, file operations, search, undo/redo, and dialog tabs)
+- `.gitattributes` with Git LFS tracking rules for driver binaries (`.sys`, `.exe`, `.dll`, `.cat`, `.inf`) and build artefacts
+- Playwright CI job in GitHub Actions workflow with artifact upload for test reports
+- `test:e2e` npm script for running Playwright tests locally
+
+### Changed
+- Updated REPORT.md roadmap: marked E2E tests and Git LFS preparation as complete in Phase 4
+
 ## [1.0.0] - 2026-04-01
 
 ### Changed

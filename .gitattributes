@@ -1,0 +1,20 @@
+# ── Git LFS tracking for large binary files ─────────────────────────
+# Driver binaries should be stored in Git LFS to reduce clone size.
+# To migrate existing files, run:
+#   git lfs install
+#   git lfs migrate import --include="Drivers/**/*.sys,Drivers/**/*.exe,Drivers/**/*.dll"
+
+Drivers/**/*.sys filter=lfs diff=lfs merge=lfs -text
+Drivers/**/*.exe filter=lfs diff=lfs merge=lfs -text
+Drivers/**/*.dll filter=lfs diff=lfs merge=lfs -text
+Drivers/**/*.cat filter=lfs diff=lfs merge=lfs -text
+Drivers/**/*.inf filter=lfs diff=lfs merge=lfs -text
+
+# Autopilot binaries
+Autopilot/**/*.exe filter=lfs diff=lfs merge=lfs -text
+Autopilot/**/*.dll filter=lfs diff=lfs merge=lfs -text
+
+# WinPE build artefacts (if committed)
+*.wim filter=lfs diff=lfs merge=lfs -text
+*.esd filter=lfs diff=lfs merge=lfs -text
+*.iso filter=lfs diff=lfs merge=lfs -text
