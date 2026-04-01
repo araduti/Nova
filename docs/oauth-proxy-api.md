@@ -151,6 +151,38 @@ Preflight `OPTIONS` requests return `204 No Content` with CORS headers.
 
 ---
 
+## Rate Limiting
+
+All non-preflight requests are subject to IP-based rate limiting using a
+sliding-window algorithm.
+
+| Parameter | Value |
+|-----------|-------|
+| **Limit** | 60 requests per IP |
+| **Window** | 60 seconds (sliding) |
+| **Scope** | Per Worker isolate (not globally shared) |
+
+**Response Headers** (included on every response):
+
+```
+RateLimit-Limit: 60
+RateLimit-Remaining: 42
+RateLimit-Reset: 60
+```
+
+**When the limit is exceeded (429):**
+
+```json
+{
+  "error": "rate_limit_exceeded",
+  "error_description": "Too many requests. Please try again later."
+}
+```
+
+The `Retry-After` header indicates how many seconds to wait before retrying.
+
+---
+
 ## Environment Variables
 
 | Variable | Required | Description |
