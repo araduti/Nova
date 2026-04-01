@@ -85,8 +85,10 @@ $script:WimArchIntMap = @{ 0 = 'x86'; 5 = 'arm'; 9 = 'amd64'; 12 = 'arm64' }
 # ── Import shared modules ──────────────────────────────────────────────────────
 $script:ModulesRoot = if (Test-Path "$PSScriptRoot\Modules") {
     "$PSScriptRoot\Modules"
+} elseif (Test-Path 'X:\Windows\System32\Modules') {
+    'X:\Windows\System32\Modules'
 } else {
-    "$PSScriptRoot\Modules"
+    "$PSScriptRoot\Modules"   # Best-effort fallback
 }
 Import-Module "$script:ModulesRoot\Nova.Logging" -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Platform" -Force -ErrorAction Stop

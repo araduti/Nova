@@ -99,11 +99,13 @@ $script:GitHubTokenWarningShown = $false
 
 # ── Import shared modules ──────────────────────────────────────────────────────
 # Resolve module path: repo layout ($PSScriptRoot/Modules) or WinPE staging
-# (X:\Windows\System32\Modules).
+# (X:\Windows\System32\Modules — copied by Trigger.ps1 during image build).
 $script:ModulesRoot = if (Test-Path "$PSScriptRoot\Modules") {
     "$PSScriptRoot\Modules"
+} elseif (Test-Path 'X:\Windows\System32\Modules') {
+    'X:\Windows\System32\Modules'
 } else {
-    "$PSScriptRoot\Modules"   # Fallback — same path; Trigger.ps1 stages here
+    "$PSScriptRoot\Modules"   # Best-effort fallback
 }
 Import-Module "$script:ModulesRoot\Nova.Logging" -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Platform" -Force -ErrorAction Stop

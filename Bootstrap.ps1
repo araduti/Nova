@@ -43,8 +43,10 @@ $script:AuthLogPath = "X:\Nova-Auth.log"
 # ── Import shared modules ──────────────────────────────────────────────────────
 $script:ModulesRoot = if (Test-Path "$PSScriptRoot\Modules") {
     "$PSScriptRoot\Modules"
+} elseif (Test-Path 'X:\Windows\System32\Modules') {
+    'X:\Windows\System32\Modules'
 } else {
-    "$PSScriptRoot\Modules"
+    "$PSScriptRoot\Modules"   # Best-effort fallback
 }
 Import-Module "$script:ModulesRoot\Nova.Network" -Force -ErrorAction Stop
 
