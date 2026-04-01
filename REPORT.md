@@ -1234,7 +1234,7 @@ jobs:
 - [ ] Upgrade MSAL.js from v2.39.0 to v4.x
 - [ ] Add rate limiting to OAuth proxy (Cloudflare KV or Workers Rate Limiting)
 - [ ] Implement script integrity verification (SHA256 hash check)
-- [ ] Extract inline JS/CSS from monolithic HTML files
+- [x] Extract inline JS/CSS from monolithic HTML files
 - [x] Add build step (Vite/esbuild) for web assets
 
 ### Phase 4: Scale (Weeks 9-12)
@@ -1251,8 +1251,8 @@ jobs:
 - [ ] Structured observability and deployment analytics
 - [ ] Plugin architecture for custom task sequence steps
 - [ ] Multi-language expansion (community-contributed locales)
-- [ ] API documentation (OpenAPI spec for OAuth proxy)
-- [ ] Contributor developer experience (dev containers, codespaces config)
+- [x] API documentation (OpenAPI spec for OAuth proxy)
+- [x] Contributor developer experience (dev containers, codespaces config)
 
 ---
 
