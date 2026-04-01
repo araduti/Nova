@@ -82,14 +82,17 @@ $script:RamdiskDir   = Join-Path $WorkDir 'Boot'
 #   0 = x86 | 5 = arm | 9 = amd64 | 12 = arm64
 $script:WimArchIntMap = @{ 0 = 'x86'; 5 = 'arm'; 9 = 'amd64'; 12 = 'arm64' }
 
-#region ── Logging ──────────────────────────────────────────────────────────────
-
-function Write-Step    { param([string]$Message) Write-Host "`n  [>] $Message"  -ForegroundColor Cyan    }
-function Write-Success { param([string]$Message) Write-Host "  [+] $Message"    -ForegroundColor Green   }
-function Write-Warn    { param([string]$Message) Write-Host "  [!] $Message"    -ForegroundColor Yellow  }
-function Write-Fail    { param([string]$Message) Write-Host "  [X] $Message"    -ForegroundColor Red     }
-
-#endregion
+# ── Import shared modules ──────────────────────────────────────────────────────
+$script:ModulesRoot = if (Test-Path "$PSScriptRoot\Modules") {
+    "$PSScriptRoot\Modules"
+} elseif (Test-Path 'X:\Windows\System32\Modules') {
+    'X:\Windows\System32\Modules'
+} else {
+    "$PSScriptRoot\Modules"   # Best-effort fallback
+}
+Import-Module "$script:ModulesRoot\Nova.Logging" -Force -ErrorAction Stop
+Import-Module "$script:ModulesRoot\Nova.Platform" -Force -ErrorAction Stop
+# Trigger.ps1 uses the default prefixes (  [>], [+], [!], [X])
 
 #region ── Integrity Verification ───────────────────────────────────────────────
 
@@ -162,29 +165,7 @@ function Confirm-FileIntegrity {
 
 #endregion
 
-#region ── Architecture Detection ───────────────────────────────────────────────
-
-function Get-WinPEArchitecture {
-    <#
-    .SYNOPSIS
-        Maps the current OS CPU architecture to the WinPE folder/package name
-        used by the ADK. Nova supports amd64 and x86 only — ARM is not
-        supported because Nova is a cloud-only deployment engine targeting
-        x86-64 enterprise hardware.
-    #>
-    $map = @{
-        'AMD64' = 'amd64'
-        'x86'   = 'x86'
-    }
-    $proc = $env:PROCESSOR_ARCHITECTURE   # AMD64 | x86
-    $arch = $map[$proc]
-    if (-not $arch) {
-        throw "Unsupported processor architecture '$proc'. Nova supports amd64 and x86 only. ARM is not supported."
-    }
-    return $arch
-}
-
-#endregion
+# Get-WinPEArchitecture is now provided by the Nova.Platform module.
 
 #region ── WinRE Discovery ──────────────────────────────────────────────────────
 
@@ -1239,7 +1220,36 @@ function Build-WinPE {
         Invoke-WebRequest -Uri $novaUrl -OutFile $novaDest -UseBasicParsing
         Confirm-FileIntegrity -Path $novaDest -RelativeName 'Nova.ps1' -HashesJson $hashesJson
 
-        # ── 5c. Generate default background image ──────────────────────────────
+        # ── 5c. Stage shared PowerShell modules ────────────────────────────────
+        # Copy the Modules/ directory so that Bootstrap.ps1 and Nova.ps1 can
+        # Import-Module from $PSScriptRoot\Modules\ inside WinPE.
+        $modulesDest = Join-Path $paths.MountDir 'Windows\System32\Modules'
+        $modulesSrc  = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'Modules' } else { '' }
+        if ($modulesSrc -and (Test-Path $modulesSrc)) {
+            Copy-Item $modulesSrc -Destination $modulesDest -Recurse -Force
+            Write-Success "Staged Modules/ directory from local repo"
+        } else {
+            # iex (irm ...) scenario — download modules from GitHub
+            $moduleNames = @('Nova.Logging', 'Nova.Platform', 'Nova.Network')
+            $moduleFiles = @('.psm1', '.psd1')
+            $null = New-Item -Path $modulesDest -ItemType Directory -Force
+            foreach ($mod in $moduleNames) {
+                $modDir = Join-Path $modulesDest $mod
+                $null = New-Item -Path $modDir -ItemType Directory -Force
+                foreach ($ext in $moduleFiles) {
+                    $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Modules/$mod/$mod$ext"
+                    $dest = Join-Path $modDir "$mod$ext"
+                    try {
+                        Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+                    } catch {
+                        Write-Warn "Failed to download module file $mod$ext — $($_.Exception.Message)"
+                    }
+                }
+            }
+            Write-Success "Staged Modules/ directory from GitHub"
+        }
+
+        # ── 5d. Generate default background image ──────────────────────────────
         # Create a 1920x1080 gradient PNG matching the Bootstrap.ps1 OOBE theme
         # and embed it as X:\Windows\System32\Nova-bg.png.  Administrators
         # can replace this file in the mounted WIM with custom branding before
@@ -1266,7 +1276,7 @@ function Build-WinPE {
             Write-Warn "Background image generation failed (non-fatal): $_"
         }
 
-        # ── 5d. Embed HTML Progress UI ─────────────────────────────────────────
+        # ── 5e. Embed HTML Progress UI ─────────────────────────────────────────
         # Stage Progress/index.html into the WinPE image so the batch launcher
         # can open it in Edge kiosk mode before PowerShell starts.  This covers
         # the screen immediately and prevents any command-prompt flash.
@@ -1289,7 +1299,7 @@ function Build-WinPE {
             }
         }
 
-        # ── 5e. Embed Nova-UI (main HTML UI) ──────────────────────────────
+        # ── 5f. Embed Nova-UI (main HTML UI) ──────────────────────────────
         # Stage Nova-UI/index.html into the WinPE image so the batch
         # launcher (nova-start.cmd) can open it in Edge kiosk mode at
         # boot, covering the screen before any console window is visible.
@@ -1491,37 +1501,7 @@ function New-BcdEntry {
     throw "Could not parse GUID from bcdedit output: $output"
 }
 
-function Get-FirmwareType {
-    <#
-    .SYNOPSIS  Returns 'UEFI' or 'BIOS' using multiple detection methods.
-
-    .NOTES
-        Primary:   PEFirmwareType registry value (1 = BIOS, 2 = UEFI).
-        Fallback:  Confirm-SecureBootUEFI — available on all Win8+ systems; throws
-                   System.PlatformNotSupportedException on non-UEFI firmware, returns
-                   $true/$false on UEFI (regardless of Secure Boot state).
-    #>
-    # Primary: PEFirmwareType registry value written by the kernel at boot
-    try {
-        $val = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control' `
-                                 -Name PEFirmwareType -ErrorAction Stop).PEFirmwareType
-        if ($val -eq 2) { return 'UEFI' }
-        if ($val -eq 1) { return 'BIOS' }
-        # Any other value (e.g. 0 = unknown) — fall through to secondary check
-    } catch { Write-Verbose "Registry firmware type unavailable: $_" }
-
-    # Fallback: Confirm-SecureBootUEFI throws PlatformNotSupportedException on BIOS
-    try {
-        $null = Confirm-SecureBootUEFI   # $true (SB on) or $false (SB off) on UEFI
-        return 'UEFI'
-    } catch [System.PlatformNotSupportedException] {
-        return 'BIOS'
-    } catch {
-        Write-Warn "Confirm-SecureBootUEFI failed ($($_.Exception.Message)) — assuming BIOS."
-    }
-
-    return 'BIOS'
-}
+# Get-FirmwareType is now provided by the Nova.Platform module.
 
 function New-BCDRamdiskEntry {
     <#

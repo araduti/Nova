@@ -11,9 +11,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `.gitattributes` with Git LFS tracking rules for driver binaries (`.sys`, `.exe`, `.dll`, `.cat`, `.inf`) and build artefacts
 - Playwright CI job in GitHub Actions workflow with artifact upload for test reports
 - `test:e2e` npm script for running Playwright tests locally
+- Shared PowerShell modules (`Modules/Nova.Logging`, `Modules/Nova.Platform`, `Modules/Nova.Network`) extracted from monolithic scripts
+- `Nova.Logging` module: configurable prefix logging (`Write-Step`, `Write-Success`, `Write-Warn`, `Write-Fail`, `Set-NovaLogPrefix`)
+- `Nova.Platform` module: firmware detection (`Get-FirmwareType`), architecture mapping (`Get-WinPEArchitecture`), file utilities (`Get-FileSizeReadable`)
+- `Nova.Network` module: TCP tuning, connectivity probing, WiFi scanning and connection
+- Module-specific Pester tests (`Nova.Logging.Tests.ps1`, `Nova.Platform.Tests.ps1`, `Nova.Network.Tests.ps1`)
 
 ### Changed
-- Updated REPORT.md roadmap: marked E2E tests and Git LFS preparation as complete in Phase 4
+- Refactored Nova.ps1 to import Nova.Logging and Nova.Platform modules instead of defining duplicate functions inline
+- Refactored Trigger.ps1 to import Nova.Logging and Nova.Platform modules, removing duplicate `Write-Step`/`Write-Success`/`Write-Warn`/`Write-Fail` and `Get-FirmwareType` definitions
+- Refactored Bootstrap.ps1 to import Nova.Network module, removing inline network utility functions
+- Updated Trigger.ps1 `Build-WinPE` to stage `Modules/` directory into WinPE image
+- Updated REPORT.md roadmap: marked PowerShell modularization and alerts integration as complete in Phase 4
+- Updated existing Pester tests to import shared modules before script functions
 
 ## [1.0.0] - 2026-04-01
 

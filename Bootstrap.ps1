@@ -39,6 +39,17 @@ $LogPath = "X:\Nova-Bootstrap.log"
 $null = Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyContinue
 
 $script:AuthLogPath = "X:\Nova-Auth.log"
+
+# ── Import shared modules ──────────────────────────────────────────────────────
+$script:ModulesRoot = if (Test-Path "$PSScriptRoot\Modules") {
+    "$PSScriptRoot\Modules"
+} elseif (Test-Path 'X:\Windows\System32\Modules') {
+    'X:\Windows\System32\Modules'
+} else {
+    "$PSScriptRoot\Modules"   # Best-effort fallback
+}
+Import-Module "$script:ModulesRoot\Nova.Network" -Force -ErrorAction Stop
+
 function Write-AuthLog {
     <#
     .SYNOPSIS  Write a timestamped entry to the dedicated auth log file.
@@ -234,158 +245,9 @@ $BodyFont    = New-Object System.Drawing.Font("Segoe UI", 11)
 
 #region ── Network + WiFi Functions ─────────────────────────────────────────
 
-function Invoke-NetworkTuning {
-    <#
-    .SYNOPSIS  Fast synchronous TCP / firewall / IPv6 tuning.
-    .DESCRIPTION
-        All netsh commands complete in milliseconds and never sleep.  Safe to
-        call from a WinForms timer tick without freezing the UI.
-    #>
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        $null = powercfg -s 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c 2>$null
-        $null = netsh int tcp set global autotuninglevel=normal 2>$null
-        $null = netsh int tcp set global congestionprovider=ctcp 2>$null
-        $null = netsh int tcp set global chimney=enabled 2>$null
-        $null = netsh int tcp set global rss=enabled 2>$null
-        $null = netsh int tcp set global rsc=enabled 2>$null
-        $null = netsh advfirewall set allprofiles state off 2>$null
-        $ifLines = netsh interface show interface 2>$null
-        foreach ($line in $ifLines) {
-            if ($line -match '^\s*(Enabled|Disabled)\s+\S+\s+\S+\s+(.+)$') {
-                $null = netsh interface ipv6 set interface "$($matches[2].Trim())" admin=disabled 2>$null
-            }
-        }
-    } catch { Write-Verbose "Network tuning failed: $_" } finally { $ErrorActionPreference = $prev }
-}
-
-function Test-HasValidIP {
-    <# Returns $true when ipconfig reports at least one non-APIPA IPv4 address. #>
-    $ipOut = ipconfig 2>$null | Out-String
-    foreach ($m in [regex]::Matches($ipOut, '(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')) {
-        $ip = $m.Groups[1].Value
-        if ($ip -notmatch '^(169\.254\.|127\.|0\.0\.0\.0|255\.)') { return $true }
-    }
-    return $false
-}
-
-function Test-InternetConnectivity {
-    $urls = @(
-        'https://api.github.com',                          # GitHub API (deployment reporting)
-        'https://www.msftconnecttest.com/connecttest.txt',
-        'https://clients3.google.com/generate_204',
-        'http://www.msftconnecttest.com/connecttest.txt'   # HTTP fallback (Windows NCSI endpoint)
-    )
-    foreach ($url in $urls) {
-        try {
-            $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 5
-            if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 300) { return $true }
-        } catch { Write-Verbose "Connectivity probe failed for ${url}: $_" }
-    }
-    return $false
-}
-
-function Start-WlanService {
-    [CmdletBinding(SupportsShouldProcess)] param()
-    if (-not (Get-Service -Name wlansvc -ErrorAction SilentlyContinue)) { return $false }
-    if ((Get-Service wlansvc).Status -ne 'Running') {
-        if ($PSCmdlet.ShouldProcess('wlansvc', 'Start-Service')) {
-        Start-Service wlansvc -ErrorAction SilentlyContinue
-        }
-        Start-Sleep -Seconds 3
-    }
-    return $true
-}
-
-function Get-WiFiNetwork {
-    $prev = $ErrorActionPreference
-    $ErrorActionPreference = 'Continue'
-    try {
-        $raw = & netsh wlan show networks mode=bssid 2>&1
-    } finally {
-        $ErrorActionPreference = $prev
-    }
-    $networks = [System.Collections.Generic.List[pscustomobject]]::new()
-    $cur = $null
-    foreach ($line in $raw) {
-        if ($line -match '^SSID\s+\d+\s*:\s*(.+)$') {
-            if ($cur) { $networks.Add($cur) }
-            $cur = [pscustomobject]@{ SSID = $Matches[1].Trim(); Auth = ''; Signal = 0 }
-        } elseif ($cur) {
-            if ($line -match 'Authentication\s*:\s*(.+)') { $cur.Auth = $Matches[1].Trim() }
-            elseif ($line -match 'Signal\s*:\s*(\d+)%') { $cur.Signal = [int]$Matches[1] }
-        }
-    }
-    if ($cur) { $networks.Add($cur) }
-    $unique = @{}
-    foreach ($n in $networks) {
-        if (-not $unique.ContainsKey($n.SSID) -or $n.Signal -gt $unique[$n.SSID].Signal) {
-            $unique[$n.SSID] = $n
-        }
-    }
-    return @($unique.Values | Sort-Object Signal -Descending)
-}
-
-function Get-SignalBar { param([int]$s) ('█' * [Math]::Round($s/20)) + ('░' * (5-[Math]::Round($s/20))) }
-
-function Connect-WiFiNetwork {
-    param([string]$SSID, [string]$WiFiKey, [string]$Auth)
-    $safeSsid = [System.Security.SecurityElement]::Escape($SSID)
-    $isOpen   = $Auth -match 'Open'
-
-    $ns = 'http://www.microsoft.com/networking/WLAN/profile/v1'
-    if ($isOpen) {
-        $xml = @"
-<?xml version="1.0"?>
-<WLANProfile xmlns="$ns">
-  <name>$safeSsid</name>
-  <SSIDConfig><SSID><name>$safeSsid</name></SSID></SSIDConfig>
-  <connectionType>ESS</connectionType>
-  <connectionMode>auto</connectionMode>
-  <MSM><security><authEncryption>
-    <authentication>open</authentication>
-    <encryption>none</encryption>
-    <useOneX>false</useOneX>
-  </authEncryption></security></MSM>
-</WLANProfile>
-"@
-    } else {
-        $safePwd  = if ($WiFiKey) { [System.Security.SecurityElement]::Escape($WiFiKey) } else { '' }
-        $authType = if ($Auth -match 'WPA3') { 'WPA3SAE' } else { 'WPA2PSK' }
-        $xml = @"
-<?xml version="1.0"?>
-<WLANProfile xmlns="$ns">
-  <name>$safeSsid</name>
-  <SSIDConfig><SSID><name>$safeSsid</name></SSID></SSIDConfig>
-  <connectionType>ESS</connectionType>
-  <connectionMode>auto</connectionMode>
-  <MSM><security><authEncryption>
-    <authentication>$authType</authentication>
-    <encryption>AES</encryption>
-    <useOneX>false</useOneX>
-  </authEncryption>
-  <sharedKey>
-    <keyType>passPhrase</keyType>
-    <protected>false</protected>
-    <keyMaterial>$safePwd</keyMaterial>
-  </sharedKey></security></MSM>
-</WLANProfile>
-"@
-    }
-
-    $tmp = Join-Path $env:TEMP "nova_wifi_$([guid]::NewGuid().Guid).xml"
-    try {
-        $xml | Set-Content -Path $tmp -Encoding UTF8 -Force
-        $prev = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        $null = & netsh wlan add profile filename="`"$tmp`"" 2>&1
-        $null = & netsh wlan connect  name="`"$SSID`"" ssid="`"$SSID`"" 2>&1
-        $ErrorActionPreference = $prev
-    } finally {
-        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-    }
-}
+# Invoke-NetworkTuning, Test-HasValidIP, Test-InternetConnectivity,
+# Start-WlanService, Get-WiFiNetwork, Get-SignalBar, and Connect-WiFiNetwork
+# are now provided by the Nova.Network module (imported above).
 
 function Show-WiFiSelector {
     $dlg = New-Object System.Windows.Forms.Form
