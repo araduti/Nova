@@ -6,19 +6,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-01
+
 ### Changed
 - Rebranded product from "AmpCloud" to "Nova" across all documentation
 - Extracted inline CSS/JS from `index.html` into `css/dashboard.css` and `js/dashboard.js`
 - Extracted inline CSS/JS from `Monitoring/index.html` into `Monitoring/css/style.css` and `Monitoring/js/app.js`
+- Extracted inline CSS/JS from `Editor/index.html` into `Editor/css/login.css`, `Editor/css/style.css`, and `Editor/js/app.js`
 - Replaced all inline event handlers (`onclick`, `onchange`, `oninput`) with `addEventListener`
-- Tightened CSP headers: removed `'unsafe-inline'` from `script-src` and `style-src` on `index.html` and `Monitoring/index.html`
+- Tightened CSP headers: removed `'unsafe-inline'` from `script-src` and `style-src` on all pages
+- Upgraded MSAL.js from v2.39.0 to v4.30.0 for Editor authentication
 
 ### Added
 - Dev Container configuration (`.devcontainer/devcontainer.json`) for GitHub Codespaces and VS Code
 - OAuth proxy API reference documentation (`docs/oauth-proxy-api.md`)
 - PSScriptAnalyzer linting job in CI workflow
 - CodeQL security scanning workflow (JavaScript/TypeScript)
+- Pester v5 test suite for PowerShell scripts (Nova, Bootstrap, Trigger)
+- SHA256 hash validation CI job (`Config/hashes.json`)
 - Handler-level tests for OAuth proxy (device-flow, token-exchange, origin enforcement — 19 new tests)
+- IP-based rate limiting for OAuth proxy (60 req/min sliding window)
+- Vitest tests for Editor utility functions (31 tests)
+- Dependabot configuration for automated dependency updates
+- GitHub Actions release workflow for automated releases
 - Three-stage cloud-native deployment: Trigger → Bootstrap → Imaging Engine
 - WiFi support out-of-the-box via WinRE (Intel, Realtek, MediaTek, Qualcomm)
 - Browser-based Task Sequence Editor with drag-and-drop step builder

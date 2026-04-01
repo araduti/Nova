@@ -36,6 +36,13 @@ Describe 'Get-WinPEArchitecture' {
 }
 
 Describe 'Get-FirmwareType' {
+    BeforeAll {
+        # Stub for cross-platform CI — Confirm-SecureBootUEFI only exists on Windows
+        if (-not (Get-Command Confirm-SecureBootUEFI -ErrorAction SilentlyContinue)) {
+            function global:Confirm-SecureBootUEFI { }
+        }
+    }
+
     It 'returns UEFI when registry value is 2' {
         Mock Get-ItemProperty { [pscustomobject]@{ PEFirmwareType = 2 } }
         Get-FirmwareType | Should -Be 'UEFI'
