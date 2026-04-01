@@ -56,6 +56,62 @@ jobs:
           }
           Write-Host "PSScriptAnalyzer: all scripts passed."
 
+  test-powershell:
+    name: PowerShell — Pester Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Pester
+        shell: pwsh
+        run: Install-Module -Name Pester -RequiredVersion 5.7.1 -Force -Scope CurrentUser -SkipPublisherCheck
+
+      - name: Run Pester tests
+        shell: pwsh
+        run: |
+          Import-Module Pester -RequiredVersion 5.7.1
+          $config = New-PesterConfiguration
+          $config.Run.Path = './Tests'
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled = $true
+          $config.TestResult.OutputPath = 'testResults.xml'
+          Invoke-Pester -Configuration $config
+
+  validate-hashes:
+    name: Integrity — Validate Hashes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate Config/hashes.json
+        shell: pwsh
+        run: |
+          $manifest = Get-Content 'Config/hashes.json' -Raw | ConvertFrom-Json
+          $failed = @()
+          foreach ($entry in $manifest.files.PSObject.Properties) {
+            $file = $entry.Name
+            $expected = $entry.Value
+            if (-not (Test-Path $file)) {
+              Write-Warning "File not found: $file"
+              $failed += $file
+              continue
+            }
+            $actual = (Get-FileHash -Path $file -Algorithm SHA256).Hash
+            if ($actual -ne $expected) {
+              Write-Host "MISMATCH $file" -ForegroundColor Red
+              Write-Host "  Expected: $expected"
+              Write-Host "  Actual:   $actual"
+              $failed += $file
+            } else {
+              Write-Host "OK $file" -ForegroundColor Green
+            }
+          }
+          if ($failed.Count -gt 0) {
+            Write-Error "Hash validation failed for $($failed.Count) file(s): $($failed -join ', '). Run the hash regeneration script to update Config/hashes.json."
+            exit 1
+          }
+          Write-Host "`nAll hashes validated successfully."
+
   build-web:
     name: Web UI — Build & Test
     runs-on: ubuntu-latest

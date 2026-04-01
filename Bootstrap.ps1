@@ -1609,6 +1609,34 @@ function ProceedToEngine {
                 Start-Sleep -Milliseconds 100
             }
             if ($task.IsFaulted) { throw $task.Exception.InnerException }
+
+            # ── Verify downloaded Nova.ps1 integrity ──────────────────
+            # NOTE: The manifest comes from the same repo/branch as the script.
+            # This detects corruption and CDN inconsistencies but does not protect
+            # against a compromised repository.  For tamper protection, the manifest
+            # would need to be cryptographically signed or hosted separately.
+            $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/hashes.json"
+            try {
+                $manifest = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
+            } catch {
+                Remove-Item $localNova -Force -ErrorAction SilentlyContinue
+                throw "Integrity check FAILED — could not download hash manifest from $hashesUrl : $_"
+            }
+            $expected = $manifest.files.'Nova.ps1'
+            if (-not $expected) {
+                Remove-Item $localNova -Force -ErrorAction SilentlyContinue
+                throw "Integrity check FAILED — no Nova.ps1 entry in hash manifest"
+            }
+            $actual = [System.BitConverter]::ToString(
+                [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+                    [System.IO.File]::ReadAllBytes($localNova)
+                )
+            ) -replace '-', ''
+            if ($actual -ne $expected) {
+                Remove-Item $localNova -Force -ErrorAction SilentlyContinue
+                throw "Integrity check FAILED for Nova.ps1 — Expected: $expected, Got: $actual"
+            }
+            Write-AuthLog 'Nova.ps1 integrity verified (SHA256 match).'
         }
 
         # Run Nova.ps1 in a dedicated process so the UI thread

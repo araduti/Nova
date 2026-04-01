@@ -1224,7 +1224,7 @@ jobs:
 - [x] Update wrangler `compatibility_date` to current date
 
 ### Phase 2: Testing (Weeks 3-4)
-- [ ] Add Pester v5 tests for core PowerShell functions (auth, imaging, task sequence)
+- [x] Add Pester v5 tests for core PowerShell functions (auth, imaging, task sequence)
 - [x] Add Vitest tests for oauth-proxy (JWT, CORS, token validation)
 - [x] Add Vitest tests for Editor app.js (escapeHtml, toBase64, API handlers)
 - [x] Create CI workflow that runs tests on every PR
@@ -1233,7 +1233,7 @@ jobs:
 - [x] Migrate oauth-proxy to TypeScript
 - [ ] Upgrade MSAL.js from v2.39.0 to v4.x
 - [x] Add rate limiting to OAuth proxy (Cloudflare KV or Workers Rate Limiting)
-- [ ] Implement script integrity verification (SHA256 hash check)
+- [x] Implement script integrity verification (SHA256 hash check)
 - [x] Extract inline JS/CSS from monolithic HTML files
 - [x] Add build step (Vite/esbuild) for web assets
 
