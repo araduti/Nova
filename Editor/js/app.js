@@ -491,7 +491,7 @@ function validateStep(step) {
 function renderValidationWarnings() {
     if (!$validationWarnings) return;
     if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) {
-        $validationWarnings.style.display = 'none';
+        $validationWarnings.classList.add('hidden');
         return;
     }
     var warnings = validateStep(taskSequence.steps[selectedIndex]);
@@ -499,9 +499,9 @@ function renderValidationWarnings() {
         $validationWarnings.innerHTML = warnings.map(function (w) {
             return '<div class="validation-warning-item">\u26A0 ' + escapeHtml(w) + '</div>';
         }).join('');
-        $validationWarnings.style.display = '';
+        $validationWarnings.classList.remove('hidden');
     } else {
-        $validationWarnings.style.display = 'none';
+        $validationWarnings.classList.add('hidden');
     }
 }
 
@@ -679,16 +679,16 @@ function handleStepClick(index, e) {
 
 function showPropertiesForIndex(index) {
     if (index < 0 || index >= taskSequence.steps.length) {
-        $propsEmpty.style.display = '';
-        $propsEditor.style.display = 'none';
+        $propsEmpty.classList.remove('hidden');
+        $propsEditor.classList.add('hidden');
         if (jsonRawMode) hideJsonRawView();
         /* Hide condition UI when nothing is selected */
-        if ($conditionSection) $conditionSection.style.display = 'none';
-        if ($btnAddCondition) $btnAddCondition.style.display = 'none';
+        if ($conditionSection) $conditionSection.classList.add('hidden');
+        if ($btnAddCondition) $btnAddCondition.classList.add('hidden');
         return;
     }
-    $propsEmpty.style.display = 'none';
-    $propsEditor.style.display = '';
+    $propsEmpty.classList.add('hidden');
+    $propsEditor.classList.remove('hidden');
     const step = taskSequence.steps[index];
     $propName.value = step.name || '';
     $propType.value = step.type || '';
@@ -727,9 +727,9 @@ function updateHelpLink(stepType) {
     const url = STEP_HELP_URLS[stepType];
     if (url) {
         $link.href = url;
-        $link.style.display = '';
+        $link.classList.remove('hidden');
     } else {
-        $link.style.display = 'none';
+        $link.classList.add('hidden');
     }
 }
 
@@ -740,14 +740,14 @@ function renderConditionUI(step) {
     if (!$conditionSection || !$btnAddCondition) return;
     if (step.condition && step.condition.type) {
         /* Show condition editor */
-        $conditionSection.style.display = '';
-        $btnAddCondition.style.display = 'none';
+        $conditionSection.classList.remove('hidden');
+        $btnAddCondition.classList.add('hidden');
         $condType.value = step.condition.type;
         renderConditionFields(step.condition);
     } else {
         /* Show "Add Condition" button */
-        $conditionSection.style.display = 'none';
-        $btnAddCondition.style.display = '';
+        $conditionSection.classList.add('hidden');
+        $btnAddCondition.classList.remove('hidden');
     }
 }
 
@@ -809,7 +809,7 @@ function applyConditionVisibility(condition) {
         const fieldDiv = $condFields.querySelector('[data-cond-key="' + f.key + '"]');
         if (!fieldDiv) return;
         const wrapper = fieldDiv.closest('.condition-field');
-        if (wrapper) wrapper.style.display = f.hideWhenOp.indexOf(operatorVal) >= 0 ? 'none' : '';
+        if (wrapper) wrapper.classList.toggle('hidden', f.hideWhenOp.indexOf(operatorVal) >= 0);
     });
 }
 
@@ -1001,7 +1001,7 @@ function renderParamFields(step) {
             const depVal = step.parameters[field.showWhen.key] !== undefined
                 ? step.parameters[field.showWhen.key]
                 : (typeDef.defaults[field.showWhen.key] || '');
-            div.style.display = (depVal === field.showWhen.value) ? '' : 'none';
+            div.classList.toggle('hidden', depVal !== field.showWhen.value);
         });
     }
     applyShowWhen();
@@ -1070,7 +1070,7 @@ $tsName.addEventListener('input', () => {
 function onDragStart(e) {
     dragSrcIndex = parseInt(e.currentTarget.dataset.index, 10);
     e.dataTransfer.effectAllowed = 'move';
-    e.currentTarget.style.opacity = '0.4';
+    e.currentTarget.classList.add('dragging');
 }
 function onDragOver(e) {
     e.preventDefault();
@@ -1093,7 +1093,7 @@ function onDrop(e) {
     selectStep(selectedIndex);
 }
 function onDragEnd(e) {
-    e.currentTarget.style.opacity = '';
+    e.currentTarget.classList.remove('dragging');
     document.querySelectorAll('.step-item').forEach(el => el.classList.remove('drag-over'));
 }
 
@@ -1158,10 +1158,10 @@ function renderTemplateList() {
     $templateList.innerHTML = '';
     const templates = getAllTemplates();
     if (templates.length === 0) {
-        if ($noTemplates) $noTemplates.style.display = '';
+        if ($noTemplates) $noTemplates.classList.remove('hidden');
         return;
     }
-    if ($noTemplates) $noTemplates.style.display = 'none';
+    if ($noTemplates) $noTemplates.classList.add('hidden');
     templates.forEach(tpl => {
         const li = document.createElement('li');
         const badge = STEP_BADGE_LABELS[tpl.type] || '?';
@@ -1205,8 +1205,8 @@ document.querySelectorAll('.dialog-tab').forEach(tab => {
         document.querySelectorAll('.dialog-tab').forEach(t => t.classList.remove('active'));
         tab.classList.add('active');
         const target = tab.dataset.tab;
-        document.getElementById('tabTypes').style.display = target === 'types' ? '' : 'none';
-        document.getElementById('tabTemplates').style.display = target === 'templates' ? '' : 'none';
+        document.getElementById('tabTypes').classList.toggle('hidden', target !== 'types');
+        document.getElementById('tabTemplates').classList.toggle('hidden', target !== 'templates');
         /* Clear selection when switching tabs */
         addDialogChoice = null;
         addDialogTemplate = null;
@@ -1225,8 +1225,8 @@ document.getElementById('btnAddStep').addEventListener('click', () => {
     document.querySelectorAll('.dialog-tab').forEach(t => t.classList.remove('active'));
     const typesTab = document.querySelector('.dialog-tab[data-tab="types"]');
     if (typesTab) typesTab.classList.add('active');
-    document.getElementById('tabTypes').style.display = '';
-    document.getElementById('tabTemplates').style.display = 'none';
+    document.getElementById('tabTypes').classList.remove('hidden');
+    document.getElementById('tabTemplates').classList.add('hidden');
     $addTypeList.innerHTML = '';
     STEP_TYPES.forEach(t => {
         const li = document.createElement('li');
@@ -1242,12 +1242,12 @@ document.getElementById('btnAddStep').addEventListener('click', () => {
         });
         $addTypeList.appendChild(li);
     });
-    $addDialog.style.display = '';
+    $addDialog.classList.remove('hidden');
 });
-document.getElementById('btnAddStepCancel').addEventListener('click', () => { $addDialog.style.display = 'none'; });
+document.getElementById('btnAddStepCancel').addEventListener('click', () => { $addDialog.classList.add('hidden'); });
 $addOk.addEventListener('click', () => {
     if (!addDialogChoice) return;
-    $addDialog.style.display = 'none';
+    $addDialog.classList.add('hidden');
     const def = typeMap[addDialogChoice];
     const newStep = {
         id: generateStepId(addDialogChoice),
@@ -2169,13 +2169,13 @@ function setupVisualUnattendBuilder(container, textarea, step) {
             toggleBtns.forEach(function (b) { b.classList.remove('active'); });
             btn.classList.add('active');
             if (view === 'visual') {
-                rawEl.style.display = 'none';
-                builderEl.style.display = '';
+                rawEl.classList.add('hidden');
+                builderEl.classList.remove('hidden');
                 /* Re-render visual form from current XML */
                 renderVisualUnattendForm(builderEl, textarea, step);
             } else {
-                builderEl.style.display = 'none';
-                rawEl.style.display = '';
+                builderEl.classList.add('hidden');
+                rawEl.classList.remove('hidden');
             }
         });
     });
@@ -2183,7 +2183,7 @@ function setupVisualUnattendBuilder(container, textarea, step) {
     /* When the XML textarea changes externally (e.g. via syncUnattendContent),
        refresh the visual builder if it's visible */
     textarea.addEventListener('vub-refresh', function () {
-        if (builderEl.style.display !== 'none') {
+        if (!builderEl.classList.contains('hidden')) {
             renderVisualUnattendForm(builderEl, textarea, step);
         }
     });
@@ -2226,18 +2226,18 @@ function showJsonRawView() {
     jsonRawMode = true;
     $jsonToggle.textContent = '📋 Form View';
     $jsonToggle.title = 'Switch to form view';
-    $jsonRawEditor.style.display = '';
-    $paramFields.style.display = 'none';
+    $jsonRawEditor.classList.remove('hidden');
+    $paramFields.classList.add('hidden');
     $jsonRawTextarea.value = JSON.stringify(taskSequence.steps[selectedIndex], null, 2);
-    $jsonRawError.style.display = 'none';
+    $jsonRawError.classList.add('hidden');
 }
 
 function hideJsonRawView() {
     jsonRawMode = false;
     $jsonToggle.textContent = '{ } JSON';
     $jsonToggle.title = 'Switch to raw JSON view';
-    $jsonRawEditor.style.display = 'none';
-    $paramFields.style.display = '';
+    $jsonRawEditor.classList.add('hidden');
+    $paramFields.classList.remove('hidden');
 }
 
 function applyJsonRawEdits() {
@@ -2246,11 +2246,11 @@ function applyJsonRawEdits() {
         const edited = JSON.parse($jsonRawTextarea.value);
         if (!edited || typeof edited !== 'object') throw new Error('Must be a JSON object');
         taskSequence.steps[selectedIndex] = edited;
-        $jsonRawError.style.display = 'none';
+        $jsonRawError.classList.add('hidden');
         return true;
     } catch (err) {
         $jsonRawError.textContent = '\u26A0 ' + err.message;
-        $jsonRawError.style.display = '';
+        $jsonRawError.classList.remove('hidden');
         return false;
     }
 }
@@ -2700,21 +2700,21 @@ function updateBreadcrumb(name) {
 
     /** Reveal the editor and hide the login overlay. */
     function showEditor(account) {
-        loginOverlay.style.display = 'none';
-        toolbar.style.display = '';
-        mainLayout.style.display = '';
+        loginOverlay.classList.add('hidden');
+        toolbar.classList.remove('hidden');
+        mainLayout.classList.remove('hidden');
         if (account && account.name) {
             userName.textContent = account.name;
-            userName.style.display = '';
-            btnLogout.style.display = '';
+            userName.classList.remove('hidden');
+            btnLogout.classList.remove('hidden');
         }
         loadDefault();
     }
 
     /** Show the login UI (hide loading text, show button). */
     function showLoginUI() {
-        loginLoading.style.display = 'none';
-        btnLogin.style.display = '';
+        loginLoading.classList.add('hidden');
+        btnLogin.classList.remove('hidden');
     }
 
     /* Fetch auth config from the repository. */
@@ -2741,10 +2741,10 @@ function updateBreadcrumb(name) {
 
             /* Ensure MSAL loaded from CDN. */
             if (typeof msal === 'undefined') {
-                loginLoading.style.display = 'none';
-                btnLogin.style.display = 'none';
+                loginLoading.classList.add('hidden');
+                btnLogin.classList.add('hidden');
                 loginError.textContent = 'Authentication library failed to load. Check your network, ad-blocker, or corporate network restrictions.';
-                loginError.style.display = '';
+                loginError.classList.remove('hidden');
                 return;
             }
 
@@ -2784,7 +2784,7 @@ function updateBreadcrumb(name) {
                Use redirect (not popup) to avoid Cross-Origin-Opener-Policy
                errors from login.microsoftonline.com. */
             btnLogin.addEventListener('click', () => {
-                loginError.style.display = 'none';
+                loginError.classList.add('hidden');
                 msalApp.loginRedirect({ scopes: ['openid', 'profile'] });
             });
 

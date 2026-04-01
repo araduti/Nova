@@ -1273,3 +1273,7 @@ h3::before {
     font-size: 12px;
     padding: 24px 16px;
 }
+
+/* ── Utility classes ───────────────────────────────────────────────── */
+.hidden { display: none !important; }
+.dragging { opacity: 0.4; }
