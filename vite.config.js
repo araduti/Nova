@@ -14,7 +14,7 @@ import { cpSync, existsSync } from 'fs';
  * and run offline — they are NOT part of this build.
  */
 export default defineConfig({
-  base: '/AmpCloud/',
+  base: '/Nova/',
   build: {
     outDir: 'dist',
     rollupOptions: {
