@@ -137,7 +137,7 @@ The rebrand from "AmpCloud" to "Nova" included updates to file names (`Nova.ps1`
 
 ### S-02: OAuth client IDs in public repository (Low)
 
-**Component:** `Config/auth.json`
+**Component:** `config/auth.json`
 **Severity:** Low
 **Description:** The Azure AD Application ID and GitHub OAuth Client ID are committed to the repository. These are public identifiers by design (RFC 6749 §2.1), not secrets.
 **Recommendation:** Add a note in `auth.json` or documentation clarifying that these are intentionally public and that forkers should replace them with their own app registrations.
@@ -170,7 +170,7 @@ The rebrand from "AmpCloud" to "Nova" included updates to file names (`Nova.ps1`
 
 ### S-06: Graph API scope is broad (Low)
 
-**Component:** `Config/auth.json` — `graphScopes`
+**Component:** `config/auth.json` — `graphScopes`
 **Severity:** Low
 **Description:** The scope `DeviceManagementServiceConfig.ReadWrite.All` grants broad device management permissions. This is the minimum scope required for Autopilot device import via the Microsoft Graph API.
 **Recommendation:** Document the scope and its purpose. Consider using a more granular scope if Microsoft releases one.
@@ -209,7 +209,7 @@ The rebrand from "AmpCloud" to "Nova" included updates to file names (`Nova.ps1`
 
 ### P-03: JSON status polling interval is fixed (Low)
 
-**Component:** `Bootstrap.ps1` + `Nova-UI/index.html`
+**Component:** `Bootstrap.ps1` + `src/web/nova-ui/index.html`
 **Impact:** Low
 **Description:** The HTML UI polls `Nova-Status.json` every 650ms. In WinPE (RAM disk), this is negligible overhead. However, for future scalability (e.g. remote status monitoring), a push-based mechanism (WebSocket or Server-Sent Events) would be more efficient.
 **Recommendation:** No change needed for current use. The polling interval is appropriate for local IPC in WinPE.
@@ -234,7 +234,7 @@ The rebrand from "AmpCloud" to "Nova" included updates to file names (`Nova.ps1`
 
 ### D-01: Task sequence schema has no version field (Medium)
 
-**Component:** `TaskSequence/default.json`
+**Component:** `resources/task-sequence/default.json`
 **Impact:** Medium
 **Description:** The task sequence JSON format has no `version` or `schema` field. If the format evolves (e.g. new step types, renamed properties), old task sequences saved by users could break silently.
 **Recommendation:** Add a `"schemaVersion": "1.0"` field to task sequence files. Validate the version on load and provide migration guidance for breaking changes.
@@ -270,14 +270,14 @@ The rebrand from "AmpCloud" to "Nova" included updates to file names (`Nova.ps1`
 
 ### D-06: Multi-language support is partial (Low)
 
-**Component:** `Config/locale/`
+**Component:** `config/locale/`
 **Impact:** Low
 **Description:** Localization files exist for English, Spanish, and French. For enterprise adoption, additional languages (German, Chinese, Japanese, Portuguese) would be valuable.
 **Recommendation:** Add a contribution guide for locale translations. Consider using a standard i18n format (ICU Message Format) for future-proofing.
 
 ### D-07: Editor lacks syntax highlighting for XML (Low)
 
-**Component:** `Editor/js/app.js` — unattend.xml editor
+**Component:** `src/web/editor/js/app.js` — unattend.xml editor
 **Impact:** Low
 **Description:** The inline unattend.xml editor uses a plain `<textarea>`. Syntax highlighting would improve usability.
 **Recommendation:** Consider integrating a lightweight code editor (CodeMirror or Monaco) for XML editing.
@@ -320,7 +320,7 @@ The rebrand from "AmpCloud" to "Nova" included updates to file names (`Nova.ps1`
 
 | Item | Priority | Notes |
 |------|----------|-------|
-| Replace `Config/auth.json` with a template | High | Ship `auth.json.example` with placeholder values; add `auth.json` to `.gitignore` so forkers don't accidentally commit their real credentials |
+| Replace `config/auth.json` with a template | High | Ship `auth.json.example` with placeholder values; add `auth.json` to `.gitignore` so forkers don't accidentally commit their real credentials |
 | Add `.gitignore` | High | Exclude build artifacts, ADK output, WIM files |
 | Add PSScriptAnalyzer config | Medium | Enforce consistent PowerShell style |
 | Add GitHub issue templates | Medium | Bug report, feature request, security vulnerability |

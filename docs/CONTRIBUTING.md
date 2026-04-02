@@ -84,10 +84,10 @@ Since the core scripts interact with hardware (disk partitioning, DISM, BCD), ma
 
 ### Manual testing (Web editor)
 
-1. Open `Editor/index.html` in a browser
+1. Open `src/web/editor/index.html` in a browser
 2. Test drag-and-drop step reordering
 3. Test JSON export / import round-trip
-4. Test with `requireAuth: true` and `requireAuth: false` in `Config/auth.json`
+4. Test with `requireAuth: true` and `requireAuth: false` in `config/auth.json`
 
 ---
 
@@ -113,7 +113,7 @@ When contributing, be especially careful with:
 
 To add a new language:
 
-1. Copy `Config/locale/en.json` to `Config/locale/<lang-code>.json`
+1. Copy `config/locale/en.json` to `config/locale/<lang-code>.json`
 2. Translate all string values (keep the JSON keys unchanged)
 3. Test the UI with your new locale
 4. Submit a PR with the new locale file

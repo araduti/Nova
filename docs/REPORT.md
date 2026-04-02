@@ -74,9 +74,9 @@ Nova is a cloud-native Windows OS deployment platform built around a 3-stage pip
 | `Trigger.ps1` | 2,248 | 108 KB | Stage 1 — WinPE builder |
 | `Nova.ps1` | 2,077 | 92 KB | Stage 3 — Imaging engine |
 | `Bootstrap.ps1` | 1,830 | 88 KB | Stage 2 — Network & auth |
-| `Editor/js/app.js` | 2,800 | ~95 KB | Task sequence editor SPA |
-| `Monitoring/index.html` | 2,181 | 96 KB | Deployment monitoring dashboard |
-| `Nova-UI/index.html` | 1,174 | 56 KB | Real-time progress UI |
+| `src/web/editor/js/app.js` | 2,800 | ~95 KB | Task sequence editor SPA |
+| `src/web/monitoring/index.html` | 2,181 | 96 KB | Deployment monitoring dashboard |
+| `src/web/nova-ui/index.html` | 1,174 | 56 KB | Real-time progress UI |
 | `index.html` (root) | 652 | 28 KB | Landing page / dashboard |
 | `oauth-proxy/worker.js` | 383 | ~15 KB | Cloudflare Worker OAuth proxy |
 | `products.xml` | 1,626 | 84 KB | Windows ESD catalog (30 entries) |
@@ -90,32 +90,32 @@ Nova is a cloud-native Windows OS deployment platform built around a 3-stage pip
 ```
 Nova/
 ├── .github/workflows/pages.yml   # CI: GitHub Pages deploy only
-├── Nova-UI/index.html         # Monolithic SPA (56 KB)
+├── src/web/nova-ui/index.html         # Monolithic SPA (56 KB)
 ├── Nova.ps1                   # Monolithic script (92 KB)
-├── Autopilot/                     # Utility scripts + binaries
+├── resources/autopilot/                     # Utility scripts + binaries
 │   ├── Invoke-ImportAutopilot.ps1
 │   ├── Utils.ps1
 │   ├── oa3tool.exe, PCPKsp.dll    # Vendored binaries
 │   └── OA3.cfg
 ├── Bootstrap.ps1                  # Monolithic script (88 KB)
-├── Config/
+├── config/
 │   ├── auth.json                  # OAuth config (public client IDs)
 │   ├── alerts.json                # Notification config (all disabled)
 │   └── locale/{en,es,fr}.json     # UI translations
-├── Deployments/
+├── deployments/
 │   ├── active/.gitkeep
 │   └── reports/.gitkeep + sample
-├── Drivers/NetKVM/                # 338 MB of vendored virtio drivers
-├── Editor/                        # Task sequence editor SPA
+├── resources/drivers/NetKVM/                # 338 MB of vendored virtio drivers
+├── src/web/editor/                        # Task sequence editor SPA
 │   ├── index.html
 │   ├── js/app.js                  # 2,800-line single file
 │   ├── css/style.css
 │   └── lib/msal-browser.min.js    # Vendored MSAL (368 KB)
-├── Monitoring/index.html          # Monolithic dashboard (96 KB)
-├── Progress/index.html            # Legacy progress UI
-├── TaskSequence/default.json      # Default deployment template
+├── src/web/monitoring/index.html          # Monolithic dashboard (96 KB)
+├── src/web/progress/index.html            # Legacy progress UI
+├── resources/task-sequence/default.json      # Default deployment template
 ├── Trigger.ps1                    # Monolithic script (108 KB)
-├── Unattend/unattend.xml          # OOBE template
+├── resources/unattend/unattend.xml          # OOBE template
 ├── docs/                          # Improvement proposals
 ├── index.html                     # Root landing page
 ├── oauth-proxy/
@@ -213,7 +213,7 @@ Nova/
 
 | Dependency | Version | Location | Latest Stable | Status |
 |-----------|---------|----------|---------------|--------|
-| **MSAL.js** (`@azure/msal-browser`) | 2.39.0 (2024-06-06) | `Editor/lib/msal-browser.min.js` (vendored) | 4.x+ | ⚠️ **Major version behind** — MSAL v2 is in maintenance mode; v3/v4 are current |
+| **MSAL.js** (`@azure/msal-browser`) | 2.39.0 (2024-06-06) | `src/web/editor/lib/msal-browser.min.js` (vendored) | 4.x+ | ⚠️ **Major version behind** — MSAL v2 is in maintenance mode; v3/v4 are current |
 | **Cloudflare Workers Runtime** | `compatibility_date: 2024-01-01` | `oauth-proxy/wrangler.toml` | 2026-03-01+ | ⚠️ **15+ months behind** — missing newer runtime features and security patches |
 | **PowerShell** | Requires 5.1 | All `.ps1` files | 7.4+ | ℹ️ 5.1 is correct for WinPE (ships with Windows); PS 7 not available in WinPE |
 | **GitHub Actions: checkout** | v4 | `.github/workflows/pages.yml` | v4 | ✅ Current |
@@ -291,7 +291,7 @@ STAGE 3: Nova.ps1 (2,077 lines)
 | **Monolithic files** | All 3 scripts | High | 2,000+ lines each with no module separation; impossible to unit test individual functions |
 | **No test coverage** | — | High | Zero Pester tests; no automated validation of any logic |
 | **`irm \| iex` entry point** | Trigger.ps1 (line 49) | Critical | Downloads and executes script from GitHub without hash/signature verification |
-| **Input validation gaps** | Autopilot/Utils.ps1:43 | Medium | Serial number sanitization removes basic chars but doesn't validate length or prevent injection |
+| **Input validation gaps** | resources/autopilot/Utils.ps1:43 | Medium | Serial number sanitization removes basic chars but doesn't validate length or prevent injection |
 | **Error info disclosure** | Bootstrap.ps1:1342 | Medium | Full exception messages logged to auth log; may leak endpoint URLs or response data |
 | **Hardcoded paths** | Multiple | Low | `X:\Nova-Status.json`, `X:\Nova-Auth.log` — fine for WinPE but not configurable |
 | **No PSScriptAnalyzer** | — | Medium | No static analysis in CI; potential for anti-patterns |
@@ -313,9 +313,9 @@ STAGE 3: Nova.ps1 (2,077 lines)
 
 | Component | File | Lines | Role |
 |-----------|------|-------|------|
-| Task Sequence Editor | `Editor/js/app.js` | 2,800 | Full SPA — drag-and-drop step builder, GitHub save/load, M365 auth |
-| Monitoring Dashboard | `Monitoring/index.html` | 2,181 | Inline JS/CSS — deployment cards, staleness detection, diagnostics |
-| Imaging Progress UI | `Nova-UI/index.html` | 1,174 | Inline JS/CSS — real-time step progress, spinner, status updates |
+| Task Sequence Editor | `src/web/editor/js/app.js` | 2,800 | Full SPA — drag-and-drop step builder, GitHub save/load, M365 auth |
+| Monitoring Dashboard | `src/web/monitoring/index.html` | 2,181 | Inline JS/CSS — deployment cards, staleness detection, diagnostics |
+| Imaging Progress UI | `src/web/nova-ui/index.html` | 1,174 | Inline JS/CSS — real-time step progress, spinner, status updates |
 | Landing Page | `index.html` | 652 | Inline JS/CSS — navigation hub |
 | OAuth Proxy | `oauth-proxy/worker.js` | 383 | Cloudflare Worker — GitHub OAuth proxy, Entra token exchange |
 
@@ -338,11 +338,11 @@ STAGE 3: Nova.ps1 (2,077 lines)
 | **No TypeScript** | All JS files | Medium | No type safety; refactoring is error-prone |
 | **No ESLint/Prettier** | — | Medium | No automated code style enforcement |
 | **No test coverage** | — | High | Zero tests for any JavaScript code |
-| **MSAL.js v2 (EOL path)** | Editor/lib/ | Medium | v2 in maintenance; missing v4 features (smaller bundle, improved caching) |
+| **MSAL.js v2 (EOL path)** | src/web/editor/lib/ | Medium | v2 in maintenance; missing v4 features (smaller bundle, improved caching) |
 | **No CSP headers** | All HTML files | Medium | No Content Security Policy; relies on GitHub Pages defaults |
-| **Vendored library** | Editor/lib/msal-browser.min.js | Medium | No version management; no SRI hash; manual updates only |
+| **Vendored library** | src/web/editor/lib/msal-browser.min.js | Medium | No version management; no SRI hash; manual updates only |
 | **No lazy loading** | All UIs | Low | All content loaded eagerly; no code splitting |
-| **Legacy Progress/ dir** | Progress/index.html | Low | Appears superseded by Nova-UI/; may confuse contributors |
+| **Legacy Progress/ dir** | src/web/progress/index.html | Low | Appears superseded by Nova-UI/; may confuse contributors |
 
 ### Recommendations
 
@@ -491,12 +491,12 @@ oauth-proxy/worker.js (383 lines)
 |---|---------|----------|-----------|--------|
 | 1 | `irm \| iex` without integrity check | 🔴 Critical | Trigger.ps1 | Open |
 | 2 | No rate limiting on OAuth proxy | 🟠 High | oauth-proxy/worker.js | Open |
-| 3 | Serial number injection potential | 🟠 High | Autopilot/Utils.ps1 | Open |
+| 3 | Serial number injection potential | 🟠 High | resources/autopilot/Utils.ps1 | Open |
 | 4 | CORS origin reflection (no ALLOWED_ORIGIN) | 🟡 Medium | oauth-proxy/worker.js | Open |
 | 5 | Error messages may leak endpoint URLs | 🟡 Medium | Bootstrap.ps1 | Open |
 | 6 | GitHub token visible in sessionStorage | 🟡 Medium | Editor/js/app.js | Open |
 | 7 | No Content Security Policy headers | 🟡 Medium | All HTML files | Open |
-| 8 | MSAL.js v2 in maintenance mode | 🟡 Medium | Editor/lib/ | Open |
+| 8 | MSAL.js v2 in maintenance mode | 🟡 Medium | src/web/editor/lib/ | Open |
 | 9 | No automated security scanning in CI | 🟡 Medium | .github/workflows/ | Open |
 | 10 | Vendored binaries without checksum | 🟢 Low | Autopilot/ | Open |
 

@@ -10,7 +10,7 @@
 1. [Executive Summary](#executive-summary)
 2. [Authentication Architecture Overview](#authentication-architecture-overview)
 3. [Component Analysis](#component-analysis)
-   - [Config/auth.json](#configauthjson)
+   - [config/auth.json](#configauthjson)
    - [Trigger.ps1 — Authorization Code Flow with PKCE](#triggerps1--authorization-code-flow-with-pkce)
    - [Bootstrap.ps1 — Edge Browser (Auth Code + PKCE) with Device Code Fallback](#bootstrapps1--edge-browser-auth-code--pkce-with-device-code-fallback)
    - [Editor (Web UI) — MSAL.js Popup Flow](#editor-web-ui--msaljs-popup-flow)
@@ -61,15 +61,15 @@ All three flows request only `openid profile` scopes — they function as a **pu
 
 ## Component Analysis
 
-### Config/auth.json
+### config/auth.json
 
-**Location:** `Config/auth.json`
+**Location:** `config/auth.json`
 
 ```json
 {
     "requireAuth": true,
     "clientId": "040045aa-2c28-42b5-9a10-3fce7778a454",
-    "redirectUri": "https://araduti.github.io/Nova/Editor/"
+    "redirectUri": "https://araduti.github.io/Nova/src/web/editor/"
 }
 ```
 
@@ -156,8 +156,8 @@ All three flows request only `openid profile` scopes — they function as a **pu
 
 ### Editor (Web UI) — MSAL.js Popup Flow
 
-**Library:** MSAL Browser v2.39.0 (self-hosted at `Editor/lib/msal-browser.min.js`)
-**Function:** Anonymous IIFE `initAuth()` in `Editor/js/app.js` (lines 515–624)
+**Library:** MSAL Browser v2.39.0 (self-hosted at `src/web/editor/lib/msal-browser.min.js`)
+**Function:** Anonymous IIFE `initAuth()` in `src/web/editor/js/app.js` (lines 515–624)
 **Environment:** Browser (GitHub Pages)
 
 #### Flow Steps
@@ -244,7 +244,7 @@ The following security best practices are already implemented:
 
 #### F-03: Editor Fails Open When Config is Unavailable (Low)
 
-**Component:** `Editor/js/app.js`, line 620–623
+**Component:** `src/web/editor/js/app.js`, line 620–623
 **Severity:** Low
 **Description:** When the `auth.json` config file cannot be fetched (network error, 404, etc.), the editor catches the error and calls `showEditor(null)`, displaying the editor without authentication. This means a network failure or misconfiguration could expose the editor without auth.
 **Mitigation factors:** The editor is a client-side tool hosted on GitHub Pages — the task sequence JSON files it edits are stored in the same public repository. An attacker who can modify files in the repo already has greater access than the editor provides. The editor does not have write access to the repository; changes must be committed through Git.

@@ -46,8 +46,8 @@ param(
 
     # Task sequence JSON — the engine reads the step list from this file and
     # executes each enabled step in order.  The file is produced by the
-    # web-based Task Sequence Editor (Editor/index.html) and follows the
-    # schema defined in TaskSequence/default.json.
+    # web-based Task Sequence Editor (src/web/editor/index.html) and follows the
+    # schema defined in resources/task-sequence/default.json.
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
     [string]$TaskSequencePath
@@ -184,7 +184,7 @@ function Save-DeploymentReport {
 
         # Push to GitHub so the Monitoring dashboard can read it
         $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
-        Push-ReportToGitHub -FilePath "Deployments/reports/deployment-report-$safeName.json" -Content $report
+        Push-ReportToGitHub -FilePath "deployments/reports/deployment-report-$safeName.json" -Content $report
     } catch {
         Write-Warn "Failed to save deployment report: $_"
     }
@@ -216,7 +216,7 @@ function Update-ActiveDeploymentReport {
         $ReportPath = Join-Path $ScratchDir "active-deployment-$safeName.json"
     }
     $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
-    $ghPath   = "Deployments/active/active-deployment-$safeName.json"
+    $ghPath   = "deployments/active/active-deployment-$safeName.json"
     try {
         if ($Clear) {
             if (Test-Path $ReportPath) { Remove-Item $ReportPath -Force -ErrorAction SilentlyContinue }
@@ -465,7 +465,7 @@ function Push-ReportToGitHub {
     .SYNOPSIS  Pushes a deployment JSON file to the GitHub repo via the Contents API.
     .DESCRIPTION
         Uses the GitHub REST API (PUT /repos/{owner}/{repo}/contents/{path}) to
-        write a per-device JSON file into the Deployments/ directory.  Each file
+        write a per-device JSON file into the deployments/ directory.  Each file
         is named after the device, so concurrent deployments never collide.
 
         The API call is atomic — there is no git clone/push, so it cannot
@@ -1565,7 +1565,7 @@ function Read-TaskSequence {
     .SYNOPSIS  Loads a task sequence JSON file produced by the web-based Editor.
     .DESCRIPTION
         Reads the JSON file, validates the required structure (name + steps array),
-        and returns a hashtable matching the schema in TaskSequence/default.json.
+        and returns a hashtable matching the schema in resources/task-sequence/default.json.
     #>
     param(
         [Parameter(Mandatory)]
