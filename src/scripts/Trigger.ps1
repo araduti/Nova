@@ -14,7 +14,8 @@ param(
     [ValidateNotNullOrEmpty()]
     [string] $WorkDir         = 'C:\Nova',
     [string] $WindowsISOUrl   = '',
-    [switch] $NoReboot
+    [switch] $NoReboot,
+    [switch] $AcceptDefaults
 )
 
 <#
@@ -62,6 +63,12 @@ param(
 .PARAMETER NoReboot
     Build everything but do NOT reboot. Useful for testing.
 
+.PARAMETER AcceptDefaults
+    Skip all interactive menus and use default settings. Useful for CI/CD
+    pipelines and scripted deployments. When set, the cloud image is
+    preferred (if available), and the build configuration uses all default
+    packages with en-us language.
+
 .EXAMPLE
     irm https://raw.githubusercontent.com/araduti/Nova/main/Trigger.ps1 | iex
 
@@ -70,6 +77,9 @@ param(
 
 .EXAMPLE
     .\Trigger.ps1 -WindowsISOUrl 'D:\ISOs\Win11_x86.iso'
+
+.EXAMPLE
+    .\Trigger.ps1 -AcceptDefaults -NoReboot
 #>
 
 Set-StrictMode -Version Latest
@@ -600,6 +610,113 @@ function Copy-WinPEFile {
 # Default language for WinPE optional-component language packs.
 $script:DefaultLanguage = 'en-us'
 
+# Common WinPE language codes for the quick-pick list.
+$script:LanguageOptions = @(
+    @{ Code = 'en-us'; Label = 'English (United States)' }
+    @{ Code = 'en-gb'; Label = 'English (United Kingdom)' }
+    @{ Code = 'de-de'; Label = 'German (Germany)' }
+    @{ Code = 'fr-fr'; Label = 'French (France)' }
+    @{ Code = 'es-es'; Label = 'Spanish (Spain)' }
+    @{ Code = 'it-it'; Label = 'Italian (Italy)' }
+    @{ Code = 'pt-br'; Label = 'Portuguese (Brazil)' }
+    @{ Code = 'ja-jp'; Label = 'Japanese (Japan)' }
+    @{ Code = 'zh-cn'; Label = 'Chinese (Simplified)' }
+    @{ Code = 'ko-kr'; Label = 'Korean (Korea)' }
+    @{ Code = 'nl-nl'; Label = 'Dutch (Netherlands)' }
+    @{ Code = 'sv-se'; Label = 'Swedish (Sweden)' }
+)
+
+# ANSI escape sequences for styled prompt (PS 5.1+ with VT support).
+$script:ESC       = [char]0x1B
+$script:AnsiCyan  = "${script:ESC}[36;1m"
+$script:AnsiReset = "${script:ESC}[0m"
+$script:AnsiDim   = "${script:ESC}[90m"
+$script:AnsiBold  = "${script:ESC}[1m"
+
+# Spinner frames for long-running operations (Braille dot pattern).
+$script:SpinnerFrames = @('⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏')
+
+function Invoke-WithSpinner {
+    <#
+    .SYNOPSIS  Runs a script block while displaying an animated spinner.
+    .DESCRIPTION
+        Executes the given script block in a background job and displays a
+        rotating Braille-dot spinner on the current console line until the
+        job completes. Falls back to a simple "..." message when the host
+        does not support VT/ANSI sequences (e.g. ISE, redirected output).
+    #>
+    param(
+        [Parameter(Mandatory)] [string]      $Message,
+        [Parameter(Mandatory)] [scriptblock] $ScriptBlock
+    )
+
+    $supportsVT = $Host.UI.SupportsVirtualTerminal -or $env:WT_SESSION
+    if (-not $supportsVT) {
+        Write-Step $Message
+        & $ScriptBlock
+        return
+    }
+
+    $job = Start-Job -ScriptBlock $ScriptBlock
+    $frame = 0
+    try {
+        while ($job.State -eq 'Running') {
+            $spin = $script:SpinnerFrames[$frame % $script:SpinnerFrames.Count]
+            Write-Host "`r  ${script:AnsiCyan}$spin${script:AnsiReset} $Message" -NoNewline
+            Start-Sleep -Milliseconds 80
+            $frame++
+        }
+        Write-Host "`r  ${script:AnsiCyan}[>]${script:AnsiReset} $Message"
+        Receive-Job $job -ErrorAction Stop
+    } finally {
+        Remove-Job $job -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-BuildConfigPath {
+    <#
+    .SYNOPSIS  Returns the path to the persisted build configuration file.
+    #>
+    if ($env:APPDATA) {
+        return Join-Path $env:APPDATA 'Nova\last-build-config.json'
+    }
+    return $null
+}
+
+function Save-BuildConfiguration {
+    <#
+    .SYNOPSIS  Persists the build configuration to disk for future reuse.
+    #>
+    param([hashtable] $Config)
+    $path = Get-BuildConfigPath
+    if (-not $path) { return }
+    $dir = Split-Path $path -Parent
+    if (-not (Test-Path $dir)) {
+        $null = New-Item -ItemType Directory -Path $dir -Force
+    }
+    $Config | ConvertTo-Json -Depth 3 | Set-Content -Path $path -Encoding UTF8
+}
+
+function Read-SavedBuildConfiguration {
+    <#
+    .SYNOPSIS  Loads a previously saved build configuration, if one exists.
+    .OUTPUTS   [hashtable] or $null if no saved configuration exists.
+    #>
+    $path = Get-BuildConfigPath
+    if (-not $path -or -not (Test-Path $path)) { return $null }
+    try {
+        $json = Get-Content $path -Raw | ConvertFrom-Json
+        return @{
+            Language         = $json.Language
+            Packages         = @($json.Packages)
+            InjectVirtIO     = [bool]$json.InjectVirtIO
+            ExtraDriverPaths = @($json.ExtraDriverPaths)
+        }
+    } catch {
+        return $null
+    }
+}
+
 # Available WinPE optional components — order matters (dependency chain).
 # Name        : base cab name (without .cab extension or language prefix)
 # Description : human-readable label shown in the configuration menu
@@ -653,8 +770,45 @@ function Show-BuildConfiguration {
         $selected[$i] = $script:AvailableWinPEPackages[$i].Default
     }
 
+    # ── Offer to reload last saved configuration ─────────────────────────────
+    $savedConfig = Read-SavedBuildConfiguration
+    if ($savedConfig) {
+        Write-Host ''
+        Write-Host "  ${script:AnsiDim}Previous configuration found.${script:AnsiReset}"
+        $reuse = Read-Host '  Use previous configuration? (Y/n)'
+        if ($reuse -notmatch '^[Nn]') {
+            $language     = $savedConfig.Language
+            $injectVirtIO = $savedConfig.InjectVirtIO
+            if ($savedConfig.ExtraDriverPaths) {
+                foreach ($dp in $savedConfig.ExtraDriverPaths) { $extraDriverPaths.Add($dp) }
+            }
+            # Re-apply saved package selection
+            for ($i = 0; $i -lt $pkgCount; $i++) {
+                $pkgName = $script:AvailableWinPEPackages[$i].Name
+                $selected[$i] = $pkgName -in $savedConfig.Packages
+                # Enforce required packages
+                if ($script:AvailableWinPEPackages[$i].Required) { $selected[$i] = $true }
+            }
+        }
+    }
+
+    # ── Detect VT/ANSI support for single-keypress input ─────────────────────
+    $supportsVT = $Host.UI.SupportsVirtualTerminal -or $env:WT_SESSION
+    $supportsRawKey = $Host.UI.RawUI -and ($Host.Name -ne 'Visual Studio Code Host')
+
+    # Cursor index for arrow-key navigation (0-based over all navigable items).
+    # Items: 0..(pkgCount-1) = packages, pkgCount = VirtIO
+    $totalItems  = $pkgCount + 1
+    $cursorIndex = 0
+
     while ($true) {
-        Clear-Host
+        # ── Draw menu ────────────────────────────────────────────────────────
+        if ($supportsVT) {
+            # Move cursor to top-left and clear screen without flicker
+            Write-Host "$script:ESC[H$script:ESC[2J" -NoNewline
+        } else {
+            Clear-Host
+        }
         Write-Host ''
         Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
         Write-Host '  ║         Boot Image Configuration                         ║' -ForegroundColor Cyan
@@ -672,8 +826,14 @@ function Show-BuildConfiguration {
             $tag  = if ($pkg.Required) { ' (required)' } else { '' }
             $num  = '{0,2}' -f ($i + 1)
             $padName = $pkg.Name.PadRight(24)
-            $color   = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
-            Write-Host "    [$mark] $num. $padName $($pkg.Description)$tag" -ForegroundColor $color
+            $isHighlighted = ($i -eq $cursorIndex)
+            if ($isHighlighted -and $supportsVT) {
+                $color = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
+                Write-Host "  ${script:ESC}[7m  [$mark] $num. $padName $($pkg.Description)$tag  ${script:AnsiReset}" -ForegroundColor $color
+            } else {
+                $color = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
+                Write-Host "    [$mark] $num. $padName $($pkg.Description)$tag" -ForegroundColor $color
+            }
         }
 
         Write-Host ''
@@ -681,7 +841,12 @@ function Show-BuildConfiguration {
         Write-Host '  ─────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
         $vMark  = if ($injectVirtIO) { '■' } else { ' ' }
         $vColor = if ($injectVirtIO) { 'Green' } else { 'DarkGray' }
-        Write-Host "    [$vMark]  V. VirtIO network driver (netkvm)" -ForegroundColor $vColor
+        $isHighlighted = ($cursorIndex -eq $pkgCount)
+        if ($isHighlighted -and $supportsVT) {
+            Write-Host "  ${script:ESC}[7m  [$vMark]  V. VirtIO network driver (netkvm)  ${script:AnsiReset}" -ForegroundColor $vColor
+        } else {
+            Write-Host "    [$vMark]  V. VirtIO network driver (netkvm)" -ForegroundColor $vColor
+        }
 
         if ($extraDriverPaths.Count -gt 0) {
             for ($i = 0; $i -lt $extraDriverPaths.Count; $i++) {
@@ -691,17 +856,48 @@ function Show-BuildConfiguration {
 
         Write-Host ''
         Write-Host '  ┌──────────────────────────────────────────────────────────┐' -ForegroundColor DarkGray
-        Write-Host '  │  1-9  toggle package    L  change language              │' -ForegroundColor DarkGray
-        Write-Host '  │  V    toggle VirtIO     D  add driver path              │' -ForegroundColor DarkGray
-        Write-Host '  │  A    select all pkgs   N  deselect optional pkgs       │' -ForegroundColor DarkGray
-        Write-Host '  │  R    remove driver     Enter  continue with settings ⏎ │' -ForegroundColor DarkGray
+        Write-Host '  │  ↑/↓  navigate          Space  toggle item             │' -ForegroundColor DarkGray
+        Write-Host '  │  1-9  toggle package     L  change language            │' -ForegroundColor DarkGray
+        Write-Host '  │  V    toggle VirtIO      D  add driver path            │' -ForegroundColor DarkGray
+        Write-Host '  │  A    select all pkgs    N  deselect optional pkgs     │' -ForegroundColor DarkGray
+        Write-Host '  │  R    remove driver      Enter  continue with build  ⏎ │' -ForegroundColor DarkGray
         Write-Host '  └──────────────────────────────────────────────────────────┘' -ForegroundColor DarkGray
         Write-Host ''
 
-        $menuChoice = Read-Host '  >'
-        $cmd = $menuChoice.Trim()
+        # ── Read input ───────────────────────────────────────────────────────
+        if ($supportsRawKey) {
+            Write-Host "  ${script:AnsiCyan}›${script:AnsiReset} " -NoNewline
+            $key = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+            $vk  = $key.VirtualKeyCode
+            $ch  = $key.Character
 
-        # Enter — accept current configuration
+            # Arrow keys
+            if ($vk -eq 38) { $cursorIndex = [Math]::Max(0, $cursorIndex - 1); continue }          # Up
+            if ($vk -eq 40) { $cursorIndex = [Math]::Min($totalItems - 1, $cursorIndex + 1); continue } # Down
+            if ($vk -eq 32) {
+                # Space — toggle highlighted item
+                if ($cursorIndex -lt $pkgCount) {
+                    if ($script:AvailableWinPEPackages[$cursorIndex].Required -and $selected[$cursorIndex]) {
+                        Write-Warn "$($script:AvailableWinPEPackages[$cursorIndex].Name) is required and cannot be deselected."
+                        Start-Sleep -Milliseconds 800
+                    } else {
+                        $selected[$cursorIndex] = -not $selected[$cursorIndex]
+                    }
+                } elseif ($cursorIndex -eq $pkgCount) {
+                    $injectVirtIO = -not $injectVirtIO
+                }
+                continue
+            }
+
+            # Enter — accept
+            if ($vk -eq 13) { $cmd = '' }
+            else { $cmd = "$ch".Trim() }
+        } else {
+            $menuChoice = Read-Host "  ${script:AnsiCyan}›${script:AnsiReset}"
+            $cmd = $menuChoice.Trim()
+        }
+
+        # Enter — show confirmation summary and accept
         if ($cmd -eq '') {
             # Re-enable required packages that were somehow deselected
             for ($i = 0; $i -lt $pkgCount; $i++) {
@@ -710,6 +906,24 @@ function Show-BuildConfiguration {
                     Write-Warn "$($script:AvailableWinPEPackages[$i].Name) is required and has been re-enabled."
                 }
             }
+
+            # Confirmation summary
+            $selCount = ($selected | Where-Object { $_ }).Count
+            $virtLabel = if ($injectVirtIO) { 'Yes' } else { 'No' }
+            $drvCount  = $extraDriverPaths.Count
+            Write-Host ''
+            Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
+            Write-Host '  ║         Build Summary                                    ║' -ForegroundColor Cyan
+            Write-Host '  ╚════════════════════════════════════════════════════════════╝' -ForegroundColor Cyan
+            Write-Host "    Packages : $selCount selected" -ForegroundColor White
+            Write-Host "    VirtIO   : $virtLabel" -ForegroundColor White
+            Write-Host "    Language : $language" -ForegroundColor White
+            if ($drvCount -gt 0) {
+                Write-Host "    Drivers  : $drvCount custom path(s)" -ForegroundColor White
+            }
+            Write-Host ''
+            $confirm = Read-Host "  Press Enter to build, or ${script:AnsiDim}B${script:AnsiReset} to go back"
+            if ($confirm -match '^[Bb]') { continue }
             break
         }
 
@@ -719,6 +933,7 @@ function Show-BuildConfiguration {
             if ($idx -ge 0 -and $idx -lt $pkgCount) {
                 if ($script:AvailableWinPEPackages[$idx].Required -and $selected[$idx]) {
                     Write-Warn "$($script:AvailableWinPEPackages[$idx].Name) is required and cannot be deselected."
+                    if ($supportsRawKey) { Start-Sleep -Milliseconds 800 }
                 } else {
                     $selected[$idx] = -not $selected[$idx]
                 }
@@ -729,12 +944,37 @@ function Show-BuildConfiguration {
         switch ($cmd.ToUpper()) {
             'V' { $injectVirtIO = -not $injectVirtIO }
             'L' {
-                $newLang = Read-Host '  Enter language code (e.g. en-us, de-de, fr-fr, ja-jp)'
-                $newLang = $newLang.Trim().ToLower()
-                if ($newLang -match '^[a-z]{2,3}-[a-z]{2}$') {
-                    $language = $newLang
-                } else {
-                    Write-Warn "Invalid language code format. Expected pattern: xx-xx (e.g. en-us)"
+                Write-Host ''
+                Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
+                Write-Host '  ║         Language Selection                                ║' -ForegroundColor Cyan
+                Write-Host '  ╚════════════════════════════════════════════════════════════╝' -ForegroundColor Cyan
+                for ($li = 0; $li -lt $script:LanguageOptions.Count; $li++) {
+                    $lo = $script:LanguageOptions[$li]
+                    $num = '{0,3}' -f ($li + 1)
+                    $indicator = if ($lo.Code -eq $language) { ' ◄' } else { '' }
+                    Write-Host "   $num. $($lo.Code.PadRight(8)) $($lo.Label)$indicator" -ForegroundColor White
+                }
+                Write-Host "     O. Other (enter manually)" -ForegroundColor DarkGray
+                Write-Host ''
+                $langChoice = Read-Host "  ${script:AnsiCyan}›${script:AnsiReset} Enter number or O"
+                $langChoice = $langChoice.Trim()
+                if ($langChoice -match '^[Oo]$') {
+                    $newLang = Read-Host '  Enter language code (e.g. pt-pt, ar-sa, th-th)'
+                    $newLang = $newLang.Trim().ToLower()
+                    if ($newLang -match '^[a-z]{2,3}-[a-z]{2}$') {
+                        $language = $newLang
+                    } else {
+                        Write-Warn "Invalid language code format. Expected pattern: xx-xx (e.g. en-us)"
+                        if ($supportsRawKey) { Start-Sleep -Milliseconds 800 }
+                    }
+                } elseif ($langChoice -match '^\d+$') {
+                    $langIdx = [int]$langChoice - 1
+                    if ($langIdx -ge 0 -and $langIdx -lt $script:LanguageOptions.Count) {
+                        $language = $script:LanguageOptions[$langIdx].Code
+                    } else {
+                        Write-Warn "Invalid selection. Enter 1-$($script:LanguageOptions.Count) or O."
+                        if ($supportsRawKey) { Start-Sleep -Milliseconds 800 }
+                    }
                 }
             }
             'D' {
@@ -746,11 +986,13 @@ function Show-BuildConfiguration {
                     }
                     $extraDriverPaths.Add($driverPath)
                     Write-Success "Added driver path: $driverPath"
+                    if ($supportsRawKey) { Start-Sleep -Milliseconds 800 }
                 }
             }
             'R' {
                 if ($extraDriverPaths.Count -eq 0) {
                     Write-Warn 'No extra driver paths to remove.'
+                    if ($supportsRawKey) { Start-Sleep -Milliseconds 800 }
                 } else {
                     for ($j = 0; $j -lt $extraDriverPaths.Count; $j++) {
                         Write-Host "    $($j + 1). $($extraDriverPaths[$j])"
@@ -783,12 +1025,17 @@ function Show-BuildConfiguration {
         if ($selected[$i]) { $selectedPkgs += $script:AvailableWinPEPackages[$i].Name }
     }
 
-    return @{
+    $result = @{
         Language         = $language
         Packages         = $selectedPkgs
         InjectVirtIO     = $injectVirtIO
         ExtraDriverPaths = @($extraDriverPaths)
     }
+
+    # Persist the configuration for next time
+    Save-BuildConfiguration -Config $result
+
+    return $result
 }
 
 function Remove-WinRERecoveryPackage {
@@ -2219,13 +2466,23 @@ try {
     if ($cloudImage) {
         $cloudSizeMB = '{0:N0}' -f ($cloudImage.BootWimSize / 1MB)
         Write-Host ''
-        Write-Host '  A pre-built boot image is available on GitHub.' -ForegroundColor Green
-        Write-Host "  Published : $($cloudImage.PublishedAt)"         -ForegroundColor Gray
-        Write-Host "  Size      : $cloudSizeMB MB"                   -ForegroundColor Gray
+        Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
+        Write-Host '  ║         Cloud Boot Image Available                       ║' -ForegroundColor Cyan
+        Write-Host '  ╚════════════════════════════════════════════════════════════╝' -ForegroundColor Cyan
         Write-Host ''
-        Write-Host '  [1] Use the cloud image (faster — skips ADK install and image build)' -ForegroundColor White
-        Write-Host '  [2] Rebuild locally'                                                  -ForegroundColor White
-        $choice = Read-Host "`n  Enter choice (1 or 2) [default: 1]"
+        Write-Host "    Published : $($cloudImage.PublishedAt)"  -ForegroundColor White
+        Write-Host "    Size      : $cloudSizeMB MB"            -ForegroundColor White
+        Write-Host "    Source    : $GitHubUser/$GitHubRepo"     -ForegroundColor White
+        Write-Host ''
+        Write-Host '    [1] Use the cloud image (faster — skips ADK install and image build)' -ForegroundColor Green
+        Write-Host '    [2] Rebuild locally'                                                  -ForegroundColor DarkGray
+        Write-Host ''
+        if ($AcceptDefaults) {
+            $choice = '1'
+            Write-Step 'AcceptDefaults: using cloud image.'
+        } else {
+            $choice = Read-Host "  ${script:AnsiCyan}›${script:AnsiReset} Enter choice (1 or 2) [default: 1]"
+        }
         if ($choice -ne '2') { $useCloud = $true }
     }
 
@@ -2277,7 +2534,21 @@ try {
         $adkRoot = Assert-ADKInstalled -Architecture $arch
 
         # ── 1b. Show configuration menu (preselected defaults) ────────────────
-        $buildConfig = Show-BuildConfiguration -Architecture $arch
+        if ($AcceptDefaults) {
+            Write-Step 'AcceptDefaults: using default build configuration.'
+            $selectedPkgs = @()
+            foreach ($pkg in $script:AvailableWinPEPackages) {
+                if ($pkg.Default) { $selectedPkgs += $pkg.Name }
+            }
+            $buildConfig = @{
+                Language         = $script:DefaultLanguage
+                Packages         = $selectedPkgs
+                InjectVirtIO     = $true
+                ExtraDriverPaths = @()
+            }
+        } else {
+            $buildConfig = Show-BuildConfiguration -Architecture $arch
+        }
 
         # ── 2. Boot image (WinRE preferred, WinPE fallback) ──────────────────
         $paths = Build-WinPE `
@@ -2294,26 +2565,40 @@ try {
             -ExtraDriverPaths  $buildConfig.ExtraDriverPaths
 
         # ── 2b. Offer to upload boot image to GitHub ─────────────────────────
-        Write-Host ''
-        $uploadChoice = Read-Host '  Upload this boot image to GitHub for future use? (y/N)'
-        if ($uploadChoice -match '^[Yy]') {
-            $tokenSecure = Read-Host '  GitHub Personal Access Token (repo scope)' -AsSecureString
-            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($tokenSecure)
-            try {
-                $tokenPlain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-                $sdiPath = Join-Path $paths.MediaDir 'boot\boot.sdi'
-                Publish-BootImage `
-                    -GitHubUser  $GitHubUser `
-                    -GitHubRepo  $GitHubRepo `
-                    -GitHubToken $tokenPlain `
-                    -BootWimPath $paths.BootWim `
-                    -BootSdiPath $sdiPath
-                Write-Success 'Boot image published to GitHub Releases.'
-            } catch {
-                Write-Warn "Upload failed (non-fatal): $_"
-            } finally {
-                $tokenPlain = $null
-                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+        if (-not $AcceptDefaults) {
+            $wimSize = if (Test-Path $paths.BootWim) {
+                '{0:N0} MB' -f ((Get-Item $paths.BootWim).Length / 1MB)
+            } else { 'unknown' }
+            Write-Host ''
+            Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
+            Write-Host '  ║         Publish Boot Image                               ║' -ForegroundColor Cyan
+            Write-Host '  ╚════════════════════════════════════════════════════════════╝' -ForegroundColor Cyan
+            Write-Host ''
+            Write-Host "    File   : $($paths.BootWim)" -ForegroundColor White
+            Write-Host "    Size   : $wimSize" -ForegroundColor White
+            Write-Host "    Target : $GitHubUser/$GitHubRepo (GitHub Releases)" -ForegroundColor White
+            Write-Host "    Scope  : PAT requires ${script:AnsiBold}repo${script:AnsiReset} scope" -ForegroundColor DarkGray
+            Write-Host ''
+            $uploadChoice = Read-Host "  ${script:AnsiCyan}›${script:AnsiReset} Upload this boot image for future use? (y/N)"
+            if ($uploadChoice -match '^[Yy]') {
+                $tokenSecure = Read-Host '  GitHub Personal Access Token' -AsSecureString
+                $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($tokenSecure)
+                try {
+                    $tokenPlain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+                    $sdiPath = Join-Path $paths.MediaDir 'boot\boot.sdi'
+                    Publish-BootImage `
+                        -GitHubUser  $GitHubUser `
+                        -GitHubRepo  $GitHubRepo `
+                        -GitHubToken $tokenPlain `
+                        -BootWimPath $paths.BootWim `
+                        -BootSdiPath $sdiPath
+                    Write-Success 'Boot image published to GitHub Releases.'
+                } catch {
+                    Write-Warn "Upload failed (non-fatal): $_"
+                } finally {
+                    $tokenPlain = $null
+                    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+                }
             }
         }
 
@@ -2327,9 +2612,12 @@ try {
     Write-Host "`n  [Nova] All done — system is primed for cloud boot." -ForegroundColor Green
 
     if (-not $NoReboot) {
-        Write-Host '  [Nova] Rebooting in 10 seconds ... Press Ctrl+C to cancel.' `
-            -ForegroundColor Yellow
-        Start-Sleep -Seconds 10
+        Write-Host '  [Nova] Press Ctrl+C to cancel reboot.' -ForegroundColor Yellow
+        10..1 | ForEach-Object {
+            Write-Host "`r  [Nova] Rebooting in $_ ... " -NoNewline -ForegroundColor Yellow
+            Start-Sleep -Seconds 1
+        }
+        Write-Host ''
         Restart-Computer -Force
     } else {
         Write-Host '  [Nova] -NoReboot specified. Reboot manually to enter the boot environment.' `
