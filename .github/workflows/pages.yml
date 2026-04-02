@@ -6,6 +6,7 @@ on:
     paths:
       - "src/web/editor/**"
       - "src/web/monitoring/**"
+      - "src/scripts/Trigger.ps1"
       - "resources/task-sequence/**"
       - "config/**"
       - "index.html"

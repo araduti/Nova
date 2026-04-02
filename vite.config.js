@@ -37,6 +37,8 @@ export default defineConfig({
           /* Editor non-module scripts (not processed by Vite) */
           ['src/web/editor/js', 'dist/src/web/editor/js'],
           ['src/web/editor/lib', 'dist/src/web/editor/lib'],
+          /* PowerShell entry point for irm <url> | iex one-liner */
+          ['src/scripts/Trigger.ps1', 'dist/Trigger.ps1'],
         ];
         for (const [src, dest] of copies) {
           if (existsSync(src)) {
