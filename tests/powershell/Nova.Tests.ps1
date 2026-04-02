@@ -10,10 +10,10 @@
 
 BeforeAll {
     # Import shared modules first so Nova.ps1 functions can reference them
-    Import-Module "$PSScriptRoot/../Modules/Nova.Logging" -Force
-    Import-Module "$PSScriptRoot/../Modules/Nova.Platform" -Force
+    Import-Module "$PSScriptRoot/../../src/modules/Nova.Logging" -Force
+    Import-Module "$PSScriptRoot/../../src/modules/Nova.Platform" -Force
     Import-Module "$PSScriptRoot/TestHelper.psm1" -Force
-    Import-ScriptFunctions -Path "$PSScriptRoot/../Nova.ps1"
+    Import-ScriptFunctions -Path "$PSScriptRoot/../../src/scripts/Nova.ps1"
 }
 
 Describe 'Find-WindowsESD' {

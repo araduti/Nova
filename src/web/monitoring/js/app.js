@@ -12,7 +12,7 @@ var REFRESH_INTERVAL = 30000; /* poll every 30 s */
 var STALE_THRESHOLD  = 4 * 60 * 60 * 1000; /* 4 hours in ms — deployments older than this are flagged stale */
 var ABANDON_THRESHOLD = 24 * 60 * 60 * 1000; /* 24 hours in ms — cached entries older than this are auto-purged */
 
-/* Entra ID → GitHub token exchange state (loaded from Config/auth.json) */
+/* Entra ID → GitHub token exchange state (loaded from config/auth.json) */
 var authConfig      = null;  /* populated by loadAuthConfig() */
 var cachedGhToken   = null;  /* GitHub token obtained via Entra exchange */
 var ghTokenExpiry   = 0;     /* Unix-ms when cachedGhToken expires */
@@ -64,7 +64,7 @@ function saveActiveDeployments(records) {
 }
 
 /* ── Auth config & Entra → GitHub token exchange ───────────────── */
-/*  Loads Config/auth.json and uses the OAuth proxy's
+/*  Loads config/auth.json and uses the OAuth proxy's
     /api/token-exchange endpoint to convert an Entra ID session
     token into a scoped GitHub installation token.  This lets the
     dashboard make authenticated GitHub API calls (5 000 req/hr)
@@ -73,7 +73,7 @@ function saveActiveDeployments(records) {
     unauthenticated reads (60 req/hr, fine for public repos).     */
 
 function loadAuthConfig() {
-    var url = 'https://raw.githubusercontent.com/' + GH_OWNER + '/' + GH_REPO + '/' + GH_BRANCH + '/Config/auth.json';
+    var url = 'https://raw.githubusercontent.com/' + GH_OWNER + '/' + GH_REPO + '/' + GH_BRANCH + '/config/auth.json';
     return fetch(url)
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (cfg) { authConfig = cfg; })
@@ -144,7 +144,7 @@ function mergeById(existing, incoming) {
 }
 
 function fetchDeploymentReports() {
-    return fetchGitHubDir('Deployments/reports').then(function (files) {
+    return fetchGitHubDir('deployments/reports').then(function (files) {
         if (!Array.isArray(files) || files.length === 0) return;
         var promises = files
             .filter(function (f) { return f.name && f.name.endsWith('.json'); })
@@ -160,7 +160,7 @@ function fetchDeploymentReports() {
 }
 
 function fetchActiveDeployments() {
-    return fetchGitHubDir('Deployments/active').then(function (files) {
+    return fetchGitHubDir('deployments/active').then(function (files) {
         if (!Array.isArray(files)) return;
         var jsonFiles = files.filter(function (f) { return f.name && f.name.endsWith('.json'); });
         if (jsonFiles.length === 0) {
@@ -680,7 +680,7 @@ function updateConfigSnippet() {
     var cfg = getAlertConfig();
     var json = JSON.stringify(cfg, null, 4);
 
-    var snippet = '# Save this as Config/alerts.json in your Nova repository.\n' +
+    var snippet = '# Save this as config/alerts.json in your Nova repository.\n' +
         '# The Nova engine reads this file to send deployment notifications.\n' +
         json;
 
@@ -811,7 +811,7 @@ var diagChecks = [
     { id: 'ghRepo',    label: 'Repository Access' },
     { id: 'ghAuth',    label: 'Authentication Status' },
     { id: 'ghRate',    label: 'API Rate Limit' },
-    { id: 'authCfg',   label: 'Auth Configuration (Config/auth.json)' },
+    { id: 'authCfg',   label: 'Auth Configuration (config/auth.json)' },
     { id: 'reportsDir', label: 'Deployment Reports Directory' },
     { id: 'activeDir', label: 'Active Deployments Directory' }
 ];
@@ -915,7 +915,7 @@ function runDiagnostics() {
         } else if (cachedGhToken && Date.now() >= ghTokenExpiry) {
             finish('ghAuth', 'warn', 'GitHub token has expired. The dashboard will use unauthenticated access (60 req/hr). Re-authenticate via Entra ID to restore higher limits.');
         } else {
-            finish('ghAuth', 'warn', 'No GitHub token available. Using unauthenticated access (60 req/hr). For higher rate limits, configure Entra ID authentication in Config/auth.json or set a GITHUB_TOKEN environment variable in the engine.');
+            finish('ghAuth', 'warn', 'No GitHub token available. Using unauthenticated access (60 req/hr). For higher rate limits, configure Entra ID authentication in config/auth.json or set a GITHUB_TOKEN environment variable in the engine.');
         }
     })();
 
@@ -949,8 +949,8 @@ function runDiagnostics() {
             finish('ghRate', 'warn', 'Could not check rate limit. Error: ' + (err.message || err));
         });
 
-    /* 5. Auth config (Config/auth.json) */
-    var authUrl = 'https://raw.githubusercontent.com/' + GH_OWNER + '/' + GH_REPO + '/' + GH_BRANCH + '/Config/auth.json';
+    /* 5. Auth config (config/auth.json) */
+    var authUrl = 'https://raw.githubusercontent.com/' + GH_OWNER + '/' + GH_REPO + '/' + GH_BRANCH + '/config/auth.json';
     fetch(authUrl)
         .then(function (r) {
             if (r.ok) {
@@ -962,9 +962,9 @@ function runDiagnostics() {
                     }
                 });
             } else if (r.status === 404) {
-                finish('authCfg', 'warn', 'Config/auth.json not found. Entra ID authentication is not configured. Dashboard will use unauthenticated GitHub access.');
+                finish('authCfg', 'warn', 'config/auth.json not found. Entra ID authentication is not configured. Dashboard will use unauthenticated GitHub access.');
             } else {
-                finish('authCfg', 'fail', 'Failed to load Config/auth.json (HTTP ' + r.status + ').');
+                finish('authCfg', 'fail', 'Failed to load config/auth.json (HTTP ' + r.status + ').');
             }
         })
         .catch(function (err) {
@@ -972,22 +972,22 @@ function runDiagnostics() {
         });
 
     /* 6. Deployment reports directory */
-    var reportsUrl = GH_API + '/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/Deployments/reports?ref=' + GH_BRANCH;
+    var reportsUrl = GH_API + '/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/deployments/reports?ref=' + GH_BRANCH;
     fetch(reportsUrl, { headers: getGitHubHeaders() })
         .then(function (r) {
             if (r.ok) {
                 return r.json().then(function (files) {
                     var jsonFiles = Array.isArray(files) ? files.filter(function (f) { return f.name && f.name.endsWith('.json'); }) : [];
                     if (jsonFiles.length > 0) {
-                        finish('reportsDir', 'pass', 'Found ' + jsonFiles.length + ' deployment report(s) in Deployments/reports/.');
+                        finish('reportsDir', 'pass', 'Found ' + jsonFiles.length + ' deployment report(s) in deployments/reports/.');
                     } else {
-                        finish('reportsDir', 'warn', 'Deployments/reports/ exists but contains no JSON files. Deployment reports will appear here after the engine completes a deployment.');
+                        finish('reportsDir', 'warn', 'deployments/reports/ exists but contains no JSON files. Deployment reports will appear here after the engine completes a deployment.');
                     }
                 });
             } else if (r.status === 404) {
-                finish('reportsDir', 'warn', 'Deployments/reports/ directory not found. This is normal if no deployment has been completed yet. The Nova engine creates this directory automatically when it pushes the first report.');
+                finish('reportsDir', 'warn', 'deployments/reports/ directory not found. This is normal if no deployment has been completed yet. The Nova engine creates this directory automatically when it pushes the first report.');
             } else {
-                finish('reportsDir', 'fail', 'Cannot access Deployments/reports/ (HTTP ' + r.status + '). Check repository permissions.');
+                finish('reportsDir', 'fail', 'Cannot access deployments/reports/ (HTTP ' + r.status + '). Check repository permissions.');
             }
         })
         .catch(function (err) {
@@ -995,22 +995,22 @@ function runDiagnostics() {
         });
 
     /* 7. Active deployments directory */
-    var activeUrl = GH_API + '/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/Deployments/active?ref=' + GH_BRANCH;
+    var activeUrl = GH_API + '/repos/' + GH_OWNER + '/' + GH_REPO + '/contents/deployments/active?ref=' + GH_BRANCH;
     fetch(activeUrl, { headers: getGitHubHeaders() })
         .then(function (r) {
             if (r.ok) {
                 return r.json().then(function (files) {
                     var jsonFiles = Array.isArray(files) ? files.filter(function (f) { return f.name && f.name.endsWith('.json'); }) : [];
                     if (jsonFiles.length > 0) {
-                        finish('activeDir', 'pass', 'Found ' + jsonFiles.length + ' active deployment(s) in Deployments/active/.');
+                        finish('activeDir', 'pass', 'Found ' + jsonFiles.length + ' active deployment(s) in deployments/active/.');
                     } else {
-                        finish('activeDir', 'warn', 'Deployments/active/ exists but contains no JSON files. Active deployments will appear here while devices are being imaged.');
+                        finish('activeDir', 'warn', 'deployments/active/ exists but contains no JSON files. Active deployments will appear here while devices are being imaged.');
                     }
                 });
             } else if (r.status === 404) {
-                finish('activeDir', 'warn', 'Deployments/active/ directory not found. This is normal if no deployment is in progress. The Nova engine creates this directory when a device starts imaging.');
+                finish('activeDir', 'warn', 'deployments/active/ directory not found. This is normal if no deployment is in progress. The Nova engine creates this directory when a device starts imaging.');
             } else {
-                finish('activeDir', 'fail', 'Cannot access Deployments/active/ (HTTP ' + r.status + '). Check repository permissions.');
+                finish('activeDir', 'fail', 'Cannot access deployments/active/ (HTTP ' + r.status + '). Check repository permissions.');
             }
         })
         .catch(function (err) {

@@ -5,7 +5,7 @@
 #>
 
 BeforeAll {
-    Import-Module "$PSScriptRoot/../Modules/Nova.Platform" -Force
+    Import-Module "$PSScriptRoot/../../src/modules/Nova.Platform" -Force
 
     # Stub for cross-platform CI — Confirm-SecureBootUEFI only exists on Windows
     if (-not (Get-Command Confirm-SecureBootUEFI -ErrorAction SilentlyContinue)) {

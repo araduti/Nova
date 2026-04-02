@@ -5,7 +5,7 @@
 #>
 
 BeforeAll {
-    Import-Module "$PSScriptRoot/../Modules/Nova.Logging" -Force
+    Import-Module "$PSScriptRoot/../../src/modules/Nova.Logging" -Force
 }
 
 Describe 'Write-Step' {
@@ -51,7 +51,7 @@ Describe 'Write-Fail' {
 Describe 'Set-NovaLogPrefix' {
     BeforeEach {
         # Reset to defaults
-        Import-Module "$PSScriptRoot/../Modules/Nova.Logging" -Force
+        Import-Module "$PSScriptRoot/../../src/modules/Nova.Logging" -Force
     }
 
     It 'overrides the Write-Step prefix' {

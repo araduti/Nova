@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toBase64, formatXml, validateStep, validateTaskSequence } from '../js/utils.js';
+import { toBase64, formatXml, validateStep, validateTaskSequence } from '../../src/web/editor/js/utils.js';
 
 /* ── toBase64 ────────────────────────────────────────────────────── */
 

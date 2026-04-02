@@ -4,10 +4,10 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "Editor/**"
-      - "Monitoring/**"
-      - "TaskSequence/**"
-      - "Config/**"
+      - "src/web/editor/**"
+      - "src/web/monitoring/**"
+      - "resources/task-sequence/**"
+      - "config/**"
       - "index.html"
       - "package.json"
       - "package-lock.json"

@@ -98,14 +98,14 @@ $script:EntraExchangeLastFailure = $null
 $script:GitHubTokenWarningShown = $false
 
 # ── Import shared modules ──────────────────────────────────────────────────────
-# Resolve module path: repo layout ($PSScriptRoot/Modules) or WinPE staging
+# Resolve module path: repo layout ($PSScriptRoot/../modules) or WinPE staging
 # (X:\Windows\System32\Modules — copied by Trigger.ps1 during image build).
-$script:ModulesRoot = if (Test-Path "$PSScriptRoot\Modules") {
-    "$PSScriptRoot\Modules"
+$script:ModulesRoot = if (Test-Path "$PSScriptRoot\..\modules") {
+    "$PSScriptRoot\..\modules"
 } elseif (Test-Path 'X:\Windows\System32\Modules') {
     'X:\Windows\System32\Modules'
 } else {
-    "$PSScriptRoot\Modules"   # Best-effort fallback
+    "$PSScriptRoot\..\modules"   # Best-effort fallback
 }
 Import-Module "$script:ModulesRoot\Nova.Logging" -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Platform" -Force -ErrorAction Stop
@@ -246,7 +246,7 @@ function Send-DeploymentAlert {
     <#
     .SYNOPSIS  Sends deployment notifications via Teams, Slack, or email.
     .DESCRIPTION
-        Reads Config/alerts.json from the GitHub repository (or local path)
+        Reads config/alerts.json from the GitHub repository (or local path)
         and sends a notification for the given deployment event.  Supports
         Microsoft Teams (Incoming Webhook), Slack (Incoming Webhook), and
         email via SMTP (Send-MailMessage).
@@ -274,7 +274,7 @@ function Send-DeploymentAlert {
             $cfg = Get-Content $AlertConfigPath -Raw | ConvertFrom-Json
         } else {
             # Try fetching from GitHub repo
-            $cfgUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/alerts.json"
+            $cfgUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/alerts.json"
             $cfgJson = Invoke-RestMethod -Uri $cfgUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
             $cfg = $cfgJson
         }
@@ -390,17 +390,17 @@ function Get-GitHubTokenViaEntra {
         return $null
     }
 
-    # ── Resolve the OAuth proxy URL from Config/auth.json ──────────
+    # ── Resolve the OAuth proxy URL from config/auth.json ──────────
     $proxyUrl = $null
     try {
-        $cfgUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/auth.json"
+        $cfgUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/auth.json"
         $cfg = Invoke-RestMethod -Uri $cfgUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
         $proxyUrl = $cfg.githubOAuthProxy
     } catch {
         Write-Warning "Could not load auth config for Entra exchange: $_"
     }
     if (-not $proxyUrl) {
-        Write-Warning "No githubOAuthProxy URL in Config/auth.json — cannot exchange Entra token for GitHub token."
+        Write-Warning "No githubOAuthProxy URL in config/auth.json — cannot exchange Entra token for GitHub token."
         return $null
     }
 
@@ -475,7 +475,7 @@ function Push-ReportToGitHub {
           1. -Token parameter (explicit)
           2. $env:GITHUB_TOKEN (classic PAT — backward compatible)
           3. Entra ID exchange — if $env:NOVA_GRAPH_TOKEN is set and the
-             OAuth proxy (from Config/auth.json) is configured, the Entra
+             OAuth proxy (from config/auth.json) is configured, the Entra
              token is exchanged for a short-lived GitHub installation token.
              This is the recommended path: no separate GitHub PAT required.
 

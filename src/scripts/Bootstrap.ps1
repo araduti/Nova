@@ -41,12 +41,12 @@ $null = Start-Transcript -Path $LogPath -Append -Force -ErrorAction SilentlyCont
 $script:AuthLogPath = "X:\Nova-Auth.log"
 
 # ── Import shared modules ──────────────────────────────────────────────────────
-$script:ModulesRoot = if (Test-Path "$PSScriptRoot\Modules") {
-    "$PSScriptRoot\Modules"
+$script:ModulesRoot = if (Test-Path "$PSScriptRoot\..\modules") {
+    "$PSScriptRoot\..\modules"
 } elseif (Test-Path 'X:\Windows\System32\Modules') {
     'X:\Windows\System32\Modules'
 } else {
-    "$PSScriptRoot\Modules"   # Best-effort fallback
+    "$PSScriptRoot\..\modules"   # Best-effort fallback
 }
 Import-Module "$script:ModulesRoot\Nova.Network" -Force -ErrorAction Stop
 
@@ -152,14 +152,14 @@ function Update-HtmlUi {
 #region ── Language System───────────────────────────────────────────────────
 $script:Lang = 'EN'
 
-# Locale strings are loaded from Config/locale/<lang>.json.  The function
+# Locale strings are loaded from config/locale/<lang>.json.  The function
 # below downloads a locale file from the GitHub repository (same pattern used
 # for auth.json), converts it to a hashtable, and normalizes \n escape
 # sequences into real newlines so WinForms labels render them correctly.
 function Import-LocaleJson {
     param([string]$LangCode)
     $code = $LangCode.ToLower()
-    $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/locale/$code.json"
+    $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/locale/$code.json"
     try {
         $wc   = New-Object System.Net.WebClient
         try {
@@ -722,7 +722,7 @@ function Show-ConfigurationMenu {
     try {
         $tsPath = Join-Path $scratchPath 'tasksequence.json'
         if (-not (Test-Path $tsPath)) {
-            $tsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/TaskSequence/default.json"
+            $tsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/task-sequence/default.json"
             $wc2 = New-Object System.Net.WebClient
             $wc2.DownloadFile($tsUrl, $tsPath)
         }
@@ -1312,7 +1312,7 @@ function Invoke-M365Auth {
     <#
     .SYNOPSIS  Authenticate the operator via M365 (kiosk browser, Device Code fallback).
     .DESCRIPTION
-        Downloads Config/auth.json from the GitHub repository.  When
+        Downloads config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
         first attempts interactive sign-in by navigating the existing
         kiosk Edge browser to Azure AD (Authorization Code Flow with
@@ -1327,7 +1327,7 @@ function Invoke-M365Auth {
     #>
 
     # ── Fetch auth configuration from the repository ────────────────────────
-    $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/auth.json"
+    $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/auth.json"
     $authConfig    = $null
     try {
         $wc      = New-Object System.Net.WebClient
@@ -1421,7 +1421,7 @@ function ProceedToEngine {
     Invoke-Sound 900 300
 
     # ── M365 authentication gate ────────────────────────────────────────────
-    # When Config/auth.json has requireAuth = true, the operator must sign in
+    # When config/auth.json has requireAuth = true, the operator must sign in
     # with a Microsoft 365 account from an allowed Entra ID tenant.
     # Tenant restrictions are enforced at the app registration level.
     # Navigates the kiosk Edge to Azure AD (Auth Code + PKCE) as
@@ -1456,7 +1456,7 @@ function ProceedToEngine {
     try {
         $localNova = Join-Path $env:SystemRoot 'System32\Nova.ps1'
         if (-not (Test-Path $localNova)) {
-            $url    = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Nova.ps1"
+            $url    = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/scripts/Nova.ps1"
             $localNova = 'X:\Nova.ps1'
             Write-Status ($S.Download -f 0)
             $web = New-Object System.Net.WebClient
@@ -1477,17 +1477,17 @@ function ProceedToEngine {
             # This detects corruption and CDN inconsistencies but does not protect
             # against a compromised repository.  For tamper protection, the manifest
             # would need to be cryptographically signed or hosted separately.
-            $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/hashes.json"
+            $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
             try {
                 $manifest = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
             } catch {
                 Remove-Item $localNova -Force -ErrorAction SilentlyContinue
                 throw "Integrity check FAILED — could not download hash manifest from $hashesUrl : $_"
             }
-            $expected = $manifest.files.'Nova.ps1'
+            $expected = $manifest.files.'src/scripts/Nova.ps1'
             if (-not $expected) {
                 Remove-Item $localNova -Force -ErrorAction SilentlyContinue
-                throw "Integrity check FAILED — no Nova.ps1 entry in hash manifest"
+                throw "Integrity check FAILED — no src/scripts/Nova.ps1 entry in hash manifest"
             }
             $actual = [System.BitConverter]::ToString(
                 [System.Security.Cryptography.SHA256]::Create().ComputeHash(

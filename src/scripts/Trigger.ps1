@@ -86,8 +86,8 @@ $script:RamdiskDir   = Join-Path $WorkDir 'Boot'
 $script:WimArchIntMap = @{ 0 = 'x86'; 5 = 'arm'; 9 = 'amd64'; 12 = 'arm64' }
 
 # ── Import shared modules ──────────────────────────────────────────────────────
-$script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\Modules")) {
-    "$PSScriptRoot\Modules"
+$script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\modules")) {
+    "$PSScriptRoot\..\modules"
 } elseif (Test-Path 'X:\Windows\System32\Modules') {
     'X:\Windows\System32\Modules'
 } elseif (-not $PSScriptRoot) {
@@ -99,7 +99,7 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\Modules")
         $modDir = Join-Path $tmpModRoot $mod
         $null = New-Item -Path $modDir -ItemType Directory -Force
         foreach ($ext in $moduleExts) {
-            $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Modules/$mod/$mod$ext"
+            $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/modules/$mod/$mod$ext"
             $dest = Join-Path $modDir "$mod$ext"
             try {
                 Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
@@ -110,7 +110,7 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\Modules")
     }
     $tmpModRoot
 } else {
-    "$PSScriptRoot\Modules"   # Best-effort fallback
+    "$PSScriptRoot\..\modules"   # Best-effort fallback
 }
 Import-Module "$script:ModulesRoot\Nova.Logging" -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Platform" -Force -ErrorAction Stop
@@ -123,7 +123,7 @@ function Confirm-FileIntegrity {
     .SYNOPSIS  Verifies a downloaded file against its expected SHA256 hash.
     .DESCRIPTION
         Compares the SHA256 hash of the specified local file against the expected
-        value from the hash manifest (Config/hashes.json).  On mismatch the file
+        value from the hash manifest (config/hashes.json).  On mismatch the file
         is deleted and an exception is thrown.  If the manifest cannot be loaded
         or the file has no hash entry, the check fails closed (throws) to prevent
         execution of unverified code.
@@ -159,7 +159,7 @@ function Confirm-FileIntegrity {
 
     # Load manifest if not supplied — fail closed if unavailable
     if (-not $HashesJson) {
-        $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/hashes.json"
+        $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
         try {
             $HashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
         } catch {
@@ -172,7 +172,7 @@ function Confirm-FileIntegrity {
     if (-not $expected) {
         Remove-Item $Path -Force -ErrorAction SilentlyContinue
         throw "Integrity check FAILED for $RelativeName — no hash entry found in manifest. " +
-              "Ensure Config/hashes.json contains an entry for '$RelativeName'."
+              "Ensure config/hashes.json contains an entry for '$RelativeName'."
     }
 
     $actual = (Get-FileHash -Path $Path -Algorithm SHA256).Hash
@@ -1017,14 +1017,14 @@ function Build-WinPE {
         # QEMU-based VMs (e.g. UTM on macOS) present a VirtIO network adapter.
         # WinPE/WinRE has no VirtIO driver by default, so the adapter is invisible
         # and networking never starts.  The pre-extracted netkvm driver files live
-        # in Drivers/NetKVM/w10/<arch>/ in the repo — fetched directly from GitHub,
+        # in resources/drivers/NetKVM/w10/<arch>/ in the repo — fetched directly from GitHub,
         # no ISO download required.
         # ARM is not supported — only amd64 and x86 driver folders are used.
         if ($InjectVirtIO) {
             $virtioArchMap = @{ amd64 = 'amd64'; x86 = 'x86' }
             $virtioArch    = $virtioArchMap[$Architecture]
             if ($virtioArch) {
-                $driverRepoPath = "Drivers/NetKVM/w10/$virtioArch"
+                $driverRepoPath = "resources/drivers/NetKVM/w10/$virtioArch"
                 $apiUrl         = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/$driverRepoPath`?ref=$GitHubBranch"
                 $driverTmpDir   = Join-Path $env:TEMP "nova_netkvm_$([System.Guid]::NewGuid().ToString('N'))"
                 Write-Step "Fetching VirtIO netkvm driver from repo ($driverRepoPath)..."
@@ -1167,7 +1167,7 @@ function Build-WinPE {
         }
 
         # ── 4f. Stage Autopilot tools for API-based device import ─────────────
-        # When autopilotImport is enabled in Config/auth.json, the Autopilot
+        # When autopilotImport is enabled in config/auth.json, the Autopilot
         # tools (oa3tool.exe, PCPKsp.dll, OA3.cfg, Invoke-ImportAutopilot.ps1,
         # Utils.ps1) are staged into the WinPE image so that Bootstrap.ps1 can
         # register the device in Autopilot via the Microsoft Graph API using
@@ -1195,7 +1195,7 @@ function Build-WinPE {
             # matching the pattern used for Bootstrap.ps1 and Nova.ps1 above.
             $null = New-Item -Path $customDest -ItemType Directory -Force
             foreach ($f in $autopilotFiles) {
-                $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Autopilot/$f"
+                $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/autopilot/$f"
                 $dest = Join-Path $customDest $f
                 try {
                     Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
@@ -1217,7 +1217,7 @@ function Build-WinPE {
         # This detects corruption and CDN inconsistencies but does not protect
         # against a compromised repository.  For tamper protection, the manifest
         # would need to be cryptographically signed or hosted separately.
-        $hashesUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/hashes.json"
+        $hashesUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
         $hashesJson = $null
         try {
             $hashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
@@ -1227,29 +1227,29 @@ function Build-WinPE {
         }
 
         # ── 5a. Embed Bootstrap.ps1 ───────────────────────────────────────────
-        $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Bootstrap.ps1"
+        $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/scripts/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
         Write-Step "Fetching Bootstrap.ps1 from $bootstrapUrl"
         Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing
-        Confirm-FileIntegrity -Path $bootstrapDest -RelativeName 'Bootstrap.ps1' -HashesJson $hashesJson
+        Confirm-FileIntegrity -Path $bootstrapDest -RelativeName 'src/scripts/Bootstrap.ps1' -HashesJson $hashesJson
 
         # ── 5b. Pre-stage Nova.ps1 ──────────────────────────────────────
         # Embedding Nova.ps1 eliminates the internet dependency at boot time.
         # Bootstrap.ps1 will use this local copy instead of downloading it.
-        $novaUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Nova.ps1"
+        $novaUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/scripts/Nova.ps1"
         $novaDest = Join-Path $paths.MountDir 'Windows\System32\Nova.ps1'
         Write-Step "Fetching Nova.ps1 from $novaUrl"
         Invoke-WebRequest -Uri $novaUrl -OutFile $novaDest -UseBasicParsing
-        Confirm-FileIntegrity -Path $novaDest -RelativeName 'Nova.ps1' -HashesJson $hashesJson
+        Confirm-FileIntegrity -Path $novaDest -RelativeName 'src/scripts/Nova.ps1' -HashesJson $hashesJson
 
         # ── 5c. Stage shared PowerShell modules ────────────────────────────────
-        # Copy the Modules/ directory so that Bootstrap.ps1 and Nova.ps1 can
+        # Copy the src/modules/ directory so that Bootstrap.ps1 and Nova.ps1 can
         # Import-Module from $PSScriptRoot\Modules\ inside WinPE.
         $modulesDest = Join-Path $paths.MountDir 'Windows\System32\Modules'
-        $modulesSrc  = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'Modules' } else { '' }
+        $modulesSrc  = if ($PSScriptRoot) { Join-Path $PSScriptRoot '..\modules' } else { '' }
         if ($modulesSrc -and (Test-Path $modulesSrc)) {
             Copy-Item $modulesSrc -Destination $modulesDest -Recurse -Force
-            Write-Success "Staged Modules/ directory from local repo"
+            Write-Success "Staged modules directory from local repo"
         } else {
             # iex (irm ...) scenario — download modules from GitHub
             $moduleNames = @('Nova.Logging', 'Nova.Platform', 'Nova.Network')
@@ -1259,7 +1259,7 @@ function Build-WinPE {
                 $modDir = Join-Path $modulesDest $mod
                 $null = New-Item -Path $modDir -ItemType Directory -Force
                 foreach ($ext in $moduleFiles) {
-                    $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Modules/$mod/$mod$ext"
+                    $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/modules/$mod/$mod$ext"
                     $dest = Join-Path $modDir "$mod$ext"
                     try {
                         Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
@@ -1268,7 +1268,7 @@ function Build-WinPE {
                     }
                 }
             }
-            Write-Success "Staged Modules/ directory from GitHub"
+            Write-Success "Staged modules directory from GitHub"
         }
 
         # ── 5d. Generate default background image ──────────────────────────────
@@ -1299,22 +1299,22 @@ function Build-WinPE {
         }
 
         # ── 5e. Embed HTML Progress UI ─────────────────────────────────────────
-        # Stage Progress/index.html into the WinPE image so the batch launcher
+        # Stage src/web/progress/index.html into the WinPE image so the batch launcher
         # can open it in Edge kiosk mode before PowerShell starts.  This covers
         # the screen immediately and prevents any command-prompt flash.
         $progressDest = Join-Path $paths.MountDir 'Nova\Progress'
         $null = New-Item -Path $progressDest -ItemType Directory -Force
 
-        $progressSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'Progress' } else { '' }
+        $progressSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot '..\web\progress' } else { '' }
         if ($progressSrc -and (Test-Path (Join-Path $progressSrc 'index.html'))) {
             Copy-Item -Path "$progressSrc\*" -Destination $progressDest -Recurse -Force
             Write-Success 'HTML Progress UI embedded from local repo.'
         } else {
-            $progressUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Progress/index.html"
+            $progressUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/web/progress/index.html"
             $progressFile = Join-Path $progressDest 'index.html'
             try {
                 Invoke-WebRequest -Uri $progressUrl -OutFile $progressFile -UseBasicParsing -ErrorAction Stop
-                Confirm-FileIntegrity -Path $progressFile -RelativeName 'Progress/index.html' -HashesJson $hashesJson
+                Confirm-FileIntegrity -Path $progressFile -RelativeName 'src/web/progress/index.html' -HashesJson $hashesJson
                 Write-Success 'HTML Progress UI downloaded and embedded.'
             } catch {
                 Write-Warn "HTML Progress UI not available (non-fatal): $_"
@@ -1322,22 +1322,22 @@ function Build-WinPE {
         }
 
         # ── 5f. Embed Nova-UI (main HTML UI) ──────────────────────────────
-        # Stage Nova-UI/index.html into the WinPE image so the batch
+        # Stage src/web/nova-ui/index.html into the WinPE image so the batch
         # launcher (nova-start.cmd) can open it in Edge kiosk mode at
         # boot, covering the screen before any console window is visible.
         $uiDest = Join-Path $paths.MountDir 'Nova-UI'
         $null = New-Item -Path $uiDest -ItemType Directory -Force
 
-        $uiSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'Nova-UI' } else { '' }
+        $uiSrc = if ($PSScriptRoot) { Join-Path $PSScriptRoot '..\web\nova-ui' } else { '' }
         if ($uiSrc -and (Test-Path (Join-Path $uiSrc 'index.html'))) {
             Copy-Item -Path "$uiSrc\*" -Destination $uiDest -Recurse -Force
             Write-Success 'Nova-UI embedded from local repo.'
         } else {
-            $uiUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Nova-UI/index.html"
+            $uiUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/web/nova-ui/index.html"
             $uiFile = Join-Path $uiDest 'index.html'
             try {
                 Invoke-WebRequest -Uri $uiUrl -OutFile $uiFile -UseBasicParsing -ErrorAction Stop
-                Confirm-FileIntegrity -Path $uiFile -RelativeName 'Nova-UI/index.html' -HashesJson $hashesJson
+                Confirm-FileIntegrity -Path $uiFile -RelativeName 'src/web/nova-ui/index.html' -HashesJson $hashesJson
                 Write-Success 'Nova-UI downloaded and embedded.'
             } catch {
                 Write-Warn "Nova-UI not available (non-fatal): $_"
@@ -1969,7 +1969,7 @@ function Invoke-M365DeviceCodeAuth {
     <#
     .SYNOPSIS  Authenticate the operator via an embedded WebView2 sign-in popup.
     .DESCRIPTION
-        Downloads Config/auth.json from the GitHub repository.  When
+        Downloads config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
         shows an embedded WebView2 popup with the Azure AD login page
         using the Authorization Code Flow with PKCE.  The redirect is
@@ -1989,7 +1989,7 @@ function Invoke-M365DeviceCodeAuth {
     #>
 
     # ── Fetch auth configuration from the repository ────────────────────────
-    $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/Config/auth.json"
+    $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/auth.json"
     $authConfig    = $null
     try {
         $wc      = New-Object System.Net.WebClient

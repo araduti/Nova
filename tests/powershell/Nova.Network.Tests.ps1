@@ -5,7 +5,7 @@
 #>
 
 BeforeAll {
-    Import-Module "$PSScriptRoot/../Modules/Nova.Network" -Force
+    Import-Module "$PSScriptRoot/../../src/modules/Nova.Network" -Force
 
     # Stub ipconfig for cross-platform CI
     if (-not (Get-Command ipconfig -ErrorAction SilentlyContinue)) {

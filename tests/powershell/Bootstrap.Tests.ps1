@@ -10,9 +10,9 @@
 
 BeforeAll {
     # Import shared modules first so Bootstrap.ps1 functions can reference them
-    Import-Module "$PSScriptRoot/../Modules/Nova.Network" -Force
+    Import-Module "$PSScriptRoot/../../src/modules/Nova.Network" -Force
     Import-Module "$PSScriptRoot/TestHelper.psm1" -Force
-    Import-ScriptFunctions -Path "$PSScriptRoot/../Bootstrap.ps1"
+    Import-ScriptFunctions -Path "$PSScriptRoot/../../src/scripts/Bootstrap.ps1"
 }
 
 # Additional Bootstrap.ps1-specific tests can be added here.

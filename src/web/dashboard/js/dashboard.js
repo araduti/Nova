@@ -102,9 +102,9 @@ function createNewCard() {
 /** Navigate to the Editor. */
 function openEditor(source) {
     if (source) {
-        window.location.href = 'Editor/index.html?ts=' + encodeURIComponent(source);
+        window.location.href = 'src/web/editor/index.html?ts=' + encodeURIComponent(source);
     } else {
-        window.location.href = 'Editor/index.html?new=1';
+        window.location.href = 'src/web/editor/index.html?new=1';
     }
 }
 
@@ -177,7 +177,7 @@ function loadDashboard() {
     var grid = document.getElementById('tsGrid');
     var skeleton = document.getElementById('loadingSkeleton');
 
-    fetch('TaskSequence/default.json')
+    fetch('resources/task-sequence/default.json')
         .then(function (r) {
             if (!r.ok) throw new Error(r.statusText);
             return r.json();

@@ -5,7 +5,7 @@ import { test, expect, type Page } from '@playwright/test';
  * Microsoft 365 authentication.
  */
 async function bypassAuth(page: Page) {
-  await page.route('**/Config/auth.json', (route) =>
+  await page.route('**/config/auth.json', (route) =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -21,7 +21,7 @@ async function bypassAuth(page: Page) {
 async function openEditor(page: Page, opts: { empty?: boolean } = {}) {
   await bypassAuth(page);
   const qs = opts.empty ? '?new=1' : '';
-  await page.goto(`Editor/${qs}`);
+  await page.goto(`src/web/editor/${qs}`);
   await expect(page.locator('header.toolbar')).toBeVisible();
 }
 
@@ -50,14 +50,14 @@ test.describe('Editor — Page Load', () => {
   });
 
   test('shows login overlay when auth is required', async ({ page }) => {
-    await page.route('**/Config/auth.json', (route) =>
+    await page.route('**/config/auth.json', (route) =>
       route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ requireAuth: true, clientId: 'test-id' }),
       }),
     );
-    await page.goto('Editor/');
+    await page.goto('src/web/editor/');
     // Login overlay should be visible with the sign-in button
     await expect(page.locator('#loginOverlay')).toBeVisible();
     await expect(page.locator('#btnLogin')).toBeVisible({ timeout: 10_000 });

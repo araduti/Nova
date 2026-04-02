@@ -16,7 +16,7 @@
 **Zero-media, cloud-native Windows imaging — no USB, no ISO, no PXE.**
 Stream the entire deployment engine from GitHub, reimage any PC over WiFi or Ethernet.
 
-[Quick Start](#quick-start) · [How It Works](#how-it-works) · [Task Sequence Editor](#task-sequence-editor) · [Security](#security) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
+[Quick Start](#quick-start) · [How It Works](#how-it-works) · [Task Sequence Editor](#task-sequence-editor) · [Security](#security) · [Contributing](docs/CONTRIBUTING.md) · [Changelog](docs/CHANGELOG.md)
 
 </div>
 
@@ -41,14 +41,14 @@ Nova is a **cloud-native Windows OS deployment platform** that replaces traditio
 Run this command on any Windows PC as **Administrator**:
 
 ```powershell
-irm https://raw.githubusercontent.com/araduti/Nova/main/Trigger.ps1 | iex
+irm https://raw.githubusercontent.com/araduti/Nova/main/src/scripts/Trigger.ps1 | iex
 ```
 
 Nova installs the required tools, builds a compact boot image, reboots, connects to the network, and deploys Windows — all automatically.
 
 > **Tip:** Fork the repository and point the command at your fork to use your own defaults:
 > ```powershell
-> irm https://raw.githubusercontent.com/YOURUSER/Nova/main/Trigger.ps1 | iex
+> irm https://raw.githubusercontent.com/YOURUSER/Nova/main/src/scripts/Trigger.ps1 | iex
 > ```
 
 ---
@@ -119,27 +119,27 @@ Nova operates in three stages. Each stage hands off to the next automatically.
 
 ```
 Nova/
-├── Trigger.ps1              # Stage 1 — entry point, WinPE builder
-├── Bootstrap.ps1            # Stage 2 — network, auth, engine launcher
-├── Nova.ps1                 # Stage 3 — full imaging engine
-├── Nova-UI/                 # Real-time progress UI (HTML/CSS/JS, WinPE embedded)
-├── Editor/                  # Task sequence editor (GitHub Pages SPA)
+├── src/scripts/Trigger.ps1   # Stage 1 — entry point, WinPE builder
+├── src/scripts/Bootstrap.ps1 # Stage 2 — network, auth, engine launcher
+├── src/scripts/Nova.ps1      # Stage 3 — full imaging engine
+├── src/web/nova-ui/          # Real-time progress UI (HTML/CSS/JS, WinPE embedded)
+├── src/web/editor/           # Task sequence editor (GitHub Pages SPA)
 │   ├── index.html
 │   ├── js/app.js
 │   ├── css/style.css
 │   └── lib/                 # MSAL.js (vendored)
-├── Monitoring/              # Live deployment monitoring dashboard
+├── src/web/monitoring/       # Live deployment monitoring dashboard
 │   └── index.html
-├── Config/
+├── config/
 │   ├── auth.json            # OAuth / M365 configuration
 │   ├── alerts.json          # Notification settings (Teams, Slack, email)
 │   └── locale/              # UI localization (en, es, fr)
-├── TaskSequence/
+├── resources/task-sequence/
 │   └── default.json         # Default deployment task sequence
-├── Autopilot/               # Autopilot device import utilities
-├── Drivers/                 # Bundled NetKVM drivers (Hyper-V / KVM)
-├── Unattend/                # Default unattend.xml template
-├── Progress/                # Pre-boot progress UI (WinPE embedded)
+├── resources/autopilot/      # Autopilot device import utilities
+├── resources/drivers/        # Bundled NetKVM drivers (Hyper-V / KVM)
+├── resources/unattend/       # Default unattend.xml template
+├── src/web/progress/         # Pre-boot progress UI (WinPE embedded)
 ├── oauth-proxy/             # Cloudflare Worker — GitHub OAuth CORS proxy
 │   ├── src/                 # TypeScript source (modular)
 │   │   ├── index.ts         # Worker entry point
@@ -235,7 +235,7 @@ Nova/
 
 </details>
 
-### Authentication (`Config/auth.json`)
+### Authentication (`config/auth.json`)
 
 Nova supports an optional **Microsoft 365 authentication gate** using Entra ID. When enabled, operators must sign in before deployment begins.
 
@@ -276,7 +276,7 @@ Nova supports an optional **Microsoft 365 authentication gate** using Entra ID. 
 3. **Deploy the OAuth CORS proxy** *(optional):*
    - See [`oauth-proxy/README.md`](oauth-proxy/README.md) for Cloudflare Worker deployment instructions
 
-4. **Update `Config/auth.json`** with your application and client IDs.
+4. **Update `config/auth.json`** with your application and client IDs.
 
 </details>
 
@@ -286,7 +286,7 @@ Nova supports an optional **Microsoft 365 authentication gate** using Entra ID. 
 
 Nova includes a browser-based **Task Sequence Editor** for visually creating deployment workflows — similar to SCCM/MECM task sequences.
 
-**Live editor:** [https://araduti.github.io/Nova/Editor/](https://araduti.github.io/Nova/Editor/)
+**Live editor:** [https://araduti.github.io/Nova/src/web/editor/](https://araduti.github.io/Nova/src/web/editor/)
 
 - Drag-and-drop step reordering
 - Configure each step with dedicated form fields
@@ -302,12 +302,12 @@ Nova includes a browser-based **Task Sequence Editor** for visually creating dep
 ### Fork-and-own
 
 1. **Fork** this repository
-2. Edit `Nova.ps1` defaults (image URL, Autopilot JSON, drivers, etc.)
-3. Update `Config/auth.json` with your own app registrations
+2. Edit `src/scripts/Nova.ps1` defaults (image URL, Autopilot JSON, drivers, etc.)
+3. Update `config/auth.json` with your own app registrations
 4. Run the trigger pointing at your fork:
 
 ```powershell
-irm https://raw.githubusercontent.com/YOURUSER/Nova/main/Trigger.ps1 | iex
+irm https://raw.githubusercontent.com/YOURUSER/Nova/main/src/scripts/Trigger.ps1 | iex
 ```
 
 Changes to `Nova.ps1` take effect **immediately** — no rebuild cycle.

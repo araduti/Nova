@@ -71,7 +71,7 @@ jobs:
         run: |
           Import-Module Pester -RequiredVersion 5.7.1
           $config = New-PesterConfiguration
-          $config.Run.Path = './Tests'
+          $config.Run.Path = './tests/powershell'
           $config.Output.Verbosity = 'Detailed'
           $config.TestResult.Enabled = $true
           $config.TestResult.OutputPath = 'testResults.xml'
@@ -86,7 +86,7 @@ jobs:
       - name: Validate Config/hashes.json
         shell: pwsh
         run: |
-          $manifest = Get-Content 'Config/hashes.json' -Raw | ConvertFrom-Json
+          $manifest = Get-Content 'config/hashes.json' -Raw | ConvertFrom-Json
           $failed = @()
           foreach ($entry in $manifest.files.PSObject.Properties) {
             $file = $entry.Name

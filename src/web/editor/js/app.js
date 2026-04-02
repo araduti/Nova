@@ -1560,7 +1560,7 @@ document.getElementById('btnSave').addEventListener('click', async () => {
 
     try {
         const json = JSON.stringify(taskSequence, null, 2) + '\n';
-        const path = 'TaskSequence/default.json';
+        const path = 'resources/task-sequence/default.json';
         const apiBase = 'https://api.github.com/repos/' + encodeURIComponent(githubConfig.owner) + '/' + encodeURIComponent(githubConfig.repo) + '/contents/' + path;
         const headers = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github.v3+json' };
 
@@ -2569,7 +2569,7 @@ function loadDefault() {
                     captureSnapshot();
                     renderStepList();
                     selectStep(selectedIndex);
-                    fetch('../Unattend/unattend.xml')
+                    fetch('../../../resources/unattend/unattend.xml')
                         .then(function (r) { if (!r.ok) throw new Error(r.statusText); return r.text(); })
                         .then(function (xml) {
                             defaultUnattendXml = xml;
@@ -2602,7 +2602,7 @@ function loadDefault() {
         renderStepList();
         selectStep(-1);
         /* Still fetch the default unattend.xml for the Reset button */
-        fetch('../Unattend/unattend.xml')
+        fetch('../../../resources/unattend/unattend.xml')
             .then(function (r) { if (!r.ok) throw new Error(r.statusText); return r.text(); })
             .then(function (xml) {
                 defaultUnattendXml = xml;
@@ -2622,7 +2622,7 @@ function loadDefault() {
                 var data = JSON.parse(stored);
                 if (data.steps && Array.isArray(data.steps)) {
                     /* Also fetch the default unattend.xml */
-                    fetch('../Unattend/unattend.xml')
+                    fetch('../../../resources/unattend/unattend.xml')
                         .then(function (r) { if (!r.ok) throw new Error(r.statusText); return r.text(); })
                         .catch(function () { return ''; })
                         .then(function (xml) {
@@ -2646,11 +2646,11 @@ function loadDefault() {
         }
     }
 
-    /* Default: load from TaskSequence/default.json */
+    /* Default: load from resources/task-sequence/default.json */
     Promise.all([
-        fetch('../TaskSequence/default.json')
+        fetch('../../../resources/task-sequence/default.json')
             .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); }),
-        fetch('../Unattend/unattend.xml')
+        fetch('../../../resources/unattend/unattend.xml')
             .then(r => { if (!r.ok) throw new Error(r.statusText); return r.text(); })
             .catch(() => '')
     ]).then(([data, xml]) => {
@@ -2718,7 +2718,7 @@ function updateBreadcrumb(name) {
     }
 
     /* Fetch auth config from the repository. */
-    fetch('../Config/auth.json')
+    fetch('../../../config/auth.json')
         .then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); })
         .then(config => {
             /* Store GitHub repo info for Save-to-repo feature */

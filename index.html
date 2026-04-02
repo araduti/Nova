@@ -6,7 +6,7 @@
     <meta http-equiv="Content-Security-Policy"
           content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'">
     <title>Nova — Task Sequence Dashboard</title>
-    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="src/web/dashboard/css/dashboard.css">
 </head>
 <body>
 
@@ -20,7 +20,7 @@
             <span class="dash-subtitle">Task Sequence Dashboard</span>
         </div>
         <div class="dash-header-right">
-            <a href="Monitoring/" class="dash-btn" title="View deployment monitoring dashboard">
+            <a href="src/web/monitoring/" class="dash-btn" title="View deployment monitoring dashboard">
                 &#128200; Monitoring
             </a>
             <button id="btnImport" class="dash-btn" title="Import a task sequence JSON file">
@@ -60,6 +60,6 @@
     <!-- Hidden file input for import -->
     <input type="file" id="fileInput" accept=".json">
 
-    <script type="module" src="js/dashboard.js"></script>
+    <script type="module" src="src/web/dashboard/js/dashboard.js"></script>
 </body>
 </html>

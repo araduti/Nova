@@ -46,7 +46,7 @@ jobs:
         run: |
           Import-Module Pester -RequiredVersion 5.7.1
           $config = New-PesterConfiguration
-          $config.Run.Path = './Tests'
+          $config.Run.Path = './tests/powershell'
           $config.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $config
 
@@ -54,7 +54,7 @@ jobs:
         id: notes
         run: |
           # Extract the first version section from CHANGELOG.md
-          awk '/^## \[/{if(found) exit; found=1; next} found' CHANGELOG.md > /tmp/release-notes.md
+          awk '/^## \[/{if(found) exit; found=1; next} found' docs/CHANGELOG.md > /tmp/release-notes.md
           echo "Release notes extracted"
 
       - name: Create GitHub Release
