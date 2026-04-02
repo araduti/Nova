@@ -41,6 +41,12 @@ Nova is a **cloud-native Windows OS deployment platform** that replaces traditio
 Run this command on any Windows PC as **Administrator**:
 
 ```powershell
+irm https://araduti.github.io/Nova/Trigger.ps1 | iex
+```
+
+Or use the raw GitHub URL:
+
+```powershell
 irm https://raw.githubusercontent.com/araduti/Nova/main/src/scripts/Trigger.ps1 | iex
 ```
 
