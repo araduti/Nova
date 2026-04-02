@@ -627,11 +627,20 @@ $script:LanguageOptions = @(
 )
 
 # ANSI escape sequences for styled prompt (PS 5.1+ with VT support).
-$script:ESC       = [char]0x1B
-$script:AnsiCyan  = "${script:ESC}[36;1m"
-$script:AnsiReset = "${script:ESC}[0m"
-$script:AnsiDim   = "${script:ESC}[90m"
-$script:AnsiBold  = "${script:ESC}[1m"
+$script:ESC              = [char]0x1B
+$script:AnsiCyan         = "${script:ESC}[36;1m"
+$script:AnsiReset        = "${script:ESC}[0m"
+$script:AnsiDim          = "${script:ESC}[90m"
+$script:AnsiBold         = "${script:ESC}[1m"
+$script:AnsiReverse      = "${script:ESC}[7m"
+$script:AnsiCursorHome   = "${script:ESC}[H"
+$script:AnsiClearScreen  = "${script:ESC}[2J"
+
+# Virtual-key codes used by ReadKey-based navigation.
+$script:VK_ENTER = 13
+$script:VK_SPACE = 32
+$script:VK_UP    = 38
+$script:VK_DOWN  = 40
 
 # Spinner frames for long-running operations (Braille dot pattern).
 $script:SpinnerFrames = @('⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏')
@@ -650,7 +659,8 @@ function Invoke-WithSpinner {
         [Parameter(Mandatory)] [scriptblock] $ScriptBlock
     )
 
-    $supportsVT = $Host.UI.SupportsVirtualTerminal -or $env:WT_SESSION
+    $supportsVT = ($null -ne $Host.UI.psobject.Properties['SupportsVirtualTerminal'] -and
+                   $Host.UI.SupportsVirtualTerminal) -or $env:WT_SESSION
     if (-not $supportsVT) {
         Write-Step $Message
         & $ScriptBlock
@@ -793,8 +803,12 @@ function Show-BuildConfiguration {
     }
 
     # ── Detect VT/ANSI support for single-keypress input ─────────────────────
-    $supportsVT = $Host.UI.SupportsVirtualTerminal -or $env:WT_SESSION
-    $supportsRawKey = $Host.UI.RawUI -and ($Host.Name -ne 'Visual Studio Code Host')
+    $supportsVT = ($null -ne $Host.UI.psobject.Properties['SupportsVirtualTerminal'] -and
+                   $Host.UI.SupportsVirtualTerminal) -or $env:WT_SESSION
+    # ReadKey requires a RawUI host — exclude known non-console hosts
+    $supportsRawKey = $Host.UI.RawUI -and ($Host.Name -notin @(
+        'Visual Studio Code Host', 'Windows PowerShell ISE Host'
+    ))
 
     # Cursor index for arrow-key navigation (0-based over all navigable items).
     # Items: 0..(pkgCount-1) = packages, pkgCount = VirtIO
@@ -805,7 +819,7 @@ function Show-BuildConfiguration {
         # ── Draw menu ────────────────────────────────────────────────────────
         if ($supportsVT) {
             # Move cursor to top-left and clear screen without flicker
-            Write-Host "$script:ESC[H$script:ESC[2J" -NoNewline
+            Write-Host "${script:AnsiCursorHome}${script:AnsiClearScreen}" -NoNewline
         } else {
             Clear-Host
         }
@@ -829,7 +843,7 @@ function Show-BuildConfiguration {
             $isHighlighted = ($i -eq $cursorIndex)
             if ($isHighlighted -and $supportsVT) {
                 $color = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
-                Write-Host "  ${script:ESC}[7m  [$mark] $num. $padName $($pkg.Description)$tag  ${script:AnsiReset}" -ForegroundColor $color
+                Write-Host "  ${script:AnsiReverse}  [$mark] $num. $padName $($pkg.Description)$tag  ${script:AnsiReset}" -ForegroundColor $color
             } else {
                 $color = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
                 Write-Host "    [$mark] $num. $padName $($pkg.Description)$tag" -ForegroundColor $color
@@ -843,7 +857,7 @@ function Show-BuildConfiguration {
         $vColor = if ($injectVirtIO) { 'Green' } else { 'DarkGray' }
         $isHighlighted = ($cursorIndex -eq $pkgCount)
         if ($isHighlighted -and $supportsVT) {
-            Write-Host "  ${script:ESC}[7m  [$vMark]  V. VirtIO network driver (netkvm)  ${script:AnsiReset}" -ForegroundColor $vColor
+            Write-Host "  ${script:AnsiReverse}  [$vMark]  V. VirtIO network driver (netkvm)  ${script:AnsiReset}" -ForegroundColor $vColor
         } else {
             Write-Host "    [$vMark]  V. VirtIO network driver (netkvm)" -ForegroundColor $vColor
         }
@@ -872,9 +886,9 @@ function Show-BuildConfiguration {
             $ch  = $key.Character
 
             # Arrow keys
-            if ($vk -eq 38) { $cursorIndex = [Math]::Max(0, $cursorIndex - 1); continue }          # Up
-            if ($vk -eq 40) { $cursorIndex = [Math]::Min($totalItems - 1, $cursorIndex + 1); continue } # Down
-            if ($vk -eq 32) {
+            if ($vk -eq $script:VK_UP)   { $cursorIndex = [Math]::Max(0, $cursorIndex - 1); continue }
+            if ($vk -eq $script:VK_DOWN) { $cursorIndex = [Math]::Min($totalItems - 1, $cursorIndex + 1); continue }
+            if ($vk -eq $script:VK_SPACE) {
                 # Space — toggle highlighted item
                 if ($cursorIndex -lt $pkgCount) {
                     if ($script:AvailableWinPEPackages[$cursorIndex].Required -and $selected[$cursorIndex]) {
@@ -890,7 +904,7 @@ function Show-BuildConfiguration {
             }
 
             # Enter — accept
-            if ($vk -eq 13) { $cmd = '' }
+            if ($vk -eq $script:VK_ENTER) { $cmd = '' }
             else { $cmd = "$ch".Trim() }
         } else {
             $menuChoice = Read-Host "  ${script:AnsiCyan}›${script:AnsiReset}"
