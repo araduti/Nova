@@ -6,9 +6,9 @@ import { cpSync, existsSync } from 'fs';
  * Vite configuration for Nova web UIs.
  *
  * Builds the Editor, Monitoring, and root dashboard pages for GitHub
- * Pages deployment.  Static config/data files (Config/, TaskSequence/,
- * Unattend/) are copied to the output directory so runtime `fetch()`
- * calls resolve correctly.
+ * Pages deployment.  Static config/data files (config/, resources/)
+ * are copied to the output directory so runtime `fetch()` calls
+ * resolve correctly.
  *
  * NOTE: Nova-UI and Progress are embedded into WinPE by Trigger.ps1
  * and run offline — they are NOT part of this build.
@@ -20,8 +20,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, 'index.html'),
-        editor: resolve(__dirname, 'Editor/index.html'),
-        monitoring: resolve(__dirname, 'Monitoring/index.html'),
+        editor: resolve(__dirname, 'src/web/editor/index.html'),
+        monitoring: resolve(__dirname, 'src/web/monitoring/index.html'),
       },
     },
   },
@@ -31,12 +31,12 @@ export default defineConfig({
       closeBundle() {
         const copies = [
           /* Runtime config fetched by JS at load time */
-          ['Config', 'dist/Config'],
-          ['TaskSequence', 'dist/TaskSequence'],
-          ['Unattend', 'dist/Unattend'],
+          ['config', 'dist/config'],
+          ['resources/task-sequence', 'dist/resources/task-sequence'],
+          ['resources/unattend', 'dist/resources/unattend'],
           /* Editor non-module scripts (not processed by Vite) */
-          ['Editor/js', 'dist/Editor/js'],
-          ['Editor/lib', 'dist/Editor/lib'],
+          ['src/web/editor/js', 'dist/src/web/editor/js'],
+          ['src/web/editor/lib', 'dist/src/web/editor/lib'],
         ];
         for (const [src, dest] of copies) {
           if (existsSync(src)) {
