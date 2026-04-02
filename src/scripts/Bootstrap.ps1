@@ -194,13 +194,13 @@ if (-not $Strings.ContainsKey('EN')) {
         Step1="Network"; Step2="Connect"; Step3="Sign in"; Step4="Deploy";
         StatusInit="Initialising network stack...";
         StatusNoNet="No wired connection detected`nTap below to join Wi-Fi";
-        Connected="Connected — verifying identity";
+        Connected="Connected - verifying identity";
         Download="Downloading Nova.ps1  ({0}%)";
         Complete="Ready to deploy";
         Reboot="Restart now"; PowerOff="Shut down"; Shell="Command prompt";
         Imaging="Imaging in progress...";
         CatalogFetch="Loading Windows catalog...";
-        CatalogFail="Could not load catalog — using default edition.";
+        CatalogFail="Could not load catalog - using default edition.";
         EditionTitle="Choose edition";
         EditionLabel="Select the Windows edition to install:";
         EditionBtn="Continue";
@@ -630,7 +630,8 @@ function Show-ConfigurationMenu {
     $defaultResult = @{ Language = 'EN'; OsLanguage = 'en-us';
                         Architecture = 'x64'; Activation = 'Retail';
                         Edition = ''; InputLocale = ''; SystemLocale = '';
-                        UserLocale = ''; UILanguage = ''; ComputerName = '' }
+                        UserLocale = ''; UILanguage = ''; ComputerName = '';
+                        TaskSequencePath = '' }
 
     # ── Download products.xml ─────────────────────────────────────────────
     Write-Status $S.CatalogFetch 'Cyan'
