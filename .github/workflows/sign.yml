@@ -1,0 +1,105 @@
+name: Sign Scripts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-signing:
+    name: Check Signing Availability
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - id: check
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          if [ -n "$AZURE_TENANT_ID" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Azure Trusted Signing secrets are not configured."
+            exit 1
+          fi
+
+  sign-scripts:
+    name: Code Signing — Azure Trusted Signing
+    needs: check-signing
+    if: needs.check-signing.outputs.available == 'true'
+    runs-on: windows-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install TrustedSigning module
+        shell: pwsh
+        run: |
+          Install-Module -Name TrustedSigning -RequiredVersion 0.5.8 -Force -Scope CurrentUser -Repository PSGallery
+
+      - name: Sign PowerShell scripts and modules
+        shell: pwsh
+        env:
+          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT_NAME }}
+          TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
+        run: |
+          $scripts = Get-ChildItem -Path . -Include '*.ps1','*.psm1' -Recurse |
+            Where-Object { $_.FullName -notmatch '[/\\]tests[/\\]' }
+
+          Write-Host "Signing all $($scripts.Count) production script(s)..."
+          foreach ($file in $scripts) {
+            Write-Host "Signing: $($file.FullName)"
+            Invoke-TrustedSigning `
+              -Endpoint $env:TRUSTED_SIGNING_ENDPOINT `
+              -CodeSigningAccountName $env:TRUSTED_SIGNING_ACCOUNT `
+              -CertificateProfileName $env:TRUSTED_SIGNING_PROFILE `
+              -Files $file.FullName `
+              -FileDigest SHA256 `
+              -TimestampRfc3161 "http://timestamp.acs.microsoft.com" `
+              -TimestampDigest SHA256
+
+            $sig = Get-AuthenticodeSignature -FilePath $file.FullName
+            if ($sig.Status -ne 'Valid') {
+              Write-Error "Signature verification failed for $($file.FullName): $($sig.Status)"
+              exit 1
+            }
+            Write-Host "  Signature valid ($($sig.SignerCertificate.Subject))"
+          }
+          Write-Host "`nAll $($scripts.Count) script(s) signed and verified successfully."
+
+      - name: Regenerate hashes for signed files
+        shell: pwsh
+        run: |
+          $manifest = Get-Content 'config/hashes.json' -Raw | ConvertFrom-Json
+          foreach ($entry in $manifest.files.PSObject.Properties) {
+            if (Test-Path $entry.Name) {
+              $hash = (Get-FileHash -Path $entry.Name -Algorithm SHA256).Hash
+              $manifest.files.($entry.Name) = $hash
+            }
+          }
+          $manifest.generated = (Get-Date -Format 'yyyy-MM-dd')
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content 'config/hashes.json' -NoNewline
+          Write-Host "Hashes regenerated for signed files."
+
+      - name: Upload signed artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-scripts
+          path: |
+            src/scripts/
+            src/modules/
+            resources/autopilot/
+            config/hashes.json
+          retention-days: 7
