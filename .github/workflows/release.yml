@@ -52,7 +52,7 @@ jobs:
 
   sign-scripts:
     name: Sign PowerShell Scripts
-    if: secrets.AZURE_TENANT_ID != ''
+    if: ${{ secrets.AZURE_TENANT_ID != '' }}
     needs: test
     runs-on: windows-latest
     permissions:
