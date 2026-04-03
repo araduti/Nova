@@ -1,11 +1,11 @@
-<#
+﻿<#
 .SYNOPSIS
     Microsoft 365 / Azure AD authentication module for Nova.
 
 .DESCRIPTION
     Provides OAuth2 Authorization Code Flow with PKCE for authenticating
     OSD operators.  Supports two modes:
-      1. Embedded WebView2 popup (preferred — no external browser needed)
+      1. Embedded WebView2 popup (preferred -- no external browser needed)
       2. Default system browser + localhost HTTP listener (fallback)
     Also includes WebView2 SDK download/caching.
 #>
@@ -75,7 +75,7 @@ function Show-WebView2AuthPopup {
     .DESCRIPTION
         Creates a WinForms dialog with an embedded WebView2 control that
         navigates to the Azure AD authorization endpoint.  The redirect is
-        intercepted via the NavigationStarting event — no HTTP listener is
+        intercepted via the NavigationStarting event -- no HTTP listener is
         needed.  Returns the authorization code on success, or $null if
         the user closed the window or an error occurred.
         Throws if the WebView2 Runtime is not installed or initialisation
@@ -113,7 +113,7 @@ function Show-WebView2AuthPopup {
     $envTask    = [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::CreateAsync(
                       $null, $userDataDir, $envOptions)
 
-    # Poll for completion — do NOT use .GetAwaiter().GetResult() as it
+    # Poll for completion -- do NOT use .GetAwaiter().GetResult() as it
     # deadlocks the WinForms message pump.
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     while (-not $envTask.IsCompleted -and $sw.ElapsedMilliseconds -lt 30000) {
@@ -128,7 +128,7 @@ function Show-WebView2AuthPopup {
 
     # ── Build the form ─────────────────────────────────────────────────────
     $form = New-Object System.Windows.Forms.Form
-    $form.Text            = 'Nova — Sign In'
+    $form.Text            = 'Nova - Sign In'
     $form.Size            = New-Object System.Drawing.Size(520, 680)
     $form.StartPosition   = 'CenterScreen'
     $form.FormBorderStyle = 'FixedDialog'
@@ -209,12 +209,12 @@ function Invoke-M365DeviceCodeAuth {
         requireAuth is true and a clientId is configured, the function
         shows an embedded WebView2 popup with the Azure AD login page
         using the Authorization Code Flow with PKCE.  The redirect is
-        intercepted inside the popup — no external browser is needed.
+        intercepted inside the popup -- no external browser is needed.
         If the WebView2 Runtime is not installed, the function falls
         back to opening the default system browser with a temporary
         localhost HTTP listener to capture the redirect.
         Tenant restrictions are enforced at the Entra ID app registration
-        level — only tenants explicitly allowed in the app's
+        level -- only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
     .PARAMETER GitHubUser   GitHub account that hosts the Nova repository.
     .PARAMETER GitHubRepo   Repository name.
@@ -251,7 +251,7 @@ function Invoke-M365DeviceCodeAuth {
 
     # Validate that the config has the minimum required fields.
     if (-not $authConfig.clientId) {
-        Write-Verbose "Auth config incomplete — skipping authentication."
+        Write-Verbose "Auth config incomplete -- skipping authentication."
         return @{ Authenticated = $true; GraphAccessToken = $null }
     }
 
@@ -260,7 +260,7 @@ function Invoke-M365DeviceCodeAuth {
     # ── Build scope string ──────────────────────────────────────────────────
     # Always include openid profile; append Graph API scopes when configured
     # (e.g. DeviceManagementServiceConfig.ReadWrite.All for Autopilot import).
-    # Delegated permissions — no client secret required.
+    # Delegated permissions -- no client secret required.
     $scope = 'openid profile'
     if ($authConfig.graphScopes) {
         $trimmed = ($authConfig.graphScopes).Trim()
@@ -281,7 +281,7 @@ function Invoke-M365DeviceCodeAuth {
 
     # ── Step 2: Try WebView2 embedded sign-in popup ────────────────────────
     # WebView2 displays the Azure AD login page directly inside a WinForms
-    # popup — no external browser window needed.  The redirect is intercepted
+    # popup -- no external browser window needed.  The redirect is intercepted
     # by a NavigationStarting handler so no HTTP listener is required either.
     # If the WebView2 Runtime is not installed or the SDK cannot be obtained,
     # the function falls back to opening the default system browser.
@@ -310,7 +310,7 @@ function Invoke-M365DeviceCodeAuth {
                         -WebView2SDKPath $wv2SdkPath
 
             # If we reach here the popup was displayed.  Don't fall back to
-            # the system browser — the user deliberately closed the popup or
+            # the system browser -- the user deliberately closed the popup or
             # an Azure AD error occurred.
             $tryBrowserFallback = $false
         }
@@ -318,7 +318,7 @@ function Invoke-M365DeviceCodeAuth {
         Write-Verbose "WebView2 sign-in unavailable: $_"
     }
 
-    # ── Step 2b: Fallback — open default browser + localhost listener ──────
+    # ── Step 2b: Fallback -- open default browser + localhost listener ──────
     if (-not $code -and $tryBrowserFallback) {
         $listener = New-Object System.Net.HttpListener
         $redirectUri = $null

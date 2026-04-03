@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     File integrity verification module for Nova scripts.
 
@@ -18,7 +18,7 @@ function Confirm-FileIntegrity {
         or the file has no hash entry, the check fails closed (throws) to prevent
         execution of unverified code.
 
-        SECURITY NOTE — The manifest is fetched from the same GitHub repository
+        SECURITY NOTE -- The manifest is fetched from the same GitHub repository
         and branch as the scripts themselves.  This means integrity verification
         detects accidental corruption and CDN/cache inconsistencies, but it does
         NOT protect against a compromised repository (an attacker who can modify
@@ -54,21 +54,21 @@ function Confirm-FileIntegrity {
         throw "File not found for integrity check: $Path"
     }
 
-    # Load manifest if not supplied — fail closed if unavailable
+    # Load manifest if not supplied -- fail closed if unavailable
     if (-not $HashesJson) {
         $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
         try {
             $HashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
         } catch {
             Remove-Item $Path -Force -ErrorAction SilentlyContinue
-            throw "Integrity check FAILED for $RelativeName — could not load hash manifest ($hashesUrl): $_"
+            throw "Integrity check FAILED for $RelativeName -- could not load hash manifest ($hashesUrl): $_"
         }
     }
 
     $expected = $HashesJson.files.$RelativeName
     if (-not $expected) {
         Remove-Item $Path -Force -ErrorAction SilentlyContinue
-        throw "Integrity check FAILED for $RelativeName — no hash entry found in manifest. " +
+        throw "Integrity check FAILED for $RelativeName -- no hash entry found in manifest. " +
               "Ensure config/hashes.json contains an entry for '$RelativeName'."
     }
 

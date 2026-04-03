@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     WinRE discovery, extraction, and preparation module for Nova.
 
@@ -111,9 +111,9 @@ function Get-WinREPathFromWindowsISO {
     .SYNOPSIS
         Downloads (when needed) a Windows ISO and extracts WinRE.wim from it.
     .DESCRIPTION
-        When the machine's local WinRE.wim cannot be used — because its CPU
+        When the machine's local WinRE.wim cannot be used -- because its CPU
         architecture differs from the build target, or because its Windows build
-        number is incompatible with the installed ADK package set — this function
+        number is incompatible with the installed ADK package set -- this function
         obtains a fresh WinRE that is guaranteed to be the correct architecture.
 
         Source selection order:
@@ -132,7 +132,7 @@ function Get-WinREPathFromWindowsISO {
         Target WinPE architecture string: amd64 or x86. ARM is not supported.
     .PARAMETER ISOUrl
         Path to a local Windows ISO file, or an HTTPS URL to download one.
-        Optional — a built-in default is tried for amd64 when omitted.
+        Optional -- a built-in default is tried for amd64 when omitted.
     .OUTPUTS  [string] Temp path to the extracted WinRE.wim.  The CALLER is
               responsible for deleting this file when it is no longer needed.
     #>
@@ -151,7 +151,7 @@ function Get-WinREPathFromWindowsISO {
     # Windows Server 2025 Evaluation (build 26100) is freely downloadable without
     # authentication and shares the same Windows build number as Windows 11 24H2,
     # making its WinRE compatible with the Windows 11 24H2 ADK package set.
-    # No publicly available evaluation ISO exists for x86 — users must
+    # No publicly available evaluation ISO exists for x86 -- users must
     # supply -WindowsISOUrl for that architecture.
     $defaultISOUrls = @{
         amd64 = 'https://go.microsoft.com/fwlink/?linkid=2271125'
@@ -178,7 +178,7 @@ function Get-WinREPathFromWindowsISO {
 
             $isoPath = Join-Path $env:TEMP `
                 "nova_win_iso_${Architecture}_$([System.Guid]::NewGuid().ToString('N')).iso"
-            Write-Step "Downloading Windows ISO for $Architecture — this file is several GB and may take a while..."
+            Write-Step "Downloading Windows ISO for $Architecture -- this file is several GB and may take a while..."
             try {
                 Invoke-WebRequest -Uri $ISOUrl -OutFile $isoPath -UseBasicParsing `
                                   -TimeoutSec 7200   # 2-hour ceiling for large ISOs
@@ -217,9 +217,9 @@ function Get-WinREPathFromWindowsISO {
         $imageIndex = (Get-WindowsImage -ImagePath $wimPath |
                         Select-Object -First 1 -ExpandProperty ImageIndex)
         if (-not $imageIndex) {
-            throw "Could not read any image index from '$wimPath' — the file may be corrupted."
+            throw "Could not read any image index from '$wimPath' -- the file may be corrupted."
         }
-        Write-Step "Mounting $(Split-Path $wimPath -Leaf) (index $imageIndex — read-only)..."
+        Write-Step "Mounting $(Split-Path $wimPath -Leaf) (index $imageIndex -- read-only)..."
         $null = Mount-WindowsImage -ImagePath $wimPath -Index $imageIndex `
                            -Path $wimMountDir -ReadOnly
         Write-Success "$(Split-Path $wimPath -Leaf) mounted."
