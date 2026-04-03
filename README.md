@@ -1,6 +1,8 @@
 <div align="center">
 
-# ☁️ **Nova** — Cloud-Native Windows OS Deployment Platform
+<img src="nova_logo.png" alt="Nova Logo" width="200" />
+
+# **Nova** — Cloud-Native Windows OS Deployment Platform
 
 ### Cloud-Native Windows OS Deployment Platform
 
