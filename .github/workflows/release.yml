@@ -87,7 +87,7 @@ jobs:
       - name: Install TrustedSigning module
         shell: pwsh
         run: |
-          Install-Module -Name TrustedSigning -RequiredVersion 0.4.1 -Force -Scope CurrentUser -Repository PSGallery
+          Install-Module -Name TrustedSigning -RequiredVersion 0.5.8 -Force -Scope CurrentUser -Repository PSGallery
 
       - name: Sign PowerShell scripts and modules
         shell: pwsh
@@ -103,7 +103,7 @@ jobs:
             Write-Host "Signing: $($file.FullName)"
             Invoke-TrustedSigning `
               -Endpoint $env:TRUSTED_SIGNING_ENDPOINT `
-              -AccountName $env:TRUSTED_SIGNING_ACCOUNT `
+              -CodeSigningAccountName $env:TRUSTED_SIGNING_ACCOUNT `
               -CertificateProfileName $env:TRUSTED_SIGNING_PROFILE `
               -Files $file.FullName `
               -FileDigest SHA256 `
