@@ -174,7 +174,7 @@ function Import-LocaleJson {
         }
         return $ht
     } catch {
-        Write-Verbose "Failed to download locale $code from $url — $_"
+        Write-Verbose "Failed to download locale $code from $url -- $_"
         return $null
     }
 }
@@ -188,7 +188,7 @@ foreach ($lc in @('EN', 'FR', 'ES')) {
 }
 
 if (-not $Strings.ContainsKey('EN')) {
-    # Minimal inline fallback — only used when the network fetch fails for EN.
+    # Minimal inline fallback -- only used when the network fetch fails for EN.
     $Strings['EN'] = @{
         Header="N O V A"; Subtitle="Cloud Imaging Engine";
         Step1="Network"; Step2="Connect"; Step3="Sign in"; Step4="Deploy";
@@ -454,7 +454,7 @@ $script:actionTimer.Start()
 
 #region ── Global F8 hotkey (works even when Edge has crashed) ────────────────
 # Register F8 as a system-wide hotkey via Win32 RegisterHotKey so users can
-# open a PowerShell troubleshooting console at any time — regardless of whether
+# open a PowerShell troubleshooting console at any time -- regardless of whether
 # Edge is responsive.  The WM_HOTKEY message is delivered to a hidden
 # NativeWindow and processed by the existing DoEvents message pump.
 try {
@@ -497,7 +497,7 @@ public class NovaHotkeyWindow : NativeWindow, IDisposable {
 
     $script:hotkeyWindow = New-Object NovaHotkeyWindow
     $script:hotkeyWindow.add_HotkeyPressed({
-        Write-Verbose 'F8 hotkey pressed — opening PowerShell'
+        Write-Verbose 'F8 hotkey pressed -- opening PowerShell'
         Start-Process $script:PsBin -ArgumentList '-NoProfile', '-NoExit'
     })
     Write-Verbose 'Global F8 hotkey registered'
@@ -524,8 +524,8 @@ public class NovaHotkeyWindow : NativeWindow, IDisposable {
 #
 # Recovery (if crash still occurs):
 #   The watchdog tracks two signals:
-#   1. Process exit  — all msedge.exe processes have terminated.
-#   2. Heartbeat loss — the HTML UI sends a /heartbeat every 10 s.
+#   1. Process exit  -- all msedge.exe processes have terminated.
+#   2. Heartbeat loss -- the HTML UI sends a /heartbeat every 10 s.
 #      If no heartbeat arrives for 30+ seconds the renderer has likely
 #      crashed while the browser chrome process may still be alive.
 #
@@ -567,7 +567,7 @@ function Restart-Edge {
     .SYNOPSIS  Kill all Edge processes and relaunch the kiosk UI.
     #>
     [CmdletBinding(SupportsShouldProcess)] param()
-    Write-Verbose 'Edge watchdog — restarting Edge'
+    Write-Verbose 'Edge watchdog -- restarting Edge'
     # Terminate every msedge process
     Get-Process -Name 'msedge' -ErrorAction SilentlyContinue |
         ForEach-Object { try { $_.Kill() } catch { $null = $_ } }
@@ -592,8 +592,8 @@ $script:edgeWatchdogTimer.Add_Tick({
     $edgeRunning = Get-Process -Name 'msedge' -ErrorAction SilentlyContinue
 
     if (-not $edgeRunning) {
-        # Edge process has exited entirely — restart it.
-        Write-Verbose 'Edge watchdog — Edge process not found'
+        # Edge process has exited entirely -- restart it.
+        Write-Verbose 'Edge watchdog -- Edge process not found'
         Restart-Edge
         return
     }
@@ -601,7 +601,7 @@ $script:edgeWatchdogTimer.Add_Tick({
     # Edge is running but the UI may be unresponsive (Error code 39 scenario).
     $heartbeatAge = ([DateTime]::UtcNow - $script:_lastHeartbeat).TotalSeconds
     if ($heartbeatAge -gt 30) {
-        Write-Verbose "Edge watchdog — heartbeat lost (${heartbeatAge}s ago)"
+        Write-Verbose "Edge watchdog -- heartbeat lost (${heartbeatAge}s ago)"
         Restart-Edge
     }
 })
@@ -666,7 +666,7 @@ function Show-ConfigurationMenu {
         return $defaultResult
     }
 
-    # Parse the catalog XML once — downstream combos filter dynamically.
+    # Parse the catalog XML once -- downstream combos filter dynamically.
     $catalog = $null
     try {
         [xml]$catalog = Get-Content $productsXml -ErrorAction Stop
@@ -861,7 +861,7 @@ function Update-TaskSequenceFromConfig {
     .DESCRIPTION
         After the user submits the configuration modal, this function updates
         the relevant step parameters in the task sequence JSON file so that
-        the engine reads all values from the task sequence — no separate
+        the engine reads all values from the task sequence -- no separate
         command-line parameters needed.
 
         ComputerName and locale settings are also injected into the
@@ -1044,7 +1044,7 @@ function Invoke-M365EdgeAuth {
         authorization code, then exchanges it for tokens using PKCE.
         After authentication completes (or fails), the listener redirects the
         browser back to the Nova-UI page.
-        WinPE-safe — no separate Edge process or WinForms dialog is created.
+        WinPE-safe -- no separate Edge process or WinForms dialog is created.
     .PARAMETER ClientId
         Azure AD application (client) ID.
     .OUTPUTS
@@ -1057,7 +1057,7 @@ function Invoke-M365EdgeAuth {
 
     # ── Verify the HTML UI is active (kiosk Edge must be running) ───────────
     if (-not $script:HtmlUiActive) {
-        Write-AuthLog "HTML UI not active — cannot use in-kiosk auth."
+        Write-AuthLog "HTML UI not active -- cannot use in-kiosk auth."
         return $false
     }
 
@@ -1122,7 +1122,7 @@ function Invoke-M365EdgeAuth {
     $script:_authCancelled  = $false
     $asyncResult = $listener.BeginGetContext($null, $null)
 
-    # 5-minute timeout — Azure AD sessions are valid for 10 minutes,
+    # 5-minute timeout -- Azure AD sessions are valid for 10 minutes,
     # 5 minutes gives enough time without leaving the kiosk unattended.
     $timeout = [datetime]::UtcNow.AddMinutes(5)
 
@@ -1208,7 +1208,7 @@ function Invoke-M365EdgeAuth {
             if ($tokenResponse.access_token) {
                 $script:GraphAccessToken = $tokenResponse.access_token
             }
-            Write-AuthLog "Kiosk auth succeeded — token obtained."
+            Write-AuthLog "Kiosk auth succeeded -- token obtained."
             return $true
         }
     } catch {
@@ -1305,7 +1305,7 @@ function Invoke-M365DeviceCodeAuth {
         return $false
     }
 
-    Write-AuthLog "Device code auth succeeded — token obtained."
+    Write-AuthLog "Device code auth succeeded -- token obtained."
     return $true
 }
 
@@ -1320,7 +1320,7 @@ function Invoke-M365Auth {
         PKCE).  If the kiosk UI is not active or fails, it falls back
         to Device Code Flow, showing the code in an HTML modal.
         Tenant restrictions are enforced at the Entra ID app registration
-        level — only tenants explicitly allowed in the app's
+        level -- only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
     .OUTPUTS
         $true  if authentication succeeded or was not required.
@@ -1346,7 +1346,7 @@ function Invoke-M365Auth {
 
     # Validate that the config has the minimum required fields.
     if (-not $authConfig.clientId) {
-        Write-AuthLog "Auth config incomplete — skipping authentication."
+        Write-AuthLog "Auth config incomplete -- skipping authentication."
         Write-Status $S.AuthSkipped 'Green'
         return $true
     }
@@ -1356,7 +1356,7 @@ function Invoke-M365Auth {
     # ── Build scope string ──────────────────────────────────────────────────
     # Always include openid profile; append Graph API scopes when configured
     # (e.g. DeviceManagementServiceConfig.ReadWrite.All for Autopilot import).
-    # Delegated permissions — no client secret required.
+    # Delegated permissions -- no client secret required.
     $scope = 'openid profile'
     if ($authConfig.graphScopes) {
         $trimmed = ($authConfig.graphScopes).Trim()
@@ -1483,12 +1483,12 @@ function ProceedToEngine {
                 $manifest = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
             } catch {
                 Remove-Item $localNova -Force -ErrorAction SilentlyContinue
-                throw "Integrity check FAILED — could not download hash manifest from $hashesUrl : $_"
+                throw "Integrity check FAILED -- could not download hash manifest from $hashesUrl : $_"
             }
             $expected = $manifest.files.'src/scripts/Nova.ps1'
             if (-not $expected) {
                 Remove-Item $localNova -Force -ErrorAction SilentlyContinue
-                throw "Integrity check FAILED — no src/scripts/Nova.ps1 entry in hash manifest"
+                throw "Integrity check FAILED -- no src/scripts/Nova.ps1 entry in hash manifest"
             }
             $actual = [System.BitConverter]::ToString(
                 [System.Security.Cryptography.SHA256]::Create().ComputeHash(
@@ -1497,7 +1497,7 @@ function ProceedToEngine {
             ) -replace '-', ''
             if ($actual -ne $expected) {
                 Remove-Item $localNova -Force -ErrorAction SilentlyContinue
-                throw "Integrity check FAILED for Nova.ps1 — Expected: $expected, Got: $actual"
+                throw "Integrity check FAILED for Nova.ps1 -- Expected: $expected, Got: $actual"
             }
             Write-AuthLog 'Nova.ps1 integrity verified (SHA256 match).'
         }
@@ -1531,7 +1531,7 @@ function ProceedToEngine {
 
         Update-HtmlUi -Message $S.Imaging -Step 4
 
-        # Stop writing to the status JSON from Bootstrap — Nova.ps1 takes
+        # Stop writing to the status JSON from Bootstrap -- Nova.ps1 takes
         # over the file from this point to avoid write conflicts.
         $script:HtmlUiActive = $false
 
@@ -1559,7 +1559,7 @@ function ProceedToEngine {
         # and the Retry button works.
         $script:HtmlUiActive = $true
         Invoke-Sound 400 600
-        Update-HtmlUi -Message 'Imaging failed — press Retry or F8 for a shell.' -Step 4 -ShowRetry
+        Update-HtmlUi -Message 'Imaging failed -- press Retry or F8 for a shell.' -Step 4 -ShowRetry
     }
 }
 
@@ -1607,7 +1607,7 @@ $script:initTimer.Add_Tick({
                     try { $script:_proc.Kill() } catch { Write-Verbose "Process already exited: $_" }
                 }
                 # wpeutil UpdateBootInfo populates PEFirmwareType in the
-                # registry — needed by downstream partitioning logic.
+                # registry -- needed by downstream partitioning logic.
                 $prev = $ErrorActionPreference
                 $ErrorActionPreference = 'Continue'
                 try {
@@ -1724,8 +1724,8 @@ Stop-Transcript -ErrorAction SilentlyContinue
 # SIG # Begin signature block
 # MII+MAYJKoZIhvcNAQcCoII+ITCCPh0CAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCF38ZNIRsmgtkM
-# pZOKze11GCrVtX08JFSO0YdhJF+jZ6CCIvIwggXMMIIDtKADAgECAhBUmNLR1FsZ
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDXknR7q15J0tUD
+# aBXK/A1AqyWB9dsxMxUAKgCSmXBKTqCCIvIwggXMMIIDtKADAgECAhBUmNLR1FsZ
 # lUgTecgRwIeZMA0GCSqGSIb3DQEBDAUAMHcxCzAJBgNVBAYTAlVTMR4wHAYDVQQK
 # ExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xSDBGBgNVBAMTP01pY3Jvc29mdCBJZGVu
 # dGl0eSBWZXJpZmljYXRpb24gUm9vdCBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkgMjAy
@@ -1916,20 +1916,20 @@ Stop-Transcript -ErrorAction SilentlyContinue
 # cG9yYXRpb24xKzApBgNVBAMTIk1pY3Jvc29mdCBJRCBWZXJpZmllZCBDUyBFT0Mg
 # Q0EgMDICEzMAB9JqeMTCGX+FIsEAAAAH0mowDQYJYIZIAWUDBAIBBQCgXjAQBgor
 # BgEEAYI3AgEMMQIwADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAvBgkqhkiG
-# 9w0BCQQxIgQgSlcx2J2NgVU7nW26d4YuZC2lMRzOq4nptj4INE4yueIwDQYJKoZI
-# hvcNAQEBBQAEggGAV5NQHYKGW009RMoZDtLtv2PVRNRyp5Ybn0DUdjSrsWoKBBlX
-# y37bn16mnAJQW3PzWPKY7mlKvooN5S9sYy76hoNSVRfVP+Go9W39RUZi4tp3PSwn
-# j30QhM8jpaECVK4CLdeGoWeDZ6X/EmY2H9HO5CuAqwzoGyLAQuMm1Rcu2KmoJXEK
-# KpvDG4MQbOHtWhA7aJ9gZcIYWCxUe+VL5TAF4PoCaKCgbxyFZ4VUhDt3/mhwVq2v
-# I/ZO72cxuJ7kLXt18pDUvksI1ERlHGqOa6wRPL+zgrxW5P3WygB/sOVjhZc7y2zh
-# gKX6PqgiYeBSw+5UncC28Hyac6UHa5qHcYY5d+CPj4iHcBTHgMv2hnsa/7NOu4uZ
-# NqVgJNJTHXvGtSErWJNG32qR7S1fm8ZwbuNO7coP/1vuNIgGYIlYkIMrABJx2d6T
-# 2kE7CQRqENwZtyKV8dN0tpETvvBDEu5/YDMx4FXPiru9xtic65igTkogxe3mI7jM
-# IKSTHA8Mx8y+AiLyoYIYFDCCGBAGCisGAQQBgjcDAwExghgAMIIX/AYJKoZIhvcN
+# 9w0BCQQxIgQgw2nVrQvphJMk2aa0Dgn42q5cSE2EVxbODCwcB1rPXOEwDQYJKoZI
+# hvcNAQEBBQAEggGAOAJ5yoSzMdsG3/qHr06rD5mOFHNK5xR4YVIpFTDCpOKwLQP4
+# wTfB6G0ikmq8XxBQ/a/G3bAGTYn9lmbffu+sTI+a2N6hHxjPHM6nqghbI3deCwJJ
+# 3v/CM62/td410odCGRzyVu+fje1mHGCOVRWRDUF3/5tIB0t6vnGS9srGAkiKAbPy
+# M9irG0zFiTgdSZhRIv5Xtl6EF+vcSmCBsaTHErhbDNeIW9J8FCgHyQt1rTnC57X0
+# UezitNGbDE3e2oQ1k1vZ/IxWKExE0SHyLCzDzQ+74znDXaPTduC6AwasiXU1jYr1
+# xzwVvCiiJffhwiSKGKrlgKrUykKADpU/lyGeETAJ5QklW7eQ3po8Azxu42m9QfBw
+# LwUmdrPPVH1M6YQKBNbPasNX50rN0KTZHQOu73bPk1ZYP+EXgXxBcP9s73b5omWk
+# V0J8LOX99d+Fviwys7qXGu8MrdYBi+DGIhPRwFbvS8YRSQq/EMOR9XQHoMauSoUw
+# pMSPw1Mgo7Mvbe61oYIYFDCCGBAGCisGAQQBgjcDAwExghgAMIIX/AYJKoZIhvcN
 # AQcCoIIX7TCCF+kCAQMxDzANBglghkgBZQMEAgEFADCCAWIGCyqGSIb3DQEJEAEE
-# oIIBUQSCAU0wggFJAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIBBQAEICX/
-# 62rI9h9AWPH4PoWm/BnBkTXmMEN2pp7yImD+Lot0AgZpwnK+9UMYEzIwMjYwNDAz
-# MTYwNjA5LjQ0N1owBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMwEQYDVQQI
+# oIIBUQSCAU0wggFJAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIBBQAEIMKV
+# J9K2D402GrNqBSqLs8umAf8IsA4MVs9pbYuTEAjkAgZpwnK/CtQYEzIwMjYwNDAz
+# MTYzODA3Ljc4NVowBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMwEQYDVQQI
 # EwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdSZWRtb25kMR4wHAYDVQQKExVNaWNyb3Nv
 # ZnQgQ29ycG9yYXRpb24xJTAjBgNVBAsTHE1pY3Jvc29mdCBBbWVyaWNhIE9wZXJh
 # dGlvbnMxJzAlBgNVBAsTHm5TaGllbGQgVFNTIEVTTjo3RDAwLTA1RTAtRDk0NzE1
@@ -2019,8 +2019,8 @@ Stop-Transcript -ErrorAction SilentlyContinue
 # cmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lc3RhbXBp
 # bmcgQ0EgMjAyMAITMwAAAFXZ3WkmKPn44gAAAAAAVTANBglghkgBZQMEAgEFAKCC
 # BJ8wEQYLKoZIhvcNAQkQAg8xAgUAMBoGCSqGSIb3DQEJAzENBgsqhkiG9w0BCRAB
-# BDAcBgkqhkiG9w0BCQUxDxcNMjYwNDAzMTYwNjA5WjAvBgkqhkiG9w0BCQQxIgQg
-# bEe3/llyQBYLqtCgXnRTn20cFQiX3bARFyrwtwpliQwwgbkGCyqGSIb3DQEJEAIv
+# BDAcBgkqhkiG9w0BCQUxDxcNMjYwNDAzMTYzODA3WjAvBgkqhkiG9w0BCQQxIgQg
+# LGZ5xg5MQBGZOaz4WhcYdWJH0UN71siWW6esU8FQdGkwgbkGCyqGSIb3DQEJEAIv
 # MYGpMIGmMIGjMIGgBCDYuTyXZIZiu799/v4PaqsmeSzBxh0rqkYq7sYYavj+zTB8
 # MGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0
 # aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lc3RhbXBpbmcg
@@ -2043,15 +2043,15 @@ Stop-Transcript -ErrorAction SilentlyContinue
 # n5FNisTS5izsK07W8xiv0BH3jhoP2whGtGG/LkId1RdlFfjtzNcpaQ5LF8g5mcxU
 # U4IA0GqwrvZ2wy11a5Tc77hedSsK8PS3b5iZPA/a15z0MUt0qr0LwLoNjLKnVyeC
 # Rf/EmZ6AM+OsU6JPpkytcfkzJ/kNpn6ukBrGNanUVD0NMA0GCSqGSIb3DQEBAQUA
-# BIICABjhq+ENNY4gGh5ca6+7kGaxrfif2V0XaNhoKTiVZGcSVmM2sqkcot/xjC/1
-# VGo/15E21U89cCaYK9K3SrOX9kKXy4u1C8+wm+SrFpEBVcBTkbpDTrm6wNjgnIfB
-# nGnrFm/ppqH7uzXNuVa8oFRQ2aAACbAhVWJcZPd443OY0np1HHrbpp8iqm2Gb38c
-# E21yhzC7VM71UqWsrlnnE5QadqDxS/g1uD1iP9PRknfhuHjl/FByBNllptLRtexe
-# 5Q2HvsGqgn6wf4ACfQn+9XXU3WLYYh3VI951Ig9pmSL7kRRykiRid0kkQF6xTulg
-# FTzBaI4fnQPl4XkfUWaCtfzplQo4xaqKBs5Qpaqx4tM6hUhnos2cODbcih04XeB1
-# 9IR5kIwv1yss9O45tH7DdIblXWc3X6z8i1Ubk9BbQyYszqiXisJnV3lZmLZ6Yv1k
-# PNG9iNOuog/VYlDzAkmoRZakvpm44E9/3GQ3aT/xputQkohmrw4lpzBjBk9N7wkf
-# 54/4Zeb2kjUUsoHC1PnEwP+HEDuaUWtbSH/QZAWZ/x7HF8oYFFT3Ve9QL3nUm+na
-# m6OoC4wnJ/gMhfandz+w3sJGhecwRyoJAQk9C8VoiQUrgbNRJFUttHjcfSKapApe
-# EuEhMud+Qp8+7LZiqIWM1jzkfsk4ph/QX5QJanqvkazL9Zln
+# BIICAJPXyQPcXLXXjYrTciDpZA0A0XfmWWTMpeoKjqSiLTt4qNJ9bU6ffGDo2J62
+# /M/RX7YSSzPCTQwcBEC22+OHxUmMxr/lq0Ty215tGnTAsFhpoYN5eA1169Vnz4le
+# 6VDqc7/d5GRZQ01dvh0uxSOz2gSbYd+zgF45qusMMbifGvj47HJviQSUeiJEv5+3
+# psKU/Duwo7/YoEosWu4uzI2KhoW+nwn1Lsik0JLnny5UvpcrORQQWASEcQy1ET8I
+# 4IHrgx+/OLymHEdGl1nJbIJTSQVFzMI+dRVBhuKmp0NJiqw5XL6iBPVvmC7ekSCF
+# NHaCE+VM41Pq8ArDcpGP0NAwMOVYfiv5IH1yb7XyQE0jZ38u0qtOQRqk6lWSbWJp
+# bFH4OgvzI48EV7oukLsDya+bSFuGC85xrUM1Xb7B3TyseuFz139yjDxfvXnp+uDM
+# 7GgCdJ/CRtcRZ/DdSOa393EXYjLeowE560a+9zxuEUb5rRFFxwiSvTk9tbSkZ5uE
+# wFow6EUMynqVqKZdjnbdmWO0XxtvbG2zxLpfBtkYh7BXgdL++Vr7EDwJFWJLsm9Z
+# Mb0wWt5kmHlCK4qUqMVJnjomfopR4b4YXkNL83M5b1zSqubtJMmuLIUqqf1gIaeT
+# dNIQZhSRjYMW9NGmr0kq6HaggEdv7Qf4NfTUjiKqW5QbZPeW
 # SIG # End signature block

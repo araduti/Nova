@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Build configuration management module for Nova boot image creation.
 
@@ -46,7 +46,7 @@ $script:VK_SPACE = 32
 $script:VK_UP    = 38
 $script:VK_DOWN  = 40
 
-# Available WinPE optional components — order matters (dependency chain).
+# Available WinPE optional components -- order matters (dependency chain).
 # Name        : base cab name (without .cab extension or language prefix)
 # Description : human-readable label shown in the configuration menu
 # Default     : $true = pre-selected in the menu
@@ -78,7 +78,7 @@ function Save-BuildConfiguration {
     .SYNOPSIS  Persists the build configuration to disk for future reuse.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
-        Justification = 'Saving a JSON config file — no system side-effects beyond a small user-data file')]
+        Justification = 'Saving a JSON config file -- no system side-effects beyond a small user-data file')]
     [CmdletBinding()]
     param([hashtable] $Config)
     $path = Get-BuildConfigPath
@@ -173,7 +173,7 @@ function Show-BuildConfiguration {
     # ── Detect VT/ANSI support for single-keypress input ─────────────────────
     $supportsVT = ($null -ne $Host.UI.psobject.Properties['SupportsVirtualTerminal'] -and
                    $Host.UI.SupportsVirtualTerminal) -or $env:WT_SESSION
-    # ReadKey requires a RawUI host — exclude known non-console hosts
+    # ReadKey requires a RawUI host -- exclude known non-console hosts
     $supportsRawKey = $Host.UI.RawUI -and ($Host.Name -notin @(
         'Visual Studio Code Host', 'Windows PowerShell ISE Host'
     ))
@@ -257,7 +257,7 @@ function Show-BuildConfiguration {
             if ($vk -eq $script:VK_UP)   { $cursorIndex = [Math]::Max(0, $cursorIndex - 1); continue }
             if ($vk -eq $script:VK_DOWN) { $cursorIndex = [Math]::Min($totalItems - 1, $cursorIndex + 1); continue }
             if ($vk -eq $script:VK_SPACE) {
-                # Space — toggle highlighted item
+                # Space -- toggle highlighted item
                 if ($cursorIndex -lt $pkgCount) {
                     if ($script:AvailableWinPEPackages[$cursorIndex].Required -and $selected[$cursorIndex]) {
                         Write-Warn "$($script:AvailableWinPEPackages[$cursorIndex].Name) is required and cannot be deselected."
@@ -271,7 +271,7 @@ function Show-BuildConfiguration {
                 continue
             }
 
-            # Enter — accept
+            # Enter -- accept
             if ($vk -eq $script:VK_ENTER) { $cmd = '' }
             else { $cmd = "$ch".Trim() }
         } else {
@@ -279,7 +279,7 @@ function Show-BuildConfiguration {
             $cmd = $menuChoice.Trim()
         }
 
-        # Enter — show confirmation summary and accept
+        # Enter -- show confirmation summary and accept
         if ($cmd -eq '') {
             # Re-enable required packages that were somehow deselected
             for ($i = 0; $i -lt $pkgCount; $i++) {
@@ -432,7 +432,7 @@ function Get-AvailableWinPEPackages {
     .SYNOPSIS  Returns the list of available WinPE optional components.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
-        Justification = 'Returns a collection of packages — plural noun is intentional')]
+        Justification = 'Returns a collection of packages -- plural noun is intentional')]
     [CmdletBinding()]
     param()
     return $script:AvailableWinPEPackages
@@ -445,8 +445,8 @@ Export-ModuleMember -Function Get-BuildConfigPath, Save-BuildConfiguration, Read
 # SIG # Begin signature block
 # MII+MAYJKoZIhvcNAQcCoII+ITCCPh0CAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDQg7sih5daQTa2
-# SGh/lDSjcqwxYnzWKNl4lnGOWh56DqCCIvIwggXMMIIDtKADAgECAhBUmNLR1FsZ
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCgrTy2CpTiNvrW
+# Rya6JGUwQMIctuMdVN69Mot0FqHGvaCCIvIwggXMMIIDtKADAgECAhBUmNLR1FsZ
 # lUgTecgRwIeZMA0GCSqGSIb3DQEBDAUAMHcxCzAJBgNVBAYTAlVTMR4wHAYDVQQK
 # ExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xSDBGBgNVBAMTP01pY3Jvc29mdCBJZGVu
 # dGl0eSBWZXJpZmljYXRpb24gUm9vdCBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkgMjAy
@@ -637,20 +637,20 @@ Export-ModuleMember -Function Get-BuildConfigPath, Save-BuildConfiguration, Read
 # cG9yYXRpb24xKzApBgNVBAMTIk1pY3Jvc29mdCBJRCBWZXJpZmllZCBDUyBFT0Mg
 # Q0EgMDICEzMAB9JqeMTCGX+FIsEAAAAH0mowDQYJYIZIAWUDBAIBBQCgXjAQBgor
 # BgEEAYI3AgEMMQIwADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAvBgkqhkiG
-# 9w0BCQQxIgQgw3Ldn+IHXYA4u3VlPiw8BXZvwXFWFG/DWR8yZ4dcRhswDQYJKoZI
-# hvcNAQEBBQAEggGAt2jyRahq0ny+LeBQ/9UV5egELyy8Qc1uNSq41dPZvU2JC630
-# A+E+9j9kyL8czRb8ThvViwP50/l0OaKaGlPRZlE+5ipIt2ytOaCOxwHKrRAIh84u
-# H5D4S8YNCv6LDfc7p6j3/J6leEYXNc4my0vAfaLG6p7h6xBaZowZVakBcEshac6K
-# 69I7RBGok530taLeKdtFdrJ61+9Q6zFVon++q5oRzegLkZn5bHGlry5AuATaeO/U
-# mElRtNwcaTIMYFL7BH483St0FTUPnDTPeZwdgB1EKfJT2pOp2GODEUjGTEwtXnqE
-# D8oeu2xsfsScRLACHV77DHTluSaYoOtz5aVavOKXObIWELpOMMK2X2l41Dhq5T/h
-# 2DBGDKn0kCbfvLtIZk7gGCtMeqXnPO0L90AuYFfxBRpbi4Lo3TnV+YxIB/KtCNt8
-# 7HsDE8jn11+vuM1VpxfLPOOToWthjkTci1LuGWi80H0pq1vID8sDaBcGKbpE65I9
-# Vo5xN04fy7KuoSAGoYIYFDCCGBAGCisGAQQBgjcDAwExghgAMIIX/AYJKoZIhvcN
+# 9w0BCQQxIgQgB7P9uS/Dq03wE4B4cOXXoGrUU4GILmgxpWXLZRtvy3wwDQYJKoZI
+# hvcNAQEBBQAEggGADFzj5I3YRsEL2fVSBrmfswupGMstGBNki7RoVlqpvHR0FSPm
+# nQPBsclGkFQvexVlCfDKikNLeaq4YEDCc89o3lxVhmz+doh48QMddDMOaPxTzUgm
+# +Cn92QZcQO0hKn7euGmrzMOgPHg59df8tJInCa8/7t0l18LIHjT5RGRlrBVXBUTb
+# tmt06/qCIRefY+KTBKLOvG5nsGYLLlpxebi9aLTA9yPu2P9qiTnXroA7Hm626TZR
+# FO9sfIxODhqD7kUIeYHXhSA/X/ecUVilRK2XtRHq0seftbVYNvNDJZmg4oFJlrXf
+# Ll63Qyrcjr8aoBzEPB+uOybrcKxYJ9g0JQPiKx+wvi8DnjUTLlTYbp/vTp2D6K8f
+# juQ2gQxpg2J/1cfHZZzLbi9+7mwskzSadKmCIGj7SEokwlrUK2Ws2VYs0kYT4Y2q
+# TcDdK7Iw/GPnsZRbekBSH/p4s+z/+HelIA3VcXWnOemeXFpyQcB3lZd0QJSN27Ac
+# EiGKstrui4m5NtwvoYIYFDCCGBAGCisGAQQBgjcDAwExghgAMIIX/AYJKoZIhvcN
 # AQcCoIIX7TCCF+kCAQMxDzANBglghkgBZQMEAgEFADCCAWIGCyqGSIb3DQEJEAEE
-# oIIBUQSCAU0wggFJAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIBBQAEIIRP
-# +qIQ4Yt0ZlnxLqU0j5hBSwE8Qs29B4BW26OfmLbWAgZpwnK+9RgYEzIwMjYwNDAz
-# MTYwNTU0LjMxMVowBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMwEQYDVQQI
+# oIIBUQSCAU0wggFJAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIBBQAEIOeJ
+# R0jZn8egqmKR/Zt+pfviOIjm40gOYhMXRf8/B8TnAgZpwnK/CrEYEzIwMjYwNDAz
+# MTYzNzU0LjAzM1owBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMwEQYDVQQI
 # EwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdSZWRtb25kMR4wHAYDVQQKExVNaWNyb3Nv
 # ZnQgQ29ycG9yYXRpb24xJTAjBgNVBAsTHE1pY3Jvc29mdCBBbWVyaWNhIE9wZXJh
 # dGlvbnMxJzAlBgNVBAsTHm5TaGllbGQgVFNTIEVTTjo3RDAwLTA1RTAtRDk0NzE1
@@ -740,8 +740,8 @@ Export-ModuleMember -Function Get-BuildConfigPath, Save-BuildConfiguration, Read
 # cmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lc3RhbXBp
 # bmcgQ0EgMjAyMAITMwAAAFXZ3WkmKPn44gAAAAAAVTANBglghkgBZQMEAgEFAKCC
 # BJ8wEQYLKoZIhvcNAQkQAg8xAgUAMBoGCSqGSIb3DQEJAzENBgsqhkiG9w0BCRAB
-# BDAcBgkqhkiG9w0BCQUxDxcNMjYwNDAzMTYwNTU0WjAvBgkqhkiG9w0BCQQxIgQg
-# TIG1x2uZ8Jbe0BOqESMhvgade3hJVqO9q/WIy9OmLp0wgbkGCyqGSIb3DQEJEAIv
+# BDAcBgkqhkiG9w0BCQUxDxcNMjYwNDAzMTYzNzU0WjAvBgkqhkiG9w0BCQQxIgQg
+# 7y66wB1GHP9MshM/NRfjjViqipIEnSEDj51H3yPS4mIwgbkGCyqGSIb3DQEJEAIv
 # MYGpMIGmMIGjMIGgBCDYuTyXZIZiu799/v4PaqsmeSzBxh0rqkYq7sYYavj+zTB8
 # MGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0
 # aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lc3RhbXBpbmcg
@@ -764,15 +764,15 @@ Export-ModuleMember -Function Get-BuildConfigPath, Save-BuildConfiguration, Read
 # n5FNisTS5izsK07W8xiv0BH3jhoP2whGtGG/LkId1RdlFfjtzNcpaQ5LF8g5mcxU
 # U4IA0GqwrvZ2wy11a5Tc77hedSsK8PS3b5iZPA/a15z0MUt0qr0LwLoNjLKnVyeC
 # Rf/EmZ6AM+OsU6JPpkytcfkzJ/kNpn6ukBrGNanUVD0NMA0GCSqGSIb3DQEBAQUA
-# BIICAFnPNR/sWabXfpfCUvSL2yotq7W1pFGq80X1d2mJ7tFmDniSTWtfpWNdc9+T
-# 0ix81bkhMh+38K2pAxKxyBAXnbvo/QSG09S6oDy7nhjGKz8dvhs+rS/tZ19uuSDV
-# 0a/ibuixHwEaGusGFJ4vm+31sNRw1HSUaOcmf4Hv9dMq/p8odeq0CS/m1v+5ja75
-# EfQucDZT9ssAKvXWRE5fsfDV9Z6eFAb9N92W9aZ5uAKGIYjKu6K7dpWw1bYxojhZ
-# InLJ1tqYX5p18QsccZqSj4rM8bjARTvDj2Da5s3EuWHt86qE5Fmt+fESkcgYWGf8
-# QaVQ0NZ/Kl3vrQn27QSbA3l0BRLqbXivs5wD57Yk7fdddtq/xQBadlKEo44aB/1a
-# FwR+3zYCoksPxor7WuoEF7MMwYygJJvEI1RxkucG+jimKqckOOKS8v1eRR7iy3dg
-# bHAiofSRzHV1ZY2tujWfXJsjbWzrqDtnqGjCU2RUZJTzR2fFlRiEDYhZEIvsFjrs
-# 1In2NirSa05f9WL5TY92gKCe9UDmuE9/up/2+ijIUnS8Snkowp8XjwuB0tcJ/fUS
-# 7BuGJFPvKFJFRXDYs+EJ3Gks1DR+Ze4uwUGNdblNDq7uPuGwFSCNlnp2Cic0UEW0
-# lF4Ff4NfsbaQOlQA9cfqyxrMVCcImTM4YQ09cpnduMHzPyoG
+# BIICALBKllWMf22Z+8S+ajOosmtlcz2aVcTJBZd7GVulF0vosu4+gy2w/u2XuU2q
+# T5urwLMe8iUv/PWU2Ra2Qh6HAdOHCbm1SpBjpjQLGJIwqQZaDPINl4/cnqXSKvX4
+# 71bjJPvGGUoKMi+rhzoHWwCgW93tgHvcLV0QrfdDsZSYdycIkIflIGXE6nEvBuNA
+# k1kE2K1lGdFl5GO5YMNMkjWFBCCDQQuzUnS1mg2RldlspgnKGAzQowAr4v74gGNg
+# hFwXz53FSrce31qu6w4lZ9pZLrQx9pN92wmJxajTkgGQGDMhQqzRHiWDJM3WbPZ3
+# xhHLym5JVn34mWdu61R5Mc5RD7ncyPuNtiUgVdINbsW9nV3cqAAz64V18J1x2hRz
+# VGEn1NnNwLGm1EGXv1bHCXkKms9oeW3BMmhGKh2pA4Lo2eBtCXbgWBO3Uv4duA4h
+# c2BAjJVGNqtWtWuIjjKLpcE+RLjLQ5tyyzt+fxoRqmZcIqJiUzVb8qBVTLm+FG4i
+# J6rwtgJuIk+M+qHDcWr3EjA7fUiq9g84JvbVqQBhMp+1GB/wDaN1j4U1hOLHmM4Z
+# lVIBkVtYHtjoKLnGawUbjuKGFGDXC8Hkmv7VocdSygj0TtgjFiJfdX9cUXge5sWt
+# 2DisekiRuNDKsx45+R0jlKCgI+W4fhaYTiRlKN9m/qnu/X3+
 # SIG # End signature block

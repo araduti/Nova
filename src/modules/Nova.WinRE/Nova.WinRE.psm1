@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     WinRE discovery, extraction, and preparation module for Nova.
 
@@ -111,9 +111,9 @@ function Get-WinREPathFromWindowsISO {
     .SYNOPSIS
         Downloads (when needed) a Windows ISO and extracts WinRE.wim from it.
     .DESCRIPTION
-        When the machine's local WinRE.wim cannot be used — because its CPU
+        When the machine's local WinRE.wim cannot be used -- because its CPU
         architecture differs from the build target, or because its Windows build
-        number is incompatible with the installed ADK package set — this function
+        number is incompatible with the installed ADK package set -- this function
         obtains a fresh WinRE that is guaranteed to be the correct architecture.
 
         Source selection order:
@@ -132,7 +132,7 @@ function Get-WinREPathFromWindowsISO {
         Target WinPE architecture string: amd64 or x86. ARM is not supported.
     .PARAMETER ISOUrl
         Path to a local Windows ISO file, or an HTTPS URL to download one.
-        Optional — a built-in default is tried for amd64 when omitted.
+        Optional -- a built-in default is tried for amd64 when omitted.
     .OUTPUTS  [string] Temp path to the extracted WinRE.wim.  The CALLER is
               responsible for deleting this file when it is no longer needed.
     #>
@@ -151,7 +151,7 @@ function Get-WinREPathFromWindowsISO {
     # Windows Server 2025 Evaluation (build 26100) is freely downloadable without
     # authentication and shares the same Windows build number as Windows 11 24H2,
     # making its WinRE compatible with the Windows 11 24H2 ADK package set.
-    # No publicly available evaluation ISO exists for x86 — users must
+    # No publicly available evaluation ISO exists for x86 -- users must
     # supply -WindowsISOUrl for that architecture.
     $defaultISOUrls = @{
         amd64 = 'https://go.microsoft.com/fwlink/?linkid=2271125'
@@ -178,7 +178,7 @@ function Get-WinREPathFromWindowsISO {
 
             $isoPath = Join-Path $env:TEMP `
                 "nova_win_iso_${Architecture}_$([System.Guid]::NewGuid().ToString('N')).iso"
-            Write-Step "Downloading Windows ISO for $Architecture — this file is several GB and may take a while..."
+            Write-Step "Downloading Windows ISO for $Architecture -- this file is several GB and may take a while..."
             try {
                 Invoke-WebRequest -Uri $ISOUrl -OutFile $isoPath -UseBasicParsing `
                                   -TimeoutSec 7200   # 2-hour ceiling for large ISOs
@@ -217,9 +217,9 @@ function Get-WinREPathFromWindowsISO {
         $imageIndex = (Get-WindowsImage -ImagePath $wimPath |
                         Select-Object -First 1 -ExpandProperty ImageIndex)
         if (-not $imageIndex) {
-            throw "Could not read any image index from '$wimPath' — the file may be corrupted."
+            throw "Could not read any image index from '$wimPath' -- the file may be corrupted."
         }
-        Write-Step "Mounting $(Split-Path $wimPath -Leaf) (index $imageIndex — read-only)..."
+        Write-Step "Mounting $(Split-Path $wimPath -Leaf) (index $imageIndex -- read-only)..."
         $null = Mount-WindowsImage -ImagePath $wimPath -Index $imageIndex `
                            -Path $wimMountDir -ReadOnly
         Write-Success "$(Split-Path $wimPath -Leaf) mounted."
@@ -316,8 +316,8 @@ Export-ModuleMember -Function Get-WinREPath, Get-WinREPathFromWindowsISO, Remove
 # SIG # Begin signature block
 # MII+MAYJKoZIhvcNAQcCoII+ITCCPh0CAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCV0ZEFeATiItWE
-# C2wT4P2vdqpDT3Lhp7W68zU00UL8KKCCIvIwggXMMIIDtKADAgECAhBUmNLR1FsZ
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDAz7Ffw/Whbli5
+# LmWkgSu1vwziqtVAh6/qF5qN/kVSlKCCIvIwggXMMIIDtKADAgECAhBUmNLR1FsZ
 # lUgTecgRwIeZMA0GCSqGSIb3DQEBDAUAMHcxCzAJBgNVBAYTAlVTMR4wHAYDVQQK
 # ExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xSDBGBgNVBAMTP01pY3Jvc29mdCBJZGVu
 # dGl0eSBWZXJpZmljYXRpb24gUm9vdCBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkgMjAy
@@ -508,20 +508,20 @@ Export-ModuleMember -Function Get-WinREPath, Get-WinREPathFromWindowsISO, Remove
 # cG9yYXRpb24xKzApBgNVBAMTIk1pY3Jvc29mdCBJRCBWZXJpZmllZCBDUyBFT0Mg
 # Q0EgMDICEzMAB9JqeMTCGX+FIsEAAAAH0mowDQYJYIZIAWUDBAIBBQCgXjAQBgor
 # BgEEAYI3AgEMMQIwADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAvBgkqhkiG
-# 9w0BCQQxIgQgG4nFCtpbTysKPrXGE0c4WmC6KlmVdK/kpLKc94MYCVAwDQYJKoZI
-# hvcNAQEBBQAEggGAWqbZPl4fXty6KVGDEIeVMN/s5DBV6nq7rVzhqU2GNKRO6WbA
-# QHVV1e1Fa2DOV/IlaEGwTLanBfgr2H5ZU30eXw7mE1Na4fORLeQT2XxWqLoGAGIj
-# we6iDDPcOp93Ru/LaWP6JNJ5Ep7GygTNtQCsQYwrWOHSIPcxgBaD5fjUG0zkuwEj
-# 0SCrDEe13pPsMKIhggNzCJF2R/rllic5cep0C9xF0IESCVYPf/OEMZPqjDkND8Y3
-# MGlZPsZkTiQOtNsDrV3a4r4puAuyAgM8GiBRWAWBh9F86xdOdv+x/0eSgVXjlTXb
-# 8FTjNor6N/5sPdYUxAGEcy1nY+xpHj0C+KSSQCpnKg4HI38UP2pCxZP57X2LcYLJ
-# 4bKHNQVRbDVu5Cvad1QwHr73RrKL/Br3SHozl7WzBUUI3XWThk1J3277sifMSrZO
-# dIHvT+0UtNia1iJ5cD5gG1aKxQInQQ6WTFzJfNgKerhPVC3ZrZUWdbOcUTPECJNQ
-# 5LfcVxpbKkwRliRCoYIYFDCCGBAGCisGAQQBgjcDAwExghgAMIIX/AYJKoZIhvcN
+# 9w0BCQQxIgQgGSXfUsz5rWgVIon10eK9zAEXTAEsU7rWNxQYBUV0CMgwDQYJKoZI
+# hvcNAQEBBQAEggGAIxnKfy07fx0U0y/tfB8RCpJ1rLyu4k3l/4EGzyBLYL3sOBam
+# yLuJU9+uGvkLzRax1JFidcCtpLu4C3kGtr0kEdu90pRE4SfVFXw0pYU8ZN7p8NsH
+# SNVaX6y83f2cVHlB7E9T6FUkqSEwKAvQJ8qo83oCEf6aywPaE/bWSPBn6EQEp+OE
+# aKtRj0MO7wNmYzOiRIXjgsd2Ti0B4vSVM47eyzPz3pkF6FPaG7aZvoa5K3NZpBLO
+# jVCWWzPtu+HWOExno37xz14K/QanNw1TMgtltVjMALSH6R5kWLak0kuQPvgPIbXd
+# mrw9TYG03nBZNoo2e2wIi3TnByxQt/q4jhL9Dm6RZsvRFSwk1sPZTcnkdzkbmr5b
+# EmN2cw4sJ2odcBPv4EqLvE5jLh73704KjvjBOIlGmsraeO6oX/te2Sk/7M4bgxur
+# n7L3tCGDTfY/Q6s68CUlXZMAv+1kbY4pGtwfVtZyoG907i2B0hsGChpvlR14zX3h
+# O5T8eojlKNF3oq89oYIYFDCCGBAGCisGAQQBgjcDAwExghgAMIIX/AYJKoZIhvcN
 # AQcCoIIX7TCCF+kCAQMxDzANBglghkgBZQMEAgEFADCCAWIGCyqGSIb3DQEJEAEE
-# oIIBUQSCAU0wggFJAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIBBQAEIHFI
-# sU0Kd+vV7PeQea1vn+Ph+GlwCI5m9ggM+5BvJ7jSAgZpwnK+9TMYEzIwMjYwNDAz
-# MTYwNjA1Ljk4OFowBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMwEQYDVQQI
+# oIIBUQSCAU0wggFJAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIBBQAEIGyv
+# gB0lx/gvcSTfTA+r7JFB0509fVy5yKrX0GcKeBmeAgZpwnK/CssYEzIwMjYwNDAz
+# MTYzODA1LjQ4MVowBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMwEQYDVQQI
 # EwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdSZWRtb25kMR4wHAYDVQQKExVNaWNyb3Nv
 # ZnQgQ29ycG9yYXRpb24xJTAjBgNVBAsTHE1pY3Jvc29mdCBBbWVyaWNhIE9wZXJh
 # dGlvbnMxJzAlBgNVBAsTHm5TaGllbGQgVFNTIEVTTjo3RDAwLTA1RTAtRDk0NzE1
@@ -611,8 +611,8 @@ Export-ModuleMember -Function Get-WinREPath, Get-WinREPathFromWindowsISO, Remove
 # cmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lc3RhbXBp
 # bmcgQ0EgMjAyMAITMwAAAFXZ3WkmKPn44gAAAAAAVTANBglghkgBZQMEAgEFAKCC
 # BJ8wEQYLKoZIhvcNAQkQAg8xAgUAMBoGCSqGSIb3DQEJAzENBgsqhkiG9w0BCRAB
-# BDAcBgkqhkiG9w0BCQUxDxcNMjYwNDAzMTYwNjA1WjAvBgkqhkiG9w0BCQQxIgQg
-# 9SBdktePPVXOXuKFXei1YNxceesba7+/dPvZ2pQHBWAwgbkGCyqGSIb3DQEJEAIv
+# BDAcBgkqhkiG9w0BCQUxDxcNMjYwNDAzMTYzODA1WjAvBgkqhkiG9w0BCQQxIgQg
+# ntga9LcFvqYx29K84s9J4tqDLIYhSvbUzR0o589OS5MwgbkGCyqGSIb3DQEJEAIv
 # MYGpMIGmMIGjMIGgBCDYuTyXZIZiu799/v4PaqsmeSzBxh0rqkYq7sYYavj+zTB8
 # MGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0
 # aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lc3RhbXBpbmcg
@@ -635,15 +635,15 @@ Export-ModuleMember -Function Get-WinREPath, Get-WinREPathFromWindowsISO, Remove
 # n5FNisTS5izsK07W8xiv0BH3jhoP2whGtGG/LkId1RdlFfjtzNcpaQ5LF8g5mcxU
 # U4IA0GqwrvZ2wy11a5Tc77hedSsK8PS3b5iZPA/a15z0MUt0qr0LwLoNjLKnVyeC
 # Rf/EmZ6AM+OsU6JPpkytcfkzJ/kNpn6ukBrGNanUVD0NMA0GCSqGSIb3DQEBAQUA
-# BIICABHTHmLlvVJhzCzY2LBxkeFdyzxlOFyzRcHB3cNJMEN32yvPBLpfXweYvNX/
-# h7l3haShn404+mzhf0Vrp6pvXQjbYI2+MrUf16IcgllCBOK9hVviv562AKWmS1z2
-# mO2cV7NgEc8o4qxA/RPU792TzBvGDDX67VT4ieoU6okf+XfXc8akLh7hkkcHl5no
-# v/YjM/bOYuZPe+13j+AkDRwpmAklkAvR8xz1dZIrLUExrApkKimVahN76l7iwcoO
-# fpSh1SPmRiTS48xhaqPsyMksVEvoh0r4wWjF01wdt9BtOb8FGofv4l6MXMJ0peJS
-# 7qRRabQAIUX/OfSnu8nzlfI6e3t2RQB8qDn5vfU4c8z2/LruTqhXC5rFbngbvnBz
-# UGr2RQlZHJIIooKJVEDRwchfBLjEeVbo0AjJ3n2dla20BcxUQvWCABy71fK82IIl
-# QRzuCmPlrpZKOAoWp+ZC+giqixrePDGmdYINJ+vwfd7mgC+9G8TIeDnOEi9ZfC2j
-# 5oTDGnLIwLRtYkb7QELvrsxmEoiYP+EgSVEswFtTEHZwBFD7wDSGtFregeQXgRUd
-# qlaNLgsAD9UUoj9bMCQGk96mZ2fLvzHqJRHm+cyzYF3VzZp2cB+JaVemjrER5l5H
-# n5PB9kOE0hB05LfehmhfkB+M8X5kXi5dAb9/YQxi99cjQT2G
+# BIICALCFItnx3vpjotrgfhMt8vSidj6CzCz86Px9dMgoIPapZibwtYP0SiCuwqG2
+# Al+NjtGA1IAweZA8fggOonT2zuM8wNCdMyS3NXyV5fvqC1e6l/tEGLnWJ/3esUKb
+# nl/RyXSH+hoDpZTKemCGtqtgamCqfdHRuJaaqEQV4g/SZXRGOiPVbBjZe743xOQm
+# IxfsmRQi00mA+bD//WMq91Bh1x5h7ZvY2Wx2aW3DrRvZglGOFoixm4vUXZAri9Wr
+# wHkRMklIsE3jg502nxPHOYJBwKqlq/4cH7pMGoazFnsPawVmaesGod6ksiI9Et++
+# +aIcfaVUeKbkNMAZ4zHVvTVoHZ2MhVnpA2G1UI0npzfv7oLDLOclZs+mqn5Zoc/r
+# 2N5sNummlfYueTti+9XPFh+VpTZedikwDDUbMSdE0eYmSg59Ptf2pcz+Rs6AI71C
+# oNVWYx45dz2raxdNcVKBL6UAMebPkLub/ihvzkazyGHZPcyn/oUezFG8XBCNaYsx
+# MK57OB9D9JRJwAOSWwhtzEZ0nG6YxLG7snO1bLgEGhgZu9EbH+/BHDDBloGPyd4V
+# HHyN8xjuV58EgGNja8HcyA+RVrVnAt+YqKvWydssWL8hVBwIeDnxFrsL5HOf0RtR
+# HdloF/VzBPcvbUzj4EjZUcb1O83r4hMiUtlgcq3E9P5jt8f+
 # SIG # End signature block

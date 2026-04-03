@@ -1,4 +1,4 @@
-@{
+﻿@{
     RootModule        = 'Nova.WinRE.psm1'
     ModuleVersion     = '1.0.0'
     GUID              = 'a1b2c3d4-1003-4000-8000-000000000003'
