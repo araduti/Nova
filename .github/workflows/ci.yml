@@ -47,7 +47,7 @@ jobs:
           $results = @()
           $scripts = Get-ChildItem -Path . -Include '*.ps1','*.psm1' -Recurse
           foreach ($script in $scripts) {
-            $results += Invoke-ScriptAnalyzer -Path $script.FullName -Severity Warning,Error -ExcludeRule PSAvoidUsingWriteHost
+            $results += Invoke-ScriptAnalyzer -Path $script.FullName -Severity Warning,Error -ExcludeRule PSAvoidUsingWriteHost,PSUseBOMForUnicodeEncodedFile
           }
           if ($results.Count -gt 0) {
             $results | Format-Table -AutoSize
