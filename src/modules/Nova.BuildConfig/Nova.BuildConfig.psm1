@@ -431,6 +431,10 @@ function Get-AvailableWinPEPackages {
     <#
     .SYNOPSIS  Returns the list of available WinPE optional components.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = 'Returns a collection of packages — plural noun is intentional')]
+    [CmdletBinding()]
+    param()
     return $script:AvailableWinPEPackages
 }
 

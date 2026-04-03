@@ -139,7 +139,7 @@ Import-Module "$script:ModulesRoot\Nova.Auth"        -Force -ErrorAction Stop
 
 #endregion
 
-#region ── ADK Detection + Install ──────────────────────────────────────────────
+#region ── Remaining Functions ───────────────────────────────────────────────────
 
 # Get-ADKRoot, Assert-ADKInstalled, and Copy-WinPEFile are now provided by the Nova.ADK module.
 
