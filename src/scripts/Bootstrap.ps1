@@ -1283,6 +1283,7 @@ function Invoke-M365Auth {
 
     if ($browserOk) {
         Write-Status $S.AuthSuccess 'Green'
+        Update-HtmlUi -Message $S.AuthSuccess -Step 3
         Invoke-Sound 1000 200
         Start-Sleep -Seconds 1
         return $true
@@ -1291,6 +1292,7 @@ function Invoke-M365Auth {
     # ── Auth failed or timed out -- show retry button ──────────────────────
     Write-AuthLog "Authentication failed -- showing retry button."
     Write-Status $S.AuthFailed 'Red'
+    Start-Sleep -Seconds 2
     Update-HtmlUi -Message $S.AuthFailed -Step 3 -ShowRetry
     return $false
 }
