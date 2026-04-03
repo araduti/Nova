@@ -11,9 +11,14 @@ All production PowerShell scripts and modules are signed:
 | `src/scripts/Trigger.ps1` | Entry-point script |
 | `src/scripts/Bootstrap.ps1` | Bootstrap script |
 | `src/scripts/Nova.ps1` | Main deployment script |
+| `src/modules/Nova.ADK/Nova.ADK.psm1` | ADK management module |
+| `src/modules/Nova.Auth/Nova.Auth.psm1` | Authentication module |
+| `src/modules/Nova.BuildConfig/Nova.BuildConfig.psm1` | Build configuration module |
+| `src/modules/Nova.Integrity/Nova.Integrity.psm1` | Integrity verification module |
 | `src/modules/Nova.Logging/Nova.Logging.psm1` | Logging module |
-| `src/modules/Nova.Platform/Nova.Platform.psm1` | Platform detection module |
 | `src/modules/Nova.Network/Nova.Network.psm1` | Network utilities module |
+| `src/modules/Nova.Platform/Nova.Platform.psm1` | Platform detection module |
+| `src/modules/Nova.WinRE/Nova.WinRE.psm1` | WinRE management module |
 | `resources/autopilot/Utils.ps1` | Autopilot utilities |
 | `resources/autopilot/Invoke-ImportAutopilot.ps1` | Autopilot import script |
 
@@ -22,7 +27,7 @@ Test files under `tests/` are excluded from signing.
 ## When Signing Occurs
 
 - **Release workflow** (`release.yml`): All scripts are signed after tests pass. Signed scripts are packaged into a `nova-signed-scripts.zip` artifact and attached to the GitHub Release. Hashes in `config/hashes.json` are regenerated to reflect the signed file contents.
-- **CI workflow** (`ci.yml`): On pushes to `main` (not on pull requests), scripts are signed as a validation step. Signed artifacts are uploaded with a 7-day retention period.
+- **CI workflow** (`ci.yml`): On pushes to `main` (not on pull requests), only scripts that changed in the push are signed (incremental signing). On the initial push or when the base commit is unavailable, all scripts are signed. Signed artifacts are uploaded with a 7-day retention period.
 
 ## Azure Setup
 
