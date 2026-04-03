@@ -183,10 +183,27 @@ jobs:
           path: playwright-report/
           retention-days: 14
 
+  check-signing:
+    name: Check Signing Availability
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - id: check
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          if [ -n "$AZURE_TENANT_ID" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
   sign-scripts:
     name: Code Signing — Azure Trusted Signing
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.AZURE_TENANT_ID != '' }}
-    needs: [lint-powershell, test-powershell, regenerate-hashes]
+    if: needs.check-signing.outputs.available == 'true'
+    needs: [check-signing, lint-powershell, test-powershell, regenerate-hashes]
     runs-on: windows-latest
     permissions:
       id-token: write

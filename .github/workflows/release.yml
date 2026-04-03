@@ -50,10 +50,26 @@ jobs:
           $config.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $config
 
+  check-signing:
+    name: Check Signing Availability
+    runs-on: ubuntu-latest
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - id: check
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          if [ -n "$AZURE_TENANT_ID" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
   sign-scripts:
     name: Sign PowerShell Scripts
-    if: ${{ secrets.AZURE_TENANT_ID != '' }}
-    needs: test
+    if: needs.check-signing.outputs.available == 'true'
+    needs: [check-signing, test]
     runs-on: windows-latest
     permissions:
       id-token: write
