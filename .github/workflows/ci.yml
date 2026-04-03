@@ -211,7 +211,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 2
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -251,23 +251,28 @@ jobs:
                 Write-Host "No production scripts changed in this push — skipping signing."
                 exit 0
               }
-              $repoRoot = (git rev-parse --show-toplevel)
-              $changedFull = $changedPaths | ForEach-Object {
-                [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($repoRoot, $_))
-              }
-              $changedSet = [System.Collections.Generic.HashSet[string]]::new(
-                [string[]]$changedFull,
-                [System.StringComparer]::OrdinalIgnoreCase
-              )
-              $scripts = @($allScripts | Where-Object { $changedSet.Contains($_.FullName) })
-              if ($scripts.Count -eq 0) {
-                Write-Host "No matching production scripts found — skipping signing."
-                exit 0
+              $repoRoot = git rev-parse --show-toplevel 2>&1
+              if ($LASTEXITCODE -ne 0) {
+                Write-Host "Could not determine repo root — signing all $($allScripts.Count) scripts."
+                $scripts = $allScripts
+              } else {
+                $changedFull = $changedPaths | ForEach-Object {
+                  [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($repoRoot, $_))
+                }
+                $changedSet = [System.Collections.Generic.HashSet[string]]::new(
+                  [string[]]$changedFull,
+                  [System.StringComparer]::OrdinalIgnoreCase
+                )
+                $scripts = @($allScripts | Where-Object { $changedSet.Contains($_.FullName) })
+                if ($scripts.Count -eq 0) {
+                  Write-Host "No matching production scripts found — skipping signing."
+                  exit 0
+                }
               }
             }
           }
 
-          Write-Host "Signing $($scripts.Count) of $($allScripts.Count) production script(s):`n"
+          Write-Host "Signing $($scripts.Count) of $($allScripts.Count) production script(s)..."
           foreach ($file in $scripts) {
             Write-Host "Signing: $($file.FullName)"
             Invoke-TrustedSigning `
