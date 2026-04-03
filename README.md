@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="nova_logo.png" alt="Nova Logo" width="200" />
+<img src="nova_logo2.png" alt="Nova Logo" width="200" />
 
 # **Nova** — Cloud-Native Windows OS Deployment Platform
 
