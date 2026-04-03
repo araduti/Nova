@@ -31,11 +31,9 @@
     "ConfigBtn": "Start deployment",
     "AuthSigning": "Signing in with Microsoft 365...",
     "AuthPrompt": "Sign in with your Microsoft 365 account to continue.",
-    "AuthUrl": "https://microsoft.com/devicelogin",
     "AuthWaiting": "Waiting for sign-in...",
     "AuthSuccess": "Identity verified",
     "AuthFailed": "Authentication failed. Please try again.",
     "AuthSkipped": "Authentication not required",
-    "AuthEdgePrompt": "Microsoft Edge has opened for sign-in.\nComplete the sign-in in the browser window, then this dialog will close automatically.",
-    "AuthDeviceCodePrompt": "To sign in, use a web browser on another device\nand enter this code:"
+    "AuthEdgePrompt": "Microsoft Edge has opened for sign-in.\nComplete the sign-in in the browser window, then this dialog will close automatically."
 }
