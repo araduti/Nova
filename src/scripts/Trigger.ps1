@@ -114,6 +114,7 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\module
             $dest = Join-Path $modDir "$mod$ext"
             try {
                 Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+                Unblock-File -Path $dest
             } catch {
                 throw "Failed to download module $mod$ext from $url — $($_.Exception.Message)"
             }
