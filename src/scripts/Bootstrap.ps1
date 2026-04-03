@@ -121,9 +121,6 @@ function Update-HtmlUi {
         [switch]$ShowWiFi,
         [switch]$ShowRetry,
         [string]$AuthUrl  = '',
-        [switch]$ShowDeviceCode,
-        [string]$DeviceCode = '',
-        [string]$DeviceCodeUrl = '',
         [switch]$ShowConfig,
         $ConfigData = $null
     )
@@ -138,9 +135,6 @@ function Update-HtmlUi {
             ShowWiFi       = [bool]$ShowWiFi
             ShowRetry      = [bool]$ShowRetry
             AuthUrl        = $AuthUrl
-            ShowDeviceCode = [bool]$ShowDeviceCode
-            DeviceCode     = $DeviceCode
-            DeviceCodeUrl  = $DeviceCodeUrl
             ShowConfig     = [bool]$ShowConfig
         }
         if ($ConfigData) { $obj['ConfigData'] = $ConfigData }
@@ -213,13 +207,11 @@ if (-not $Strings.ContainsKey('EN')) {
         ConfigBtn="Start deployment";
         AuthSigning="Signing in with Microsoft 365...";
         AuthPrompt="Sign in with your Microsoft 365 account to continue.";
-        AuthUrl="https://microsoft.com/devicelogin";
         AuthWaiting="Waiting for sign-in...";
         AuthSuccess="Identity verified";
         AuthFailed="Authentication failed. Please try again.";
         AuthSkipped="Authentication not required";
-        AuthEdgePrompt="Microsoft Edge has opened for sign-in.`nComplete the sign-in in the browser window, then this dialog will close automatically.";
-        AuthDeviceCodePrompt="To sign in, use a web browser on another device`nand enter this code:"
+        AuthEdgePrompt="Microsoft Edge has opened for sign-in.`nComplete the sign-in in the browser window, then this dialog will close automatically."
     }
 }
 
@@ -1218,107 +1210,16 @@ function Invoke-M365EdgeAuth {
     return $false
 }
 
-function Invoke-M365DeviceCodeAuth {
-    <#
-    .SYNOPSIS  Authenticate the operator via Device Code Flow (fallback).
-    .DESCRIPTION
-        Fallback authentication path used when the kiosk Edge auth is not
-        available.  Initiates the Device Code Flow and shows the one-time
-        code and verification URL in the HTML UI as a modal overlay.
-    .PARAMETER ClientId
-        Azure AD application (client) ID.
-    .PARAMETER Scope
-        OAuth 2.0 scopes to request (space-separated).
-    .OUTPUTS
-        $true on success, $false on failure or cancellation.
-    #>
-    param(
-        [string] $ClientId,
-        [string] $Scope = 'openid profile'
-    )
-
-    $deviceCodeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/devicecode'
-    $tokenUrl      = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
-    $grantType     = 'urn:ietf:params:oauth:grant-type:device_code'
-
-    $deviceResponse = $null
-    try {
-        $body = "client_id=$([uri]::EscapeDataString($ClientId))&scope=$([uri]::EscapeDataString($Scope))"
-        $wc   = New-Object System.Net.WebClient
-        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-        $raw  = $wc.UploadString($deviceCodeUrl, 'POST', $body)
-        $deviceResponse = $raw | ConvertFrom-Json
-    } catch {
-        Write-AuthLog "Device code request failed: $_"
-        return $false
-    }
-
-    $userCode   = $deviceResponse.user_code
-    $deviceCode = $deviceResponse.device_code
-    $expiresIn  = if ($deviceResponse.expires_in) { [int]$deviceResponse.expires_in } else { 900 }
-    $interval   = if ($deviceResponse.interval)   { [int]$deviceResponse.interval   } else { 5   }
-
-    # ── Show device code in the HTML UI modal ───────────────────────────────
-    $script:_authCancelled = $false
-    Update-HtmlUi -Message $S.AuthDeviceCodePrompt -Step 3 `
-                  -ShowDeviceCode -DeviceCode $userCode -DeviceCodeUrl $S.AuthUrl
-
-    # ── Poll for token ──────────────────────────────────────────────────────
-    $expiry   = [datetime]::UtcNow.AddSeconds($expiresIn)
-    $nextPoll = [datetime]::UtcNow.AddSeconds($interval)
-    $tokenResponse = $null
-
-    while (-not $script:_authCancelled -and [datetime]::UtcNow -lt $expiry) {
-        if ([datetime]::UtcNow -ge $nextPoll) {
-            try {
-                $body = "grant_type=$([uri]::EscapeDataString($grantType))" +
-                        "&client_id=$([uri]::EscapeDataString($ClientId))" +
-                        "&device_code=$([uri]::EscapeDataString($deviceCode))"
-                $wc = New-Object System.Net.WebClient
-                $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-                $raw = $wc.UploadString($tokenUrl, 'POST', $body)
-                $tr = $raw | ConvertFrom-Json
-                if ($tr.id_token) {
-                    $tokenResponse = $tr
-                    if ($tr.access_token) {
-                        $script:GraphAccessToken = $tr.access_token
-                    }
-                    break
-                }
-            } catch {
-                $msg = $_.ToString()
-                if ($msg -notmatch 'authorization_pending' -and $msg -notmatch 'slow_down') {
-                    Write-AuthLog "Token poll error: $msg"
-                }
-            }
-            $nextPoll = [datetime]::UtcNow.AddSeconds($interval)
-        }
-
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 200
-    }
-
-    # ── Clear the device code modal ─────────────────────────────────────────
-    Update-HtmlUi -Message $S.AuthSigning -Step 3
-
-    if (-not $tokenResponse) {
-        return $false
-    }
-
-    Write-AuthLog "Device code auth succeeded -- token obtained."
-    return $true
-}
-
 function Invoke-M365Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via M365 (kiosk browser, Device Code fallback).
+    .SYNOPSIS  Authenticate the operator via M365 (kiosk Edge browser).
     .DESCRIPTION
         Downloads config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
-        first attempts interactive sign-in by navigating the existing
+        attempts interactive sign-in by navigating the existing
         kiosk Edge browser to Azure AD (Authorization Code Flow with
-        PKCE).  If the kiosk UI is not active or fails, it falls back
-        to Device Code Flow, showing the code in an HTML modal.
+        PKCE).  On failure or timeout, shows a "Retry" button so the
+        operator can re-attempt sign-in.
         Tenant restrictions are enforced at the Entra ID app registration
         level -- only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
@@ -1367,18 +1268,17 @@ function Invoke-M365Auth {
     $script:AuthConfig = $authConfig
 
     Write-Status $S.AuthSigning 'Cyan'
+    Update-HtmlUi -Message $S.AuthSigning -Step 3
     [System.Windows.Forms.Application]::DoEvents()
 
-    # ── Try kiosk Edge browser auth first ──────────────────────────────────
+    # ── Try kiosk Edge browser auth ────────────────────────────────────────
     # Navigates the existing kiosk Edge to Azure AD for interactive sign-in.
-    # A localhost HTTP listener captures the OAuth redirect.  If the kiosk
-    # UI is not active or auth fails, fall back to Device Code Flow, which
-    # shows the one-time code in an HTML modal overlay.
+    # A localhost HTTP listener captures the OAuth redirect.
     $browserOk = $false
     try {
         $browserOk = Invoke-M365EdgeAuth -ClientId $clientId -Scope $scope
     } catch {
-        Write-AuthLog "Kiosk auth failed, will fall back to Device Code Flow: $_"
+        Write-AuthLog "Kiosk auth failed: $_"
     }
 
     if ($browserOk) {
@@ -1388,24 +1288,10 @@ function Invoke-M365Auth {
         return $true
     }
 
-    # ── Fallback: Device Code Flow ──────────────────────────────────────────
-    Write-AuthLog "Falling back to Device Code Flow... (see $script:AuthLogPath for details)"
-    $deviceOk = $false
-    try {
-        $deviceOk = Invoke-M365DeviceCodeAuth -ClientId $clientId -Scope $scope
-    } catch {
-        Write-AuthLog "Device Code Flow failed: $_"
-    }
-
-    if ($deviceOk) {
-        Write-Status $S.AuthSuccess 'Green'
-        Invoke-Sound 1000 200
-        Start-Sleep -Seconds 1
-        return $true
-    }
-
+    # ── Auth failed or timed out -- show retry button ──────────────────────
+    Write-AuthLog "Authentication failed -- showing retry button."
     Write-Status $S.AuthFailed 'Red'
-    Start-Sleep -Seconds 3
+    Update-HtmlUi -Message $S.AuthFailed -Step 3 -ShowRetry
     return $false
 }
 #endregion
@@ -1425,9 +1311,8 @@ function ProceedToEngine {
     # When config/auth.json has requireAuth = true, the operator must sign in
     # with a Microsoft 365 account from an allowed Entra ID tenant.
     # Tenant restrictions are enforced at the app registration level.
-    # Navigates the kiosk Edge to Azure AD (Auth Code + PKCE) as
-    # the primary method; falls back to Device Code Flow shown in
-    # an HTML modal overlay if the kiosk auth is unavailable.
+    # Navigates the kiosk Edge to Azure AD (Auth Code + PKCE).
+    # On failure or timeout the UI shows a Retry button.
     $authPassed = Invoke-M365Auth
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect
