@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Build configuration management module for Nova boot image creation.
 
@@ -46,7 +46,7 @@ $script:VK_SPACE = 32
 $script:VK_UP    = 38
 $script:VK_DOWN  = 40
 
-# Available WinPE optional components — order matters (dependency chain).
+# Available WinPE optional components -- order matters (dependency chain).
 # Name        : base cab name (without .cab extension or language prefix)
 # Description : human-readable label shown in the configuration menu
 # Default     : $true = pre-selected in the menu
@@ -78,7 +78,7 @@ function Save-BuildConfiguration {
     .SYNOPSIS  Persists the build configuration to disk for future reuse.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
-        Justification = 'Saving a JSON config file — no system side-effects beyond a small user-data file')]
+        Justification = 'Saving a JSON config file -- no system side-effects beyond a small user-data file')]
     [CmdletBinding()]
     param([hashtable] $Config)
     $path = Get-BuildConfigPath
@@ -173,7 +173,7 @@ function Show-BuildConfiguration {
     # ── Detect VT/ANSI support for single-keypress input ─────────────────────
     $supportsVT = ($null -ne $Host.UI.psobject.Properties['SupportsVirtualTerminal'] -and
                    $Host.UI.SupportsVirtualTerminal) -or $env:WT_SESSION
-    # ReadKey requires a RawUI host — exclude known non-console hosts
+    # ReadKey requires a RawUI host -- exclude known non-console hosts
     $supportsRawKey = $Host.UI.RawUI -and ($Host.Name -notin @(
         'Visual Studio Code Host', 'Windows PowerShell ISE Host'
     ))
@@ -257,7 +257,7 @@ function Show-BuildConfiguration {
             if ($vk -eq $script:VK_UP)   { $cursorIndex = [Math]::Max(0, $cursorIndex - 1); continue }
             if ($vk -eq $script:VK_DOWN) { $cursorIndex = [Math]::Min($totalItems - 1, $cursorIndex + 1); continue }
             if ($vk -eq $script:VK_SPACE) {
-                # Space — toggle highlighted item
+                # Space -- toggle highlighted item
                 if ($cursorIndex -lt $pkgCount) {
                     if ($script:AvailableWinPEPackages[$cursorIndex].Required -and $selected[$cursorIndex]) {
                         Write-Warn "$($script:AvailableWinPEPackages[$cursorIndex].Name) is required and cannot be deselected."
@@ -271,7 +271,7 @@ function Show-BuildConfiguration {
                 continue
             }
 
-            # Enter — accept
+            # Enter -- accept
             if ($vk -eq $script:VK_ENTER) { $cmd = '' }
             else { $cmd = "$ch".Trim() }
         } else {
@@ -279,7 +279,7 @@ function Show-BuildConfiguration {
             $cmd = $menuChoice.Trim()
         }
 
-        # Enter — show confirmation summary and accept
+        # Enter -- show confirmation summary and accept
         if ($cmd -eq '') {
             # Re-enable required packages that were somehow deselected
             for ($i = 0; $i -lt $pkgCount; $i++) {
@@ -432,7 +432,7 @@ function Get-AvailableWinPEPackages {
     .SYNOPSIS  Returns the list of available WinPE optional components.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
-        Justification = 'Returns a collection of packages — plural noun is intentional')]
+        Justification = 'Returns a collection of packages -- plural noun is intentional')]
     [CmdletBinding()]
     param()
     return $script:AvailableWinPEPackages

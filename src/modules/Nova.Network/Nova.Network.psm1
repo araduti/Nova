@@ -50,7 +50,7 @@ function Test-HasValidIP {
     .SYNOPSIS  Returns $true when ipconfig reports at least one non-APIPA IPv4 address.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
-        Justification = 'No console output — name follows Test- verb convention')]
+        Justification = 'No console output -- name follows Test- verb convention')]
     param()
     $ipOut = ipconfig 2>$null | Out-String
     foreach ($m in [regex]::Matches($ipOut, '(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')) {

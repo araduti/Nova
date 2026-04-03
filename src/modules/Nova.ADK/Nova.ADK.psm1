@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Windows ADK detection, installation, and WinPE workspace setup for Nova.
 
@@ -47,7 +47,7 @@ function Assert-ADKInstalled {
         return $adkRoot
     }
 
-    Write-Warn 'ADK or WinPE add-on not found — downloading installers...'
+    Write-Warn 'ADK or WinPE add-on not found -- downloading installers...'
 
     $installRoot = "${env:ProgramFiles(x86)}\Windows Kits\10"
     $downloads   = @(
@@ -123,7 +123,7 @@ function Copy-WinPEFile {
         $wimSrc = $WimSource
         Write-Step "Using provided WIM source: $(Split-Path $wimSrc -Leaf)"
     } else {
-        # Locate winpe.wim — some ADK layouts store it under the arch subdir, others at the root
+        # Locate winpe.wim -- some ADK layouts store it under the arch subdir, others at the root
         $wimCandidates = @(
             (Join-Path $winPERoot "$Architecture\en-us\winpe.wim"),
             (Join-Path $winPERoot 'en-us\winpe.wim')

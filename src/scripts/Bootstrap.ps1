@@ -174,7 +174,7 @@ function Import-LocaleJson {
         }
         return $ht
     } catch {
-        Write-Verbose "Failed to download locale $code from $url — $_"
+        Write-Verbose "Failed to download locale $code from $url -- $_"
         return $null
     }
 }
@@ -188,7 +188,7 @@ foreach ($lc in @('EN', 'FR', 'ES')) {
 }
 
 if (-not $Strings.ContainsKey('EN')) {
-    # Minimal inline fallback — only used when the network fetch fails for EN.
+    # Minimal inline fallback -- only used when the network fetch fails for EN.
     $Strings['EN'] = @{
         Header="N O V A"; Subtitle="Cloud Imaging Engine";
         Step1="Network"; Step2="Connect"; Step3="Sign in"; Step4="Deploy";
@@ -454,7 +454,7 @@ $script:actionTimer.Start()
 
 #region ── Global F8 hotkey (works even when Edge has crashed) ────────────────
 # Register F8 as a system-wide hotkey via Win32 RegisterHotKey so users can
-# open a PowerShell troubleshooting console at any time — regardless of whether
+# open a PowerShell troubleshooting console at any time -- regardless of whether
 # Edge is responsive.  The WM_HOTKEY message is delivered to a hidden
 # NativeWindow and processed by the existing DoEvents message pump.
 try {
@@ -497,7 +497,7 @@ public class NovaHotkeyWindow : NativeWindow, IDisposable {
 
     $script:hotkeyWindow = New-Object NovaHotkeyWindow
     $script:hotkeyWindow.add_HotkeyPressed({
-        Write-Verbose 'F8 hotkey pressed — opening PowerShell'
+        Write-Verbose 'F8 hotkey pressed -- opening PowerShell'
         Start-Process $script:PsBin -ArgumentList '-NoProfile', '-NoExit'
     })
     Write-Verbose 'Global F8 hotkey registered'
@@ -524,8 +524,8 @@ public class NovaHotkeyWindow : NativeWindow, IDisposable {
 #
 # Recovery (if crash still occurs):
 #   The watchdog tracks two signals:
-#   1. Process exit  — all msedge.exe processes have terminated.
-#   2. Heartbeat loss — the HTML UI sends a /heartbeat every 10 s.
+#   1. Process exit  -- all msedge.exe processes have terminated.
+#   2. Heartbeat loss -- the HTML UI sends a /heartbeat every 10 s.
 #      If no heartbeat arrives for 30+ seconds the renderer has likely
 #      crashed while the browser chrome process may still be alive.
 #
@@ -567,7 +567,7 @@ function Restart-Edge {
     .SYNOPSIS  Kill all Edge processes and relaunch the kiosk UI.
     #>
     [CmdletBinding(SupportsShouldProcess)] param()
-    Write-Verbose 'Edge watchdog — restarting Edge'
+    Write-Verbose 'Edge watchdog -- restarting Edge'
     # Terminate every msedge process
     Get-Process -Name 'msedge' -ErrorAction SilentlyContinue |
         ForEach-Object { try { $_.Kill() } catch { $null = $_ } }
@@ -592,8 +592,8 @@ $script:edgeWatchdogTimer.Add_Tick({
     $edgeRunning = Get-Process -Name 'msedge' -ErrorAction SilentlyContinue
 
     if (-not $edgeRunning) {
-        # Edge process has exited entirely — restart it.
-        Write-Verbose 'Edge watchdog — Edge process not found'
+        # Edge process has exited entirely -- restart it.
+        Write-Verbose 'Edge watchdog -- Edge process not found'
         Restart-Edge
         return
     }
@@ -601,7 +601,7 @@ $script:edgeWatchdogTimer.Add_Tick({
     # Edge is running but the UI may be unresponsive (Error code 39 scenario).
     $heartbeatAge = ([DateTime]::UtcNow - $script:_lastHeartbeat).TotalSeconds
     if ($heartbeatAge -gt 30) {
-        Write-Verbose "Edge watchdog — heartbeat lost (${heartbeatAge}s ago)"
+        Write-Verbose "Edge watchdog -- heartbeat lost (${heartbeatAge}s ago)"
         Restart-Edge
     }
 })
@@ -666,7 +666,7 @@ function Show-ConfigurationMenu {
         return $defaultResult
     }
 
-    # Parse the catalog XML once — downstream combos filter dynamically.
+    # Parse the catalog XML once -- downstream combos filter dynamically.
     $catalog = $null
     try {
         [xml]$catalog = Get-Content $productsXml -ErrorAction Stop
@@ -861,7 +861,7 @@ function Update-TaskSequenceFromConfig {
     .DESCRIPTION
         After the user submits the configuration modal, this function updates
         the relevant step parameters in the task sequence JSON file so that
-        the engine reads all values from the task sequence — no separate
+        the engine reads all values from the task sequence -- no separate
         command-line parameters needed.
 
         ComputerName and locale settings are also injected into the
@@ -1044,7 +1044,7 @@ function Invoke-M365EdgeAuth {
         authorization code, then exchanges it for tokens using PKCE.
         After authentication completes (or fails), the listener redirects the
         browser back to the Nova-UI page.
-        WinPE-safe — no separate Edge process or WinForms dialog is created.
+        WinPE-safe -- no separate Edge process or WinForms dialog is created.
     .PARAMETER ClientId
         Azure AD application (client) ID.
     .OUTPUTS
@@ -1057,7 +1057,7 @@ function Invoke-M365EdgeAuth {
 
     # ── Verify the HTML UI is active (kiosk Edge must be running) ───────────
     if (-not $script:HtmlUiActive) {
-        Write-AuthLog "HTML UI not active — cannot use in-kiosk auth."
+        Write-AuthLog "HTML UI not active -- cannot use in-kiosk auth."
         return $false
     }
 
@@ -1122,7 +1122,7 @@ function Invoke-M365EdgeAuth {
     $script:_authCancelled  = $false
     $asyncResult = $listener.BeginGetContext($null, $null)
 
-    # 5-minute timeout — Azure AD sessions are valid for 10 minutes,
+    # 5-minute timeout -- Azure AD sessions are valid for 10 minutes,
     # 5 minutes gives enough time without leaving the kiosk unattended.
     $timeout = [datetime]::UtcNow.AddMinutes(5)
 
@@ -1208,7 +1208,7 @@ function Invoke-M365EdgeAuth {
             if ($tokenResponse.access_token) {
                 $script:GraphAccessToken = $tokenResponse.access_token
             }
-            Write-AuthLog "Kiosk auth succeeded — token obtained."
+            Write-AuthLog "Kiosk auth succeeded -- token obtained."
             return $true
         }
     } catch {
@@ -1305,7 +1305,7 @@ function Invoke-M365DeviceCodeAuth {
         return $false
     }
 
-    Write-AuthLog "Device code auth succeeded — token obtained."
+    Write-AuthLog "Device code auth succeeded -- token obtained."
     return $true
 }
 
@@ -1320,7 +1320,7 @@ function Invoke-M365Auth {
         PKCE).  If the kiosk UI is not active or fails, it falls back
         to Device Code Flow, showing the code in an HTML modal.
         Tenant restrictions are enforced at the Entra ID app registration
-        level — only tenants explicitly allowed in the app's
+        level -- only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
     .OUTPUTS
         $true  if authentication succeeded or was not required.
@@ -1346,7 +1346,7 @@ function Invoke-M365Auth {
 
     # Validate that the config has the minimum required fields.
     if (-not $authConfig.clientId) {
-        Write-AuthLog "Auth config incomplete — skipping authentication."
+        Write-AuthLog "Auth config incomplete -- skipping authentication."
         Write-Status $S.AuthSkipped 'Green'
         return $true
     }
@@ -1356,7 +1356,7 @@ function Invoke-M365Auth {
     # ── Build scope string ──────────────────────────────────────────────────
     # Always include openid profile; append Graph API scopes when configured
     # (e.g. DeviceManagementServiceConfig.ReadWrite.All for Autopilot import).
-    # Delegated permissions — no client secret required.
+    # Delegated permissions -- no client secret required.
     $scope = 'openid profile'
     if ($authConfig.graphScopes) {
         $trimmed = ($authConfig.graphScopes).Trim()
@@ -1483,12 +1483,12 @@ function ProceedToEngine {
                 $manifest = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
             } catch {
                 Remove-Item $localNova -Force -ErrorAction SilentlyContinue
-                throw "Integrity check FAILED — could not download hash manifest from $hashesUrl : $_"
+                throw "Integrity check FAILED -- could not download hash manifest from $hashesUrl : $_"
             }
             $expected = $manifest.files.'src/scripts/Nova.ps1'
             if (-not $expected) {
                 Remove-Item $localNova -Force -ErrorAction SilentlyContinue
-                throw "Integrity check FAILED — no src/scripts/Nova.ps1 entry in hash manifest"
+                throw "Integrity check FAILED -- no src/scripts/Nova.ps1 entry in hash manifest"
             }
             $actual = [System.BitConverter]::ToString(
                 [System.Security.Cryptography.SHA256]::Create().ComputeHash(
@@ -1497,7 +1497,7 @@ function ProceedToEngine {
             ) -replace '-', ''
             if ($actual -ne $expected) {
                 Remove-Item $localNova -Force -ErrorAction SilentlyContinue
-                throw "Integrity check FAILED for Nova.ps1 — Expected: $expected, Got: $actual"
+                throw "Integrity check FAILED for Nova.ps1 -- Expected: $expected, Got: $actual"
             }
             Write-AuthLog 'Nova.ps1 integrity verified (SHA256 match).'
         }
@@ -1531,7 +1531,7 @@ function ProceedToEngine {
 
         Update-HtmlUi -Message $S.Imaging -Step 4
 
-        # Stop writing to the status JSON from Bootstrap — Nova.ps1 takes
+        # Stop writing to the status JSON from Bootstrap -- Nova.ps1 takes
         # over the file from this point to avoid write conflicts.
         $script:HtmlUiActive = $false
 
@@ -1559,7 +1559,7 @@ function ProceedToEngine {
         # and the Retry button works.
         $script:HtmlUiActive = $true
         Invoke-Sound 400 600
-        Update-HtmlUi -Message 'Imaging failed — press Retry or F8 for a shell.' -Step 4 -ShowRetry
+        Update-HtmlUi -Message 'Imaging failed -- press Retry or F8 for a shell.' -Step 4 -ShowRetry
     }
 }
 
@@ -1607,7 +1607,7 @@ $script:initTimer.Add_Tick({
                     try { $script:_proc.Kill() } catch { Write-Verbose "Process already exited: $_" }
                 }
                 # wpeutil UpdateBootInfo populates PEFirmwareType in the
-                # registry — needed by downstream partitioning logic.
+                # registry -- needed by downstream partitioning logic.
                 $prev = $ErrorActionPreference
                 $ErrorActionPreference = 'Continue'
                 try {

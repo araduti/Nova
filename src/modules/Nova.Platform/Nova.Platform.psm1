@@ -14,7 +14,7 @@ function Get-FirmwareType {
 
     .NOTES
         Primary:   PEFirmwareType registry value (1 = BIOS, 2 = UEFI).
-        Fallback:  Confirm-SecureBootUEFI — available on all Win8+ systems; throws
+        Fallback:  Confirm-SecureBootUEFI -- available on all Win8+ systems; throws
                    System.PlatformNotSupportedException on non-UEFI firmware, returns
                    $true/$false on UEFI (regardless of Secure Boot state).
     #>
@@ -24,7 +24,7 @@ function Get-FirmwareType {
                                  -Name PEFirmwareType -ErrorAction Stop).PEFirmwareType
         if ($val -eq 2) { return 'UEFI' }
         if ($val -eq 1) { return 'BIOS' }
-        # Any other value (e.g. 0 = unknown) — fall through to secondary check
+        # Any other value (e.g. 0 = unknown) -- fall through to secondary check
     } catch { Write-Verbose "Registry firmware type unavailable: $_" }
 
     # Fallback: Confirm-SecureBootUEFI throws PlatformNotSupportedException on BIOS
@@ -34,7 +34,7 @@ function Get-FirmwareType {
     } catch [System.PlatformNotSupportedException] {
         return 'BIOS'
     } catch {
-        Write-Warning "Confirm-SecureBootUEFI failed ($($_.Exception.Message)) — assuming UEFI."
+        Write-Warning "Confirm-SecureBootUEFI failed ($($_.Exception.Message)) -- assuming UEFI."
     }
 
     return 'UEFI'
@@ -44,7 +44,7 @@ function Get-WinPEArchitecture {
     <#
     .SYNOPSIS
         Maps the current OS CPU architecture to the WinPE folder/package name
-        used by the ADK. Nova supports amd64 and x86 only — ARM is not
+        used by the ADK. Nova supports amd64 and x86 only -- ARM is not
         supported because Nova is a cloud-only deployment engine targeting
         x86-64 enterprise hardware.
     #>

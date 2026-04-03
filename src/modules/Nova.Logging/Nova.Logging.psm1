@@ -29,7 +29,7 @@ function Set-NovaLogPrefix {
     .PARAMETER Fail     Prefix for Write-Fail (error).
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
-        Justification = 'Setting in-memory module state only — no system side-effects')]
+        Justification = 'Setting in-memory module state only -- no system side-effects')]
     [CmdletBinding()]
     param(
         [string]$Step,

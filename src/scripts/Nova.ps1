@@ -40,11 +40,11 @@ param(
     [ValidatePattern('^[A-Za-z]$')]
     [string]$OSDrive = 'C',
 
-    # IPC status file — Bootstrap.ps1 polls this JSON file to show live progress
+    # IPC status file -- Bootstrap.ps1 polls this JSON file to show live progress
     # in the UI.  Leave empty to disable status reporting.
     [string]$StatusFile = '',
 
-    # Task sequence JSON — the engine reads the step list from this file and
+    # Task sequence JSON -- the engine reads the step list from this file and
     # executes each enabled step in order.  The file is produced by the
     # web-based Task Sequence Editor (src/web/editor/index.html) and follows the
     # schema defined in resources/task-sequence/default.json.
@@ -99,7 +99,7 @@ $script:GitHubTokenWarningShown = $false
 
 # ── Import shared modules ──────────────────────────────────────────────────────
 # Resolve module path: repo layout ($PSScriptRoot/../modules) or WinPE staging
-# (X:\Windows\System32\Modules — copied by Trigger.ps1 during image build).
+# (X:\Windows\System32\Modules -- copied by Trigger.ps1 during image build).
 $script:ModulesRoot = if (Test-Path "$PSScriptRoot\..\modules") {
     "$PSScriptRoot\..\modules"
 } elseif (Test-Path 'X:\Windows\System32\Modules') {
@@ -279,7 +279,7 @@ function Send-DeploymentAlert {
             $cfg = $cfgJson
         }
     } catch {
-        Write-Verbose "Alert config not available — skipping notifications: $_"
+        Write-Verbose "Alert config not available -- skipping notifications: $_"
         return
     }
     if (-not $cfg) { return }
@@ -384,7 +384,7 @@ function Get-GitHubTokenViaEntra {
     $entraToken = $env:NOVA_GRAPH_TOKEN
     if (-not $entraToken) {
         if (-not $script:GitHubTokenWarningShown) {
-            Write-Warning "NOVA_GRAPH_TOKEN is not set — Entra→GitHub token exchange unavailable. Set GITHUB_TOKEN or sign in via Entra ID to enable deployment status reporting."
+            Write-Warning "NOVA_GRAPH_TOKEN is not set -- Entra→GitHub token exchange unavailable. Set GITHUB_TOKEN or sign in via Entra ID to enable deployment status reporting."
             $script:GitHubTokenWarningShown = $true
         }
         return $null
@@ -400,7 +400,7 @@ function Get-GitHubTokenViaEntra {
         Write-Warning "Could not load auth config for Entra exchange: $_"
     }
     if (-not $proxyUrl) {
-        Write-Warning "No githubOAuthProxy URL in config/auth.json — cannot exchange Entra token for GitHub token."
+        Write-Warning "No githubOAuthProxy URL in config/auth.json -- cannot exchange Entra token for GitHub token."
         return $null
     }
 
@@ -468,13 +468,13 @@ function Push-ReportToGitHub {
         write a per-device JSON file into the deployments/ directory.  Each file
         is named after the device, so concurrent deployments never collide.
 
-        The API call is atomic — there is no git clone/push, so it cannot
+        The API call is atomic -- there is no git clone/push, so it cannot
         conflict with the .github/ workflows or block other pushes.
 
         Token resolution order:
           1. -Token parameter (explicit)
-          2. $env:GITHUB_TOKEN (classic PAT — backward compatible)
-          3. Entra ID exchange — if $env:NOVA_GRAPH_TOKEN is set and the
+          2. $env:GITHUB_TOKEN (classic PAT -- backward compatible)
+          3. Entra ID exchange -- if $env:NOVA_GRAPH_TOKEN is set and the
              OAuth proxy (from config/auth.json) is configured, the Entra
              token is exchanged for a short-lived GitHub installation token.
              This is the recommended path: no separate GitHub PAT required.
@@ -520,8 +520,8 @@ function Push-ReportToGitHub {
                     -Method Get -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
                 $sha = $existing.sha
             } catch {
-                # File does not exist yet — that is fine for creates.
-                # For deletes, file is already gone — nothing to do.
+                # File does not exist yet -- that is fine for creates.
+                # For deletes, file is already gone -- nothing to do.
                 if ($Delete) { return }
             }
 
@@ -549,12 +549,12 @@ function Push-ReportToGitHub {
                     -UseBasicParsing -ErrorAction Stop -TimeoutSec 15 | Out-Null
             }
 
-            # Success — exit retry loop
+            # Success -- exit retry loop
             return
         } catch {
             $verb = if ($Delete) { 'DELETE' } else { 'PUT' }
             if ($attempt -lt $maxRetries) {
-                Write-Warning "GitHub $verb attempt $attempt/$maxRetries failed for '$FilePath': $_ — retrying in $($attempt * 2)s..."
+                Write-Warning "GitHub $verb attempt $attempt/$maxRetries failed for '$FilePath': $_ -- retrying in $($attempt * 2)s..."
                 Start-Sleep -Seconds ($attempt * 2)
             } else {
                 Write-Warning "GitHub $verb failed after $maxRetries attempts for '$FilePath': $_"
@@ -578,7 +578,7 @@ function Add-SetupCompleteEntry {
     )
     $dir = Split-Path $FilePath
     if (-not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
-    # Windows OOBE calls SetupComplete.cmd by convention — it must be a .cmd file.
+    # Windows OOBE calls SetupComplete.cmd by convention -- it must be a .cmd file.
     # ASCII encoding ensures broadest compatibility with cmd.exe's file parser.
     if (Test-Path $FilePath) {
         $existing = (Get-Content $FilePath -Raw).TrimEnd()
@@ -626,7 +626,7 @@ function Invoke-DownloadWithProgress {
                 if ($sw.ElapsedMilliseconds -gt $script:ProgressIntervalMs) {
                     $pct = if ($totalBytes -gt 0) { [int]($downloaded * 100 / $totalBytes) } else { 0 }
                     $speed = if ($sw.Elapsed.TotalSeconds -gt 0) { [long]($downloaded / $sw.Elapsed.TotalSeconds) } else { 0 }
-                    $detail = "$pct% — $(Get-FileSizeReadable $downloaded) of $(Get-FileSizeReadable $totalBytes) @ $(Get-FileSizeReadable $speed)/s"
+                    $detail = "$pct% -- $(Get-FileSizeReadable $downloaded) of $(Get-FileSizeReadable $totalBytes) @ $(Get-FileSizeReadable $speed)/s"
                     Write-Host "  Progress: $detail" -NoNewline
                     Write-Host "`r" -NoNewline
                     if ($ProgressRange -gt 0) {
@@ -1300,14 +1300,14 @@ function Invoke-AutopilotImport {
     try {
         $existing = Invoke-RestMethod -Uri $checkUri -Headers $authHeaders -Method GET -TimeoutSec 30
         if ($existing.value -and $existing.value.Count -gt 0) {
-            Write-Success "Device $serial is already registered in Autopilot — skipping import."
+            Write-Success "Device $serial is already registered in Autopilot -- skipping import."
             return
         }
     } catch {
         Write-Warn "Autopilot registration check failed (non-fatal): $_"
     }
 
-    Write-Host '  Device not found in Autopilot — proceeding with import...'
+    Write-Host '  Device not found in Autopilot -- proceeding with import...'
 
     # ── 3. Generate hardware hash via oa3tool.exe ───────────────────────
     $customFolder = 'X:\OSDCloud\Config\Scripts\Custom'
@@ -1357,7 +1357,7 @@ function Invoke-AutopilotImport {
         'Content-Type' = 'application/json'
     }) -Method POST -Body ($body | ConvertTo-Json) -TimeoutSec 60
 
-    Write-Host '  Device uploaded — waiting for registration...'
+    Write-Host '  Device uploaded -- waiting for registration...'
 
     # ── 5. Poll until the device appears in Autopilot ───────────────────
     # Autopilot registration is asynchronous.  Poll every 30 seconds for
@@ -1455,7 +1455,7 @@ function Set-OOBECustomization {
     .SYNOPSIS  Writes the unattend.xml to the target OS drive.
     .DESCRIPTION
         The unattendContent in the task sequence is the single source of
-        truth — ComputerName and locale settings are already injected by
+        truth -- ComputerName and locale settings are already injected by
         the Task Sequence Editor (or the Bootstrap config modal at runtime).
         This function simply writes the final XML to disk (or downloads /
         copies from an external source).
@@ -1599,9 +1599,9 @@ function Test-StepCondition {
         Steps without a condition always return $true.
 
         Supported condition types:
-          variable  — check an environment / task-sequence variable
-          wmiQuery  — run a WMI query and check whether it returns results
-          registry  — check a registry path/value
+          variable  -- check an environment / task-sequence variable
+          wmiQuery  -- run a WMI query and check whether it returns results
+          registry  -- check a registry path/value
     #>
     param(
         [psobject]$Condition
@@ -1680,7 +1680,7 @@ function Test-StepCondition {
             }
         }
         default {
-            Write-Warn "Unknown condition type '$($Condition.type)' — treating as met"
+            Write-Warn "Unknown condition type '$($Condition.type)' -- treating as met"
             return $true
         }
     }
@@ -1692,7 +1692,7 @@ function Invoke-TaskSequenceStep {
     .DESCRIPTION
         Maps each step type string to the corresponding Nova engine function,
         passing the step's parameters.  All parameter values come from the task
-        sequence JSON — no script-level fallbacks.
+        sequence JSON -- no script-level fallbacks.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1777,7 +1777,7 @@ function Invoke-TaskSequenceStep {
         'SetComputerName' {
             # Resolve computer name from naming rules or use the static value.
             # The Task Sequence Editor and Bootstrap config modal handle syncing
-            # names into unattendContent — the engine just resolves and logs.
+            # names into unattendContent -- the engine just resolves and logs.
             $cName = if ($p -and $p.PSObject.Properties['computerName'] -and $p.computerName) { $p.computerName } else { '' }
             if (-not $cName -and $p) {
                 # Determine naming source (backward compat: useSerialNumber → serialNumber)
@@ -1823,13 +1823,13 @@ function Invoke-TaskSequenceStep {
                 Update-BootstrapStatus -Message "Setting computer name..." -Detail "Name: $cName" -Step $uiStep -Progress $pct
                 Write-Success "Computer name resolved: $cName"
             } else {
-                Update-BootstrapStatus -Message "Setting computer name..." -Detail "No name specified — Windows will assign a random name" -Step $uiStep -Progress $pct
-                Write-Warn "No computer name resolved — Windows will assign a random name"
+                Update-BootstrapStatus -Message "Setting computer name..." -Detail "No name specified -- Windows will assign a random name" -Step $uiStep -Progress $pct
+                Write-Warn "No computer name resolved -- Windows will assign a random name"
             }
         }
         'SetRegionalSettings' {
             # Log the regional settings.  The Editor and Bootstrap config
-            # modal already synced locale values into unattendContent — no
+            # modal already synced locale values into unattendContent -- no
             # engine-level XML update needed.
             $iLocale = if ($p -and $p.PSObject.Properties['inputLocale']  -and $p.inputLocale)  { $p.inputLocale }  else { '' }
             $sLocale = if ($p -and $p.PSObject.Properties['systemLocale'] -and $p.systemLocale) { $p.systemLocale } else { '' }
@@ -1843,7 +1843,7 @@ function Invoke-TaskSequenceStep {
             Write-Success "Regional settings applied: $detailStr"
         }
         'CustomizeOOBE' {
-            # The unattendContent is already the final XML — the Editor syncs
+            # The unattendContent is already the final XML -- the Editor syncs
             # step values at design time and Bootstrap syncs config-modal
             # values at runtime.  Just write it to disk.
             $uUrl     = if ($p -and $p.PSObject.Properties['unattendUrl']     -and $p.unattendUrl)     { $p.unattendUrl }     else { '' }
@@ -1859,7 +1859,7 @@ function Invoke-TaskSequenceStep {
             Invoke-PostScript -ScriptUrls $urls -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
         default {
-            Write-Warn "Unknown step type '$($Step.type)' — skipping"
+            Write-Warn "Unknown step type '$($Step.type)' -- skipping"
         }
     }
 }
@@ -1904,7 +1904,7 @@ try {
 
     # Inter-step state: DownloadImage stores the resolved image path for
     # ApplyImage to consume.  ComputerName and locale settings are synced
-    # into unattendContent by the Editor and Bootstrap config modal — the
+    # into unattendContent by the Editor and Bootstrap config modal -- the
     # engine just writes what's in the task sequence.
     $script:TsImagePath = ''
     $tsName = if ($ts.name) { $ts.name } else { 'Unknown' }
@@ -1916,7 +1916,7 @@ try {
         # Evaluate step condition (if any) before execution
         if ($s.PSObject.Properties['condition'] -and $s.condition -and $s.condition.type) {
             if (-not (Test-StepCondition -Condition $s.condition)) {
-                Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type)) — condition not met, skipping"
+                Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type)) -- condition not met, skipping"
                 continue
             }
         }
@@ -1951,7 +1951,7 @@ try {
                     -CurrentDiskNumber $TargetDiskNumber
             } catch {
                 if ($s.PSObject.Properties['continueOnError'] -and $s.continueOnError) {
-                    Write-Warn "Step '$($s.name)' failed but continueOnError is set — continuing: $_"
+                    Write-Warn "Step '$($s.name)' failed but continueOnError is set -- continuing: $_"
                 } else {
                     throw
                 }
@@ -1964,7 +1964,7 @@ try {
     $elapsed   = (Get-Date) - $script:DeploymentStartTime
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
 
-    # Clear active deployment file — device is no longer deploying
+    # Clear active deployment file -- device is no longer deploying
     try { Update-ActiveDeploymentReport -Clear }
     catch { Write-Warning "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
 
@@ -1976,7 +1976,7 @@ try {
         -Duration $durString `
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count
 
-    Update-BootstrapStatus -Message 'Imaging complete — rebooting...' -Detail 'Windows installation finished successfully' -Step 4 -Progress 100 -Done
+    Update-BootstrapStatus -Message 'Imaging complete -- rebooting...' -Detail 'Windows installation finished successfully' -Step 4 -Progress 100 -Done
 
     Write-Host @"
 
@@ -2008,7 +2008,7 @@ try {
     $elapsed   = (Get-Date) - $script:DeploymentStartTime
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
 
-    # Clear active deployment file — device is no longer deploying
+    # Clear active deployment file -- device is no longer deploying
     try { Update-ActiveDeploymentReport -Clear }
     catch { Write-Warning "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
 
