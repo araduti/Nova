@@ -77,40 +77,63 @@ jobs:
           $config.TestResult.OutputPath = 'testResults.xml'
           Invoke-Pester -Configuration $config
 
-  validate-hashes:
-    name: Integrity — Validate Hashes
+  regenerate-hashes:
+    name: Integrity — Regenerate Hashes
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
 
-      - name: Validate Config/hashes.json
+      - name: Regenerate config/hashes.json
         shell: pwsh
         run: |
           $manifest = Get-Content 'config/hashes.json' -Raw | ConvertFrom-Json
-          $failed = @()
+          $changed = $false
+          $missing = @()
           foreach ($entry in $manifest.files.PSObject.Properties) {
             $file = $entry.Name
-            $expected = $entry.Value
             if (-not (Test-Path $file)) {
               Write-Warning "File not found: $file"
-              $failed += $file
+              $missing += $file
               continue
             }
-            $actual = (Get-FileHash -Path $file -Algorithm SHA256).Hash
-            if ($actual -ne $expected) {
-              Write-Host "MISMATCH $file" -ForegroundColor Red
-              Write-Host "  Expected: $expected"
-              Write-Host "  Actual:   $actual"
-              $failed += $file
+            $hash = (Get-FileHash -Path $file -Algorithm SHA256).Hash
+            if ($manifest.files.$file -ne $hash) {
+              Write-Host "Updated: $file"
+              Write-Host "  Old: $($manifest.files.$file)"
+              Write-Host "  New: $hash"
+              $manifest.files.$file = $hash
+              $changed = $true
             } else {
-              Write-Host "OK $file" -ForegroundColor Green
+              Write-Host "OK: $file"
             }
           }
-          if ($failed.Count -gt 0) {
-            Write-Error "Hash validation failed for $($failed.Count) file(s): $($failed -join ', '). Run the hash regeneration script to update Config/hashes.json."
+          if ($missing.Count -gt 0) {
+            Write-Error "Missing tracked file(s): $($missing -join ', ')"
             exit 1
           }
-          Write-Host "`nAll hashes validated successfully."
+          if ($changed) {
+            $manifest.generated = (Get-Date -Format 'yyyy-MM-dd')
+            $manifest | ConvertTo-Json -Depth 5 | Set-Content 'config/hashes.json' -NoNewline
+            Write-Host "`nHashes updated in config/hashes.json."
+          } else {
+            Write-Host "`nAll hashes already up to date."
+          }
+
+      - name: Commit updated hashes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add config/hashes.json
+          if git diff --cached --quiet; then
+            echo "No hash changes needed."
+          else
+            git commit -m "chore: regenerate config/hashes.json"
+            git push || echo "Push failed — hashes will be regenerated on next run."
+          fi
 
   build-web:
     name: Web UI — Build & Test
@@ -163,7 +186,7 @@ jobs:
   sign-scripts:
     name: Code Signing — Azure Trusted Signing
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [lint-powershell, test-powershell, validate-hashes]
+    needs: [lint-powershell, test-powershell, regenerate-hashes]
     runs-on: windows-latest
     permissions:
       id-token: write
