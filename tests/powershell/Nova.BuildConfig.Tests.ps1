@@ -37,10 +37,9 @@ Describe 'Save-BuildConfiguration and Read-SavedBuildConfiguration' {
         Mock -ModuleName Nova.BuildConfig Get-BuildConfigPath { $script:testConfigPath }
 
         $config = @{
-            Language         = 'de-de'
-            Packages         = @('WinPE-PowerShell', 'WinPE-WMI')
-            InjectVirtIO     = $false
-            ExtraDriverPaths = @('C:\Drivers')
+            Language    = 'de-de'
+            Packages    = @('WinPE-PowerShell', 'WinPE-WMI')
+            DriverPaths = @('C:\Drivers', 'https://example.com/drivers.zip')
         }
         Save-BuildConfiguration -Config $config
 
@@ -48,8 +47,26 @@ Describe 'Save-BuildConfiguration and Read-SavedBuildConfiguration' {
         $loaded.Language | Should -Be 'de-de'
         $loaded.Packages | Should -Contain 'WinPE-PowerShell'
         $loaded.Packages | Should -Contain 'WinPE-WMI'
-        $loaded.InjectVirtIO | Should -BeFalse
-        $loaded.ExtraDriverPaths | Should -Contain 'C:\Drivers'
+        $loaded.DriverPaths | Should -Contain 'C:\Drivers'
+        $loaded.DriverPaths | Should -Contain 'https://example.com/drivers.zip'
+    }
+
+    It 'migrates legacy config with InjectVirtIO and ExtraDriverPaths' {
+        Mock -ModuleName Nova.BuildConfig Get-BuildConfigPath { $script:testConfigPath }
+
+        $legacyJson = @{
+            Language         = 'fr-fr'
+            Packages         = @('WinPE-PowerShell')
+            InjectVirtIO     = $true
+            ExtraDriverPaths = @('D:\MyDrivers')
+        } | ConvertTo-Json -Depth 3
+        Set-Content -Path $script:testConfigPath -Value $legacyJson -Encoding UTF8
+
+        $loaded = Read-SavedBuildConfiguration
+        $loaded.Language | Should -Be 'fr-fr'
+        $loaded.Packages | Should -Contain 'WinPE-PowerShell'
+        $loaded.DriverPaths | Should -Contain 'D:\MyDrivers'
+        $loaded.PSObject.Properties.Name -contains 'InjectVirtIO' | Should -BeFalse -Because 'legacy InjectVirtIO field should not be present'
     }
 }
 
