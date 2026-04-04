@@ -39,6 +39,11 @@ $script:AnsiBold         = "${script:ESC}[1m"
 $script:AnsiReverse      = "${script:ESC}[7m"
 $script:AnsiCursorHome   = "${script:ESC}[H"
 $script:AnsiClearScreen  = "${script:ESC}[2J"
+$script:AnsiClearToEnd   = "${script:ESC}[0J"
+$script:AnsiHideCursor   = "${script:ESC}[?25l"
+$script:AnsiShowCursor   = "${script:ESC}[?25h"
+$script:AnsiAltBufferOn  = "${script:ESC}[?1049h"
+$script:AnsiAltBufferOff = "${script:ESC}[?1049l"
 
 # Virtual-key codes used by ReadKey-based navigation.
 $script:VK_ENTER = 13
@@ -183,68 +188,78 @@ function Show-BuildConfiguration {
     $totalItems  = $pkgCount + 1
     $cursorIndex = 0
 
-    while ($true) {
-        # ── Draw menu ────────────────────────────────────────────────────────
-        if ($supportsVT) {
-            # Move cursor to top-left and clear screen without flicker
-            Write-Host "${script:AnsiCursorHome}${script:AnsiClearScreen}" -NoNewline
-        } else {
-            Clear-Host
-        }
-        Write-Host ''
-        Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
-        Write-Host '  ║         Boot Image Configuration                         ║' -ForegroundColor Cyan
-        Write-Host '  ╚════════════════════════════════════════════════════════════╝' -ForegroundColor Cyan
-        Write-Host ''
-        Write-Host "    Architecture  $Architecture" -ForegroundColor White
-        Write-Host "    Language      $language" -ForegroundColor White
-        Write-Host ''
-        Write-Host '  WinPE Optional Components' -ForegroundColor White
-        Write-Host '  ─────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
+    $statusMessage = $null
+    if ($supportsVT) {
+        Write-Host "${script:AnsiAltBufferOn}${script:AnsiHideCursor}${script:AnsiCursorHome}${script:AnsiClearScreen}" -NoNewline
+    }
 
-        for ($i = 0; $i -lt $pkgCount; $i++) {
-            $pkg  = $script:AvailableWinPEPackages[$i]
-            $mark = if ($selected[$i]) { '■' } else { ' ' }
-            $tag  = if ($pkg.Required) { ' (required)' } else { '' }
-            $num  = '{0,2}' -f ($i + 1)
-            $padName = $pkg.Name.PadRight(24)
-            $isHighlighted = ($i -eq $cursorIndex)
-            if ($isHighlighted -and $supportsVT) {
-                $color = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
-                Write-Host "  ${script:AnsiReverse}  [$mark] $num. $padName $($pkg.Description)$tag  ${script:AnsiReset}" -ForegroundColor $color
+    try {
+        while ($true) {
+            # ── Draw menu ────────────────────────────────────────────────────
+            if ($supportsVT) {
+                Write-Host "${script:AnsiCursorHome}${script:AnsiClearToEnd}" -NoNewline
             } else {
-                $color = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
-                Write-Host "    [$mark] $num. $padName $($pkg.Description)$tag" -ForegroundColor $color
+                Clear-Host
             }
-        }
+            Write-Host ''
+            Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
+            Write-Host '  ║       Nova Build Console · Premium Interactive Mode      ║' -ForegroundColor Cyan
+            Write-Host '  ╚════════════════════════════════════════════════════════════╝' -ForegroundColor Cyan
+            Write-Host ''
+            Write-Host "    Architecture  $Architecture" -ForegroundColor White
+            Write-Host "    Language      $language" -ForegroundColor White
+            Write-Host ''
+            Write-Host '  WinPE Optional Components' -ForegroundColor White
+            Write-Host '  ─────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
 
-        Write-Host ''
-        Write-Host '  Drivers' -ForegroundColor White
-        Write-Host '  ─────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
-        $vMark  = if ($injectVirtIO) { '■' } else { ' ' }
-        $vColor = if ($injectVirtIO) { 'Green' } else { 'DarkGray' }
-        $isHighlighted = ($cursorIndex -eq $pkgCount)
-        if ($isHighlighted -and $supportsVT) {
-            Write-Host "  ${script:AnsiReverse}  [$vMark]  V. VirtIO network driver (netkvm)  ${script:AnsiReset}" -ForegroundColor $vColor
-        } else {
-            Write-Host "    [$vMark]  V. VirtIO network driver (netkvm)" -ForegroundColor $vColor
-        }
-
-        if ($extraDriverPaths.Count -gt 0) {
-            for ($i = 0; $i -lt $extraDriverPaths.Count; $i++) {
-                Write-Host "    [+] D$($i + 1). $($extraDriverPaths[$i])" -ForegroundColor Green
+            for ($i = 0; $i -lt $pkgCount; $i++) {
+                $pkg  = $script:AvailableWinPEPackages[$i]
+                $mark = if ($selected[$i]) { '■' } else { ' ' }
+                $tag  = if ($pkg.Required) { ' (required)' } else { '' }
+                $num  = '{0,2}' -f ($i + 1)
+                $padName = $pkg.Name.PadRight(24)
+                $isHighlighted = ($i -eq $cursorIndex)
+                if ($isHighlighted -and $supportsVT) {
+                    $color = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
+                    Write-Host "  ${script:AnsiReverse}  [$mark] $num. $padName $($pkg.Description)$tag  ${script:AnsiReset}" -ForegroundColor $color
+                } else {
+                    $color = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
+                    Write-Host "    [$mark] $num. $padName $($pkg.Description)$tag" -ForegroundColor $color
+                }
             }
-        }
 
-        Write-Host ''
-        Write-Host '  ┌──────────────────────────────────────────────────────────┐' -ForegroundColor DarkGray
-        Write-Host '  │  ↑/↓  navigate          Space  toggle item             │' -ForegroundColor DarkGray
-        Write-Host '  │  1-9  toggle package     L  change language            │' -ForegroundColor DarkGray
-        Write-Host '  │  V    toggle VirtIO      D  add driver path            │' -ForegroundColor DarkGray
-        Write-Host '  │  A    select all pkgs    N  deselect optional pkgs     │' -ForegroundColor DarkGray
-        Write-Host '  │  R    remove driver      Enter  continue with build  ⏎ │' -ForegroundColor DarkGray
-        Write-Host '  └──────────────────────────────────────────────────────────┘' -ForegroundColor DarkGray
-        Write-Host ''
+            Write-Host ''
+            Write-Host '  Drivers' -ForegroundColor White
+            Write-Host '  ─────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
+            $vMark  = if ($injectVirtIO) { '■' } else { ' ' }
+            $vColor = if ($injectVirtIO) { 'Green' } else { 'DarkGray' }
+            $isHighlighted = ($cursorIndex -eq $pkgCount)
+            if ($isHighlighted -and $supportsVT) {
+                Write-Host "  ${script:AnsiReverse}  [$vMark]  V. VirtIO network driver (netkvm)  ${script:AnsiReset}" -ForegroundColor $vColor
+            } else {
+                Write-Host "    [$vMark]  V. VirtIO network driver (netkvm)" -ForegroundColor $vColor
+            }
+
+            if ($extraDriverPaths.Count -gt 0) {
+                for ($i = 0; $i -lt $extraDriverPaths.Count; $i++) {
+                    Write-Host "    [+] D$($i + 1). $($extraDriverPaths[$i])" -ForegroundColor Green
+                }
+            }
+
+            Write-Host ''
+            if ($statusMessage) {
+                Write-Host "  ${script:AnsiDim}Status:${script:AnsiReset} $statusMessage" -ForegroundColor Yellow
+            } else {
+                Write-Host '  Status: Ready' -ForegroundColor DarkGray
+            }
+            Write-Host '  ┌──────────────────────────────────────────────────────────┐' -ForegroundColor DarkGray
+            Write-Host '  │  ↑/↓  navigate          Space  toggle item             │' -ForegroundColor DarkGray
+            Write-Host '  │  1-9  toggle package     L  change language            │' -ForegroundColor DarkGray
+            Write-Host '  │  V    toggle VirtIO      D  add driver path            │' -ForegroundColor DarkGray
+            Write-Host '  │  A    select all pkgs    N  deselect optional pkgs     │' -ForegroundColor DarkGray
+            Write-Host '  │  R    remove driver      Enter  continue with build  ⏎ │' -ForegroundColor DarkGray
+            Write-Host '  └──────────────────────────────────────────────────────────┘' -ForegroundColor DarkGray
+            Write-Host ''
 
         # ── Read input ───────────────────────────────────────────────────────
         if ($supportsRawKey) {
@@ -260,13 +275,14 @@ function Show-BuildConfiguration {
                 # Space -- toggle highlighted item
                 if ($cursorIndex -lt $pkgCount) {
                     if ($script:AvailableWinPEPackages[$cursorIndex].Required -and $selected[$cursorIndex]) {
-                        Write-Warn "$($script:AvailableWinPEPackages[$cursorIndex].Name) is required and cannot be deselected."
-                        Start-Sleep -Milliseconds 800
+                        $statusMessage = "$($script:AvailableWinPEPackages[$cursorIndex].Name) is required and cannot be deselected."
                     } else {
                         $selected[$cursorIndex] = -not $selected[$cursorIndex]
+                        $statusMessage = $null
                     }
                 } elseif ($cursorIndex -eq $pkgCount) {
                     $injectVirtIO = -not $injectVirtIO
+                    $statusMessage = if ($injectVirtIO) { 'VirtIO driver enabled.' } else { 'VirtIO driver disabled.' }
                 }
                 continue
             }
@@ -285,7 +301,7 @@ function Show-BuildConfiguration {
             for ($i = 0; $i -lt $pkgCount; $i++) {
                 if ($script:AvailableWinPEPackages[$i].Required -and -not $selected[$i]) {
                     $selected[$i] = $true
-                    Write-Warn "$($script:AvailableWinPEPackages[$i].Name) is required and has been re-enabled."
+                    $statusMessage = "$($script:AvailableWinPEPackages[$i].Name) is required and has been re-enabled."
                 }
             }
 
@@ -314,17 +330,20 @@ function Show-BuildConfiguration {
             $idx = [int]$cmd - 1
             if ($idx -ge 0 -and $idx -lt $pkgCount) {
                 if ($script:AvailableWinPEPackages[$idx].Required -and $selected[$idx]) {
-                    Write-Warn "$($script:AvailableWinPEPackages[$idx].Name) is required and cannot be deselected."
-                    if ($supportsRawKey) { Start-Sleep -Milliseconds 800 }
+                    $statusMessage = "$($script:AvailableWinPEPackages[$idx].Name) is required and cannot be deselected."
                 } else {
                     $selected[$idx] = -not $selected[$idx]
+                    $statusMessage = $null
                 }
             }
             continue
         }
 
         switch ($cmd.ToUpper()) {
-            'V' { $injectVirtIO = -not $injectVirtIO }
+            'V' {
+                $injectVirtIO = -not $injectVirtIO
+                $statusMessage = if ($injectVirtIO) { 'VirtIO driver enabled.' } else { 'VirtIO driver disabled.' }
+            }
             'L' {
                 Write-Host ''
                 Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
@@ -345,17 +364,17 @@ function Show-BuildConfiguration {
                     $newLang = $newLang.Trim().ToLower()
                     if ($newLang -match '^[a-z]{2,3}-[a-z]{2}$') {
                         $language = $newLang
+                        $statusMessage = "Language updated to $language."
                     } else {
-                        Write-Warn "Invalid language code format. Expected pattern: xx-xx (e.g. en-us)"
-                        if ($supportsRawKey) { Start-Sleep -Milliseconds 800 }
+                        $statusMessage = 'Invalid language code format. Expected pattern: xx-xx (e.g. en-us).'
                     }
                 } elseif ($langChoice -match '^\d+$') {
                     $langIdx = [int]$langChoice - 1
                     if ($langIdx -ge 0 -and $langIdx -lt $script:LanguageOptions.Count) {
                         $language = $script:LanguageOptions[$langIdx].Code
+                        $statusMessage = "Language updated to $language."
                     } else {
-                        Write-Warn "Invalid selection. Enter 1-$($script:LanguageOptions.Count) or O."
-                        if ($supportsRawKey) { Start-Sleep -Milliseconds 800 }
+                        $statusMessage = "Invalid selection. Enter 1-$($script:LanguageOptions.Count) or O."
                     }
                 }
             }
@@ -364,17 +383,15 @@ function Show-BuildConfiguration {
                 $driverPath = $driverPath.Trim().TrimEnd('\')
                 if ($driverPath) {
                     if (-not (Test-Path $driverPath)) {
-                        Write-Warn "Path not found: $driverPath (will be re-checked at build time)"
+                        $statusMessage = "Path not found: $driverPath (will be re-checked at build time)."
                     }
                     $extraDriverPaths.Add($driverPath)
-                    Write-Success "Added driver path: $driverPath"
-                    if ($supportsRawKey) { Start-Sleep -Milliseconds 800 }
+                    $statusMessage = "Added driver path: $driverPath"
                 }
             }
             'R' {
                 if ($extraDriverPaths.Count -eq 0) {
-                    Write-Warn 'No extra driver paths to remove.'
-                    if ($supportsRawKey) { Start-Sleep -Milliseconds 800 }
+                    $statusMessage = 'No extra driver paths to remove.'
                 } else {
                     for ($j = 0; $j -lt $extraDriverPaths.Count; $j++) {
                         Write-Host "    $($j + 1). $($extraDriverPaths[$j])"
@@ -385,19 +402,26 @@ function Show-BuildConfiguration {
                         if ($ri -ge 0 -and $ri -lt $extraDriverPaths.Count) {
                             $removed = $extraDriverPaths[$ri]
                             $extraDriverPaths.RemoveAt($ri)
-                            Write-Success "Removed: $removed"
+                            $statusMessage = "Removed: $removed"
                         }
                     }
                 }
             }
             'A' {
                 for ($i = 0; $i -lt $pkgCount; $i++) { $selected[$i] = $true }
+                $statusMessage = 'All WinPE packages selected.'
             }
             'N' {
                 for ($i = 0; $i -lt $pkgCount; $i++) {
                     if (-not $script:AvailableWinPEPackages[$i].Required) { $selected[$i] = $false }
                 }
+                $statusMessage = 'Optional WinPE packages deselected.'
             }
+        }
+    }
+    } finally {
+        if ($supportsVT) {
+            Write-Host "${script:AnsiShowCursor}${script:AnsiAltBufferOff}" -NoNewline
         }
     }
 
