@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0a1224"/>
+      <stop offset="100%" stop-color="#070b16"/>
+    </linearGradient>
+    <style>
+      .mono{font-family:"DejaVu Sans Mono",Consolas,monospace;}
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1600" height="980" fill="url(#bg)"/>
+  <rect x="28" y="28" width="1544" height="924" rx="18" fill="none" stroke="#194472" stroke-width="2"/>
+  <rect x="36" y="36" width="1528" height="908" rx="16" fill="none" stroke="#102a47" stroke-width="2"/>
+
+  <text x="90" y="86" class="mono" font-size="34" fill="#58dfff">╔════════════════════════════════════════════════════════════╗</text>
+  <text x="90" y="130" class="mono" font-size="34" fill="#58dfff">║       Nova Build Console · Premium Interactive Mode      ║</text>
+  <text x="90" y="174" class="mono" font-size="34" fill="#58dfff">╚════════════════════════════════════════════════════════════╝</text>
+
+  <text x="120" y="240" class="mono" font-size="30" fill="#eaf3ff">Architecture  amd64</text>
+  <text x="120" y="282" class="mono" font-size="30" fill="#eaf3ff">Language      en-us</text>
+
+  <text x="120" y="342" class="mono" font-size="30" fill="#eaf3ff">WinPE Optional Components</text>
+  <text x="120" y="375" class="mono" font-size="30" fill="#7d92ae">─────────────────────────────────────────────────────────────</text>
+
+  <text x="130" y="420" class="mono" font-size="27" fill="#66e2a0">[■]  1. WinPE-WMI                Windows Management Instrumentation</text>
+  <text x="130" y="462" class="mono" font-size="27" fill="#66e2a0">[■]  2. WinPE-NetFX              .NET Framework</text>
+  <rect x="106" y="476" width="1382" height="40" rx="7" fill="#edf4ff"/>
+  <text x="130" y="505" class="mono" font-size="27" fill="#091425">[■]  3. WinPE-Scripting          Windows Script Host</text>
+  <text x="130" y="548" class="mono" font-size="27" fill="#66e2a0">[■]  4. WinPE-PowerShell         PowerShell (required)</text>
+  <text x="130" y="590" class="mono" font-size="27" fill="#7d92ae">[ ]  5. WinPE-SecureStartup      BitLocker and TPM support</text>
+
+  <text x="120" y="652" class="mono" font-size="30" fill="#eaf3ff">Drivers</text>
+  <text x="120" y="685" class="mono" font-size="30" fill="#7d92ae">─────────────────────────────────────────────────────────────</text>
+  <text x="130" y="727" class="mono" font-size="27" fill="#66e2a0">[■]  V. VirtIO network driver (netkvm)</text>
+
+  <text x="120" y="787" class="mono" font-size="27" fill="#ffd48f">Status: Language updated to en-us.</text>
+
+  <rect x="102" y="818" width="1396" height="114" rx="10" fill="none" stroke="#4f6487" stroke-width="2"/>
+  <text x="122" y="858" class="mono" font-size="24" fill="#8ea4c4">↑/↓ navigate   Space toggle   L language   V VirtIO   D driver</text>
+  <text x="122" y="896" class="mono" font-size="24" fill="#8ea4c4">A select all   N deselect optional   R remove driver   Enter build</text>
+</svg>
