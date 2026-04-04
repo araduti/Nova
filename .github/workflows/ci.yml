@@ -334,5 +334,5 @@ jobs:
               git rebase --abort
               exit 0
             }
-            git push origin HEAD:refs/heads/main || echo "::warning::Push failed — signed scripts must be committed manually."
+            push_output=$(git push origin HEAD:refs/heads/main 2>&1) || echo "::warning::Push failed — signed scripts must be committed manually. Error: $push_output"
           fi
