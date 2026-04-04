@@ -92,7 +92,7 @@ function Save-BuildConfiguration {
     if (-not (Test-Path $dir)) {
         $null = New-Item -ItemType Directory -Path $dir -Force
     }
-    $Config | ConvertTo-Json -Depth 3 | Set-Content -Path $path -Encoding UTF8
+    $Config | ConvertTo-Json -Depth 4 | Set-Content -Path $path -Encoding UTF8
 }
 
 function Read-SavedBuildConfiguration {
@@ -104,11 +104,19 @@ function Read-SavedBuildConfiguration {
     if (-not $path -or -not (Test-Path $path)) { return $null }
     try {
         $json = Get-Content $path -Raw | ConvertFrom-Json
+        # Migrate legacy configs that used InjectVirtIO + ExtraDriverPaths
+        if ($null -ne $json.PSObject.Properties['DriverPaths']) {
+            $drivers = @($json.DriverPaths)
+        } else {
+            $drivers = @()
+            if ($json.PSObject.Properties['ExtraDriverPaths']) {
+                $drivers += @($json.ExtraDriverPaths)
+            }
+        }
         return @{
-            Language         = $json.Language
-            Packages         = @($json.Packages)
-            InjectVirtIO     = [bool]$json.InjectVirtIO
-            ExtraDriverPaths = @($json.ExtraDriverPaths)
+            Language    = $json.Language
+            Packages    = @($json.Packages)
+            DriverPaths = $drivers
         }
     } catch {
         return $null
@@ -142,9 +150,8 @@ function Show-BuildConfiguration {
         Justification = 'Intentional coloured console output for interactive menu UI')]
     param([string] $Architecture)
 
-    $language         = $script:DefaultLanguage
-    $injectVirtIO     = $true
-    $extraDriverPaths = [System.Collections.Generic.List[string]]::new()
+    $language    = $script:DefaultLanguage
+    $driverPaths = [System.Collections.Generic.List[string]]::new()
 
     # Pre-select defaults
     $pkgCount = $script:AvailableWinPEPackages.Count
@@ -160,10 +167,9 @@ function Show-BuildConfiguration {
         Write-Host "  ${script:AnsiDim}Previous configuration found.${script:AnsiReset}"
         $reuse = Read-Host '  Use previous configuration? (Y/n)'
         if ($reuse -notmatch '^[Nn]') {
-            $language     = $savedConfig.Language
-            $injectVirtIO = $savedConfig.InjectVirtIO
-            if ($savedConfig.ExtraDriverPaths) {
-                foreach ($dp in $savedConfig.ExtraDriverPaths) { $extraDriverPaths.Add($dp) }
+            $language = $savedConfig.Language
+            if ($savedConfig.DriverPaths) {
+                foreach ($dp in $savedConfig.DriverPaths) { $driverPaths.Add($dp) }
             }
             # Re-apply saved package selection
             for ($i = 0; $i -lt $pkgCount; $i++) {
@@ -184,8 +190,8 @@ function Show-BuildConfiguration {
     ))
 
     # Cursor index for arrow-key navigation (0-based over all navigable items).
-    # Items: 0..(pkgCount-1) = packages, pkgCount = VirtIO
-    $totalItems  = $pkgCount + 1
+    # Items: 0..(pkgCount-1) = packages
+    $totalItems  = $pkgCount
     $cursorIndex = 0
 
     $statusMessage = $null
@@ -229,21 +235,18 @@ function Show-BuildConfiguration {
             }
 
             Write-Host ''
-            Write-Host '  Drivers' -ForegroundColor White
+            Write-Host '  WinPE Drivers' -ForegroundColor White
             Write-Host '  ─────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
-            $vMark  = if ($injectVirtIO) { '■' } else { ' ' }
-            $vColor = if ($injectVirtIO) { 'Green' } else { 'DarkGray' }
-            $isHighlighted = ($cursorIndex -eq $pkgCount)
-            if ($isHighlighted -and $supportsVT) {
-                Write-Host "  ${script:AnsiReverse}  [$vMark]  V. VirtIO network driver (netkvm)  ${script:AnsiReset}" -ForegroundColor $vColor
-            } else {
-                Write-Host "    [$vMark]  V. VirtIO network driver (netkvm)" -ForegroundColor $vColor
-            }
 
-            if ($extraDriverPaths.Count -gt 0) {
-                for ($i = 0; $i -lt $extraDriverPaths.Count; $i++) {
-                    Write-Host "    [+] D$($i + 1). $($extraDriverPaths[$i])" -ForegroundColor Green
+            if ($driverPaths.Count -gt 0) {
+                for ($i = 0; $i -lt $driverPaths.Count; $i++) {
+                    $drvEntry = $driverPaths[$i]
+                    $isUrl = $drvEntry -match '^https?://'
+                    $icon  = if ($isUrl) { '↓' } else { '+' }
+                    Write-Host "    [$icon] $($i + 1). $drvEntry" -ForegroundColor Green
                 }
+            } else {
+                Write-Host "    ${script:AnsiDim}(none -- use D to add a local path or U to add a URL)${script:AnsiReset}" -ForegroundColor DarkGray
             }
 
             Write-Host ''
@@ -255,7 +258,7 @@ function Show-BuildConfiguration {
             Write-Host '  ┌──────────────────────────────────────────────────────────┐' -ForegroundColor DarkGray
             Write-Host '  │  ↑/↓  navigate          Space  toggle item             │' -ForegroundColor DarkGray
             Write-Host '  │  1-9  toggle package     L  change language            │' -ForegroundColor DarkGray
-            Write-Host '  │  V    toggle VirtIO      D  add driver path            │' -ForegroundColor DarkGray
+            Write-Host '  │  D    add driver path    U  add driver URL             │' -ForegroundColor DarkGray
             Write-Host '  │  A    select all pkgs    N  deselect optional pkgs     │' -ForegroundColor DarkGray
             Write-Host '  │  R    remove driver      Enter  continue with build  ⏎ │' -ForegroundColor DarkGray
             Write-Host '  └──────────────────────────────────────────────────────────┘' -ForegroundColor DarkGray
@@ -280,9 +283,6 @@ function Show-BuildConfiguration {
                         $selected[$cursorIndex] = -not $selected[$cursorIndex]
                         $statusMessage = $null
                     }
-                } elseif ($cursorIndex -eq $pkgCount) {
-                    $injectVirtIO = -not $injectVirtIO
-                    $statusMessage = if ($injectVirtIO) { 'VirtIO driver enabled.' } else { 'VirtIO driver disabled.' }
                 }
                 continue
             }
@@ -307,17 +307,17 @@ function Show-BuildConfiguration {
 
             # Confirmation summary
             $selCount = ($selected | Where-Object { $_ }).Count
-            $virtLabel = if ($injectVirtIO) { 'Yes' } else { 'No' }
-            $drvCount  = $extraDriverPaths.Count
+            $drvCount  = $driverPaths.Count
             Write-Host ''
             Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
             Write-Host '  ║         Build Summary                                    ║' -ForegroundColor Cyan
             Write-Host '  ╚════════════════════════════════════════════════════════════╝' -ForegroundColor Cyan
             Write-Host "    Packages : $selCount selected" -ForegroundColor White
-            Write-Host "    VirtIO   : $virtLabel" -ForegroundColor White
             Write-Host "    Language : $language" -ForegroundColor White
             if ($drvCount -gt 0) {
-                Write-Host "    Drivers  : $drvCount custom path(s)" -ForegroundColor White
+                Write-Host "    Drivers  : $drvCount path(s)" -ForegroundColor White
+            } else {
+                Write-Host "    Drivers  : none" -ForegroundColor White
             }
             Write-Host ''
             $confirm = Read-Host "  Press Enter to build, or ${script:AnsiDim}B${script:AnsiReset} to go back"
@@ -340,10 +340,6 @@ function Show-BuildConfiguration {
         }
 
         switch ($cmd.ToUpper()) {
-            'V' {
-                $injectVirtIO = -not $injectVirtIO
-                $statusMessage = if ($injectVirtIO) { 'VirtIO driver enabled.' } else { 'VirtIO driver disabled.' }
-            }
             'L' {
                 Write-Host ''
                 Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
@@ -379,29 +375,39 @@ function Show-BuildConfiguration {
                 }
             }
             'D' {
-                $driverPath = Read-Host '  Enter driver folder path (local or UNC)'
+                $driverPath = Read-Host '  Enter local or UNC driver folder path'
                 $driverPath = $driverPath.Trim().TrimEnd('\')
                 if ($driverPath) {
                     if (-not (Test-Path $driverPath)) {
                         $statusMessage = "Path not found: $driverPath (will be re-checked at build time)."
                     }
-                    $extraDriverPaths.Add($driverPath)
+                    $driverPaths.Add($driverPath)
                     $statusMessage = "Added driver path: $driverPath"
                 }
             }
-            'R' {
-                if ($extraDriverPaths.Count -eq 0) {
-                    $statusMessage = 'No extra driver paths to remove.'
+            'U' {
+                $driverUrl = Read-Host '  Enter driver download URL (zip/cab with .inf drivers)'
+                $driverUrl = $driverUrl.Trim()
+                if ($driverUrl -match '^https?://') {
+                    $driverPaths.Add($driverUrl)
+                    $statusMessage = "Added driver URL: $driverUrl"
                 } else {
-                    for ($j = 0; $j -lt $extraDriverPaths.Count; $j++) {
-                        Write-Host "    $($j + 1). $($extraDriverPaths[$j])"
+                    $statusMessage = 'Invalid URL. Must start with http:// or https://.'
+                }
+            }
+            'R' {
+                if ($driverPaths.Count -eq 0) {
+                    $statusMessage = 'No driver paths to remove.'
+                } else {
+                    for ($j = 0; $j -lt $driverPaths.Count; $j++) {
+                        Write-Host "    $($j + 1). $($driverPaths[$j])"
                     }
                     $removeIdx = Read-Host '  Enter number to remove'
                     if ($removeIdx -match '^\d+$') {
                         $ri = [int]$removeIdx - 1
-                        if ($ri -ge 0 -and $ri -lt $extraDriverPaths.Count) {
-                            $removed = $extraDriverPaths[$ri]
-                            $extraDriverPaths.RemoveAt($ri)
+                        if ($ri -ge 0 -and $ri -lt $driverPaths.Count) {
+                            $removed = $driverPaths[$ri]
+                            $driverPaths.RemoveAt($ri)
                             $statusMessage = "Removed: $removed"
                         }
                     }
@@ -432,10 +438,9 @@ function Show-BuildConfiguration {
     }
 
     $result = @{
-        Language         = $language
-        Packages         = $selectedPkgs
-        InjectVirtIO     = $injectVirtIO
-        ExtraDriverPaths = @($extraDriverPaths)
+        Language    = $language
+        Packages    = $selectedPkgs
+        DriverPaths = @($driverPaths)
     }
 
     # Persist the configuration for next time

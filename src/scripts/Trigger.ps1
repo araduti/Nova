@@ -219,8 +219,7 @@ function Build-WinPE {
         [string]   $_ISOWinREPath     = '',           # Internal -- pre-extracted ISO WinRE path (retry only)
         [string]   $Language          = 'en-us',
         [string[]] $PackageNames      = @(),          # Selected package base names (from Show-BuildConfiguration)
-        [bool]     $InjectVirtIO      = $true,
-        [string[]] $ExtraDriverPaths  = @()
+        [string[]] $DriverPaths       = @()           # Local paths or URLs to driver folders/archives
     )
 
     # Suppress the default PowerShell progress bars from DISM cmdlets
@@ -361,60 +360,55 @@ function Build-WinPE {
             }
         }
 
-        # ── 4b. Inject VirtIO network driver (netkvm) ───────────────────────
-        # QEMU-based VMs (e.g. UTM on macOS) present a VirtIO network adapter.
-        # WinPE/WinRE has no VirtIO driver by default, so the adapter is invisible
-        # and networking never starts.  The pre-extracted netkvm driver files live
-        # in resources/drivers/NetKVM/w10/<arch>/ in the repo -- fetched directly from GitHub,
-        # no ISO download required.
-        # ARM is not supported -- only amd64 and x86 driver folders are used.
-        if ($InjectVirtIO) {
-            $virtioArchMap = @{ amd64 = 'amd64'; x86 = 'x86' }
-            $virtioArch    = $virtioArchMap[$Architecture]
-            if ($virtioArch) {
-                $driverRepoPath = "resources/drivers/NetKVM/w10/$virtioArch"
-                $apiUrl         = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/contents/$driverRepoPath`?ref=$GitHubBranch"
-                $driverTmpDir   = Join-Path $env:TEMP "nova_netkvm_$([System.Guid]::NewGuid().ToString('N'))"
-                Write-Step "Fetching VirtIO netkvm driver from repo ($driverRepoPath)..."
+        # ── 4b. Inject user-supplied WinPE drivers (local paths and URLs) ───
+        foreach ($drvEntry in $DriverPaths) {
+            if ($drvEntry -match '^https?://') {
+                # Download driver archive from URL
+                $driverTmpDir = Join-Path $env:TEMP "nova_drv_$([System.Guid]::NewGuid().ToString('N'))"
+                Write-Step "Downloading drivers from: $drvEntry"
                 try {
-                    $fileList = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
                     $null = New-Item -ItemType Directory -Path $driverTmpDir -Force
-                    foreach ($entry in $fileList) {
-                        if ($entry.type -eq 'file' -and $entry.download_url) {
-                            $dest = Join-Path $driverTmpDir $entry.name
-                            Invoke-WebRequest -Uri $entry.download_url -OutFile $dest -UseBasicParsing -ErrorAction Stop
-                        }
+                    $fileName = [System.IO.Path]::GetFileName(([System.Uri]$drvEntry).LocalPath)
+                    if (-not $fileName) { $fileName = 'driver_download' }
+                    $downloadPath = Join-Path $driverTmpDir $fileName
+                    Invoke-WebRequest -Uri $drvEntry -OutFile $downloadPath -UseBasicParsing -ErrorAction Stop
+
+                    # Extract if the download is a zip or cab archive
+                    $extractDir = $driverTmpDir
+                    if ($downloadPath -match '\.(zip)$') {
+                        $extractDir = Join-Path $driverTmpDir 'extracted'
+                        $null = New-Item -ItemType Directory -Path $extractDir -Force
+                        Expand-Archive -Path $downloadPath -DestinationPath $extractDir -Force
+                    } elseif ($downloadPath -match '\.(cab)$') {
+                        $extractDir = Join-Path $driverTmpDir 'extracted'
+                        $null = New-Item -ItemType Directory -Path $extractDir -Force
+                        $null = & expand.exe $downloadPath -F:* $extractDir
                     }
-                    $null = Add-WindowsDriver -Path $paths.MountDir -Driver $driverTmpDir -Recurse
-                    Write-Success 'VirtIO network driver (netkvm) injected.'
+
+                    $null = Add-WindowsDriver -Path $paths.MountDir -Driver $extractDir -Recurse
+                    Write-Success "Drivers injected from URL: $drvEntry"
                 } catch {
-                    Write-Warn "Could not inject VirtIO network driver (non-fatal): $_"
+                    Write-Warn "Could not inject drivers from URL '$drvEntry' (non-fatal): $_"
                 } finally {
                     Remove-Item $driverTmpDir -Recurse -Force -ErrorAction SilentlyContinue
                 }
             } else {
-                Write-Warn "VirtIO network driver not available for architecture '$Architecture' -- skipping."
-            }
-        } else {
-            Write-Step 'VirtIO network driver injection skipped (disabled in configuration).'
-        }
-
-        # ── 4c. Inject extra drivers (user-supplied paths) ──────────────────
-        foreach ($drvPath in $ExtraDriverPaths) {
-            Write-Step "Injecting drivers from: $drvPath"
-            if (-not (Test-Path $drvPath)) {
-                Write-Warn "Driver path not found, skipping: $drvPath"
-                continue
-            }
-            try {
-                $null = Add-WindowsDriver -Path $paths.MountDir -Driver $drvPath -Recurse
-                Write-Success "Drivers injected from: $drvPath"
-            } catch {
-                Write-Warn "Could not inject drivers from '$drvPath' (non-fatal): $_"
+                # Local or UNC path
+                Write-Step "Injecting drivers from: $drvEntry"
+                if (-not (Test-Path $drvEntry)) {
+                    Write-Warn "Driver path not found, skipping: $drvEntry"
+                    continue
+                }
+                try {
+                    $null = Add-WindowsDriver -Path $paths.MountDir -Driver $drvEntry -Recurse
+                    Write-Success "Drivers injected from: $drvEntry"
+                } catch {
+                    Write-Warn "Could not inject drivers from '$drvEntry' (non-fatal): $_"
+                }
             }
         }
 
-        # ── 4d. Inject Segoe MDL2 Assets font for UI icons ─────────────────
+        # ── 4c. Inject Segoe MDL2 Assets font for UI icons ─────────────────
         # WinPE does not ship Segoe MDL2 Assets, so icons render as garbled text.
         # Copy the font from the local system (any Win 10/11 machine has it) into
         # the offline image and register it in the offline SOFTWARE hive so GDI+
@@ -797,8 +791,7 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\nova-start.cmd
                                -_ISOWinREPath $freshWinRE `
                                -Language $Language `
                                -PackageNames $PackageNames `
-                               -InjectVirtIO $InjectVirtIO `
-                               -ExtraDriverPaths $ExtraDriverPaths
+                               -DriverPaths $DriverPaths
         }
 
         throw
@@ -1237,10 +1230,9 @@ try {
                 if ($pkg.Default) { $selectedPkgs += $pkg.Name }
             }
             $buildConfig = @{
-                Language         = Get-DefaultLanguage
-                Packages         = $selectedPkgs
-                InjectVirtIO     = $true
-                ExtraDriverPaths = @()
+                Language    = Get-DefaultLanguage
+                Packages    = $selectedPkgs
+                DriverPaths = @()
             }
         } else {
             $buildConfig = Show-BuildConfiguration -Architecture $arch
@@ -1257,8 +1249,7 @@ try {
             -WindowsISOUrl     $WindowsISOUrl `
             -Language          $buildConfig.Language `
             -PackageNames      $buildConfig.Packages `
-            -InjectVirtIO      $buildConfig.InjectVirtIO `
-            -ExtraDriverPaths  $buildConfig.ExtraDriverPaths
+            -DriverPaths       $buildConfig.DriverPaths
 
         # ── 2b. Offer to upload boot image to GitHub ─────────────────────────
         if (-not $AcceptDefaults) {
