@@ -94,7 +94,7 @@ jobs:
           Write-Host "Hashes regenerated for signed files."
 
       - name: Upload signed artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: signed-scripts
           path: |
