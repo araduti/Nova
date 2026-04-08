@@ -13,6 +13,18 @@
 # ── Shared helper ────────────────────────────────────────────────────────────
 
 function Add-SetupCompleteEntry {
+    <#
+    .SYNOPSIS  Appends a command line to the Windows SetupComplete.cmd file.
+    .DESCRIPTION
+        Creates (or appends to) a SetupComplete.cmd file that Windows OOBE
+        executes on first boot. Uses ASCII encoding for broadest cmd.exe
+        compatibility.
+    .PARAMETER FilePath
+        Full path to the SetupComplete.cmd file.
+    .PARAMETER Line
+        Command line to append.
+    #>
+    [CmdletBinding()]
     param(
         [string]$FilePath,
         [string]$Line
@@ -32,6 +44,18 @@ function Add-SetupCompleteEntry {
 # ── Autopilot ────────────────────────────────────────────────────────────────
 
 function Set-AutopilotConfig {
+    <#
+    .SYNOPSIS  Downloads or copies the Autopilot configuration JSON to the offline OS.
+    .DESCRIPTION
+        Places an AutopilotConfigurationFile.json into the Windows Provisioning
+        directory so that Windows Autopilot picks it up on first boot.
+    .PARAMETER JsonUrl
+        URL to download the Autopilot JSON from.
+    .PARAMETER JsonPath
+        Local file path to an Autopilot JSON.
+    .PARAMETER OSDriveLetter
+        Drive letter of the mounted offline Windows partition.
+    #>
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$JsonUrl,
@@ -76,6 +100,7 @@ function Invoke-AutopilotImport {
         hardware hash with oa3tool.exe and uploads the device identity via Graph.
         Group tag and user email are applied when provided.
     #>
+    [CmdletBinding()]
     param(
         [string]$GroupTag,
         [string]$UserEmail
@@ -196,6 +221,7 @@ function Install-CCMSetup {
         and -Description parameters.  When not supplied the function falls back
         to Invoke-WebRequest.
     #>
+    [CmdletBinding()]
     param(
         [string]$CCMSetupUrl,
         [string]$OSDriveLetter,
@@ -336,6 +362,7 @@ function Enable-BitLockerProtection {
     .PARAMETER EncryptionMethod  BitLocker encryption algorithm (default XtsAes256).
     .PARAMETER SkipHardwareTest  Skip the TPM hardware test during enable.
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$OSDriveLetter,
@@ -391,6 +418,20 @@ try {
 # ── Post-Provisioning Scripts ────────────────────────────────────────────────
 
 function Invoke-PostScript {
+    <#
+    .SYNOPSIS  Downloads and stages post-provisioning scripts for first-boot execution.
+    .DESCRIPTION
+        Fetches one or more PowerShell scripts from the supplied URLs and
+        registers them in SetupComplete.cmd so they run automatically on
+        the first Windows boot after deployment.
+    .PARAMETER ScriptUrls
+        Array of URLs pointing to the PowerShell scripts to download.
+    .PARAMETER OSDriveLetter
+        Drive letter of the mounted offline Windows partition.
+    .PARAMETER ScratchDir
+        Working directory (reserved for future use).
+    #>
+    [CmdletBinding()]
     param(
         [string[]]$ScriptUrls,
         [string]$OSDriveLetter,
@@ -452,6 +493,7 @@ function Install-Application {
         and -Description parameters.  When not supplied the function falls back
         to Invoke-WebRequest.
     #>
+    [CmdletBinding()]
     param(
         [string]$InstallMode = 'url',
         [string]$PackageId,
@@ -459,11 +501,13 @@ function Install-Application {
         [string]$SilentArgs = '/qn /norestart',
         [string]$ScriptUrl,
         [string]$OSDriveLetter,
+        [string]$ScratchDir,
         [scriptblock]$DownloadCommand
     )
 
     Write-Step 'Staging application installation...'
 
+    $null = $ScratchDir     # reserved for future use
     $stepName = ''
     $scriptDir = "${OSDriveLetter}:\Windows\Setup\Scripts"
     $setupComplete = Join-Path $scriptDir 'SetupComplete.cmd'
@@ -549,6 +593,7 @@ function Invoke-WindowsUpdateStaging {
         uses the COM-based Windows Update Agent API which is available on all
         Windows installations without additional modules.
     #>
+    [CmdletBinding()]
     param(
         [string]$OSDriveLetter,
         [string[]]$Categories = @('SecurityUpdates', 'CriticalUpdates')

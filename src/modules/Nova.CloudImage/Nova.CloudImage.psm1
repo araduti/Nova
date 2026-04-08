@@ -15,6 +15,7 @@ function Get-CloudBootImage {
         available.
     .OUTPUTS   [hashtable] with BootWimUrl, BootSdiUrl, BootWimSize, PublishedAt -- or $null.
     #>
+    [CmdletBinding()]
     param(
         [string] $GitHubUser,
         [string] $GitHubRepo,
@@ -44,6 +45,7 @@ function Publish-BootImage {
         boot.wim and boot.sdi as release assets.  Requires a Personal Access
         Token (PAT) with 'repo' scope.
     #>
+    [CmdletBinding()]
     param(
         [string] $GitHubUser,
         [string] $GitHubRepo,

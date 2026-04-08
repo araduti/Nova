@@ -77,6 +77,86 @@ jobs:
           $config.TestResult.OutputPath = 'testResults.xml'
           Invoke-Pester -Configuration $config
 
+  validate-modules:
+    name: PowerShell — Module Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate module manifests
+        shell: pwsh
+        run: |
+          $env:PSModulePath = "src/modules" + [IO.Path]::PathSeparator + $env:PSModulePath
+          $failed = @()
+          foreach ($dir in (Get-ChildItem src/modules -Directory)) {
+              $psd1 = Join-Path $dir.FullName "$($dir.Name).psd1"
+              try {
+                  $null = Test-ModuleManifest -Path $psd1 -ErrorAction Stop -WarningAction SilentlyContinue
+                  Write-Host "OK: $($dir.Name)"
+              } catch {
+                  Write-Host "FAIL: $($dir.Name) -> $_"
+                  $failed += $dir.Name
+              }
+          }
+          if ($failed.Count -gt 0) {
+              Write-Error "Module manifest validation failed for: $($failed -join ', ')"
+              exit 1
+          }
+          Write-Host "`nAll module manifests validated successfully."
+
+      - name: Check for duplicate GUIDs
+        shell: pwsh
+        run: |
+          $guids = @{}
+          foreach ($dir in (Get-ChildItem src/modules -Directory)) {
+              $psd1 = Join-Path $dir.FullName "$($dir.Name).psd1"
+              $data = Import-PowerShellDataFile $psd1
+              $guid = $data.GUID
+              if ($guids.ContainsKey($guid)) {
+                  Write-Error "Duplicate GUID '$guid' in $($dir.Name) and $($guids[$guid])"
+                  exit 1
+              }
+              $guids[$guid] = $dir.Name
+          }
+          Write-Host "All $($guids.Count) module GUIDs are unique."
+
+      - name: Check UTF-8 BOM on module files
+        shell: pwsh
+        run: |
+          $failed = @()
+          foreach ($file in (Get-ChildItem src/modules -Include '*.psm1','*.psd1' -Recurse)) {
+              $bytes = [System.IO.File]::ReadAllBytes($file.FullName)
+              if ($bytes.Length -lt 3 -or $bytes[0] -ne 0xEF -or $bytes[1] -ne 0xBB -or $bytes[2] -ne 0xBF) {
+                  Write-Host "NO BOM: $($file.FullName)"
+                  $failed += $file.FullName
+              }
+          }
+          if ($failed.Count -gt 0) {
+              Write-Error "UTF-8 BOM missing on $($failed.Count) file(s). PS 5.1 requires BOM for correct encoding."
+              exit 1
+          }
+          Write-Host "All module files have UTF-8 BOM."
+
+      - name: Check for en-dash and em-dash characters
+        shell: pwsh
+        run: |
+          $issues = @()
+          foreach ($file in (Get-ChildItem src/modules -Include '*.psm1','*.psd1' -Recurse)) {
+              $lines = Get-Content $file.FullName
+              for ($i = 0; $i -lt $lines.Count; $i++) {
+                  if ($lines[$i] -match '[\u2013\u2014]') {
+                      $issues += "$($file.Name):$($i + 1): $($lines[$i].Trim())"
+                  }
+              }
+          }
+          if ($issues.Count -gt 0) {
+              Write-Host "En-dash/em-dash found in module files:"
+              $issues | ForEach-Object { Write-Host "  $_" }
+              Write-Error "Replace en-dash (U+2013) and em-dash (U+2014) with -- to prevent PS 5.1 encoding issues."
+              exit 1
+          }
+          Write-Host "No en-dash or em-dash characters found in module files."
+
   regenerate-hashes:
     name: Integrity — Regenerate Hashes
     runs-on: ubuntu-latest
@@ -203,7 +283,7 @@ jobs:
   sign-scripts:
     name: Code Signing — Azure Trusted Signing
     if: needs.check-signing.outputs.available == 'true'
-    needs: [check-signing, lint-powershell, test-powershell, regenerate-hashes]
+    needs: [check-signing, lint-powershell, test-powershell, validate-modules, regenerate-hashes]
     runs-on: windows-latest
     permissions:
       id-token: write

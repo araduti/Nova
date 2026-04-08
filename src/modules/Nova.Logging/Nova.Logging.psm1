@@ -49,6 +49,7 @@ function Write-Step {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
+    [CmdletBinding()]
     param([string]$Message)
     Write-Host "`n$($script:StepPrefix) $Message" -ForegroundColor Cyan
 }
@@ -59,6 +60,7 @@ function Write-Success {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
+    [CmdletBinding()]
     param([string]$Message)
     Write-Host "$($script:SuccessPrefix) $Message" -ForegroundColor Green
 }
@@ -69,6 +71,7 @@ function Write-Warn {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
+    [CmdletBinding()]
     param([string]$Message)
     Write-Host "$($script:WarnPrefix) $Message" -ForegroundColor Yellow
 }
@@ -79,6 +82,7 @@ function Write-Fail {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
+    [CmdletBinding()]
     param([string]$Message)
     Write-Host "$($script:FailPrefix) $Message" -ForegroundColor Red
 }

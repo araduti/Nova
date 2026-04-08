@@ -136,6 +136,7 @@ function Get-WinREPathFromWindowsISO {
     .OUTPUTS  [string] Temp path to the extracted WinRE.wim.  The CALLER is
               responsible for deleting this file when it is no longer needed.
     #>
+    [CmdletBinding()]
     param(
         [string] $Architecture,
         [string] $ISOUrl = ''
@@ -261,7 +262,7 @@ function Remove-WinRERecoveryPackage {
         WinRE ships with startup-repair, boot-recovery, and other tools that are
         useful for OS recovery but are not needed when the image is used purely as
         a cloud deployment environment. Removing them shrinks the image by roughly
-        100–200 MB before the final compression step.
+        100--200 MB before the final compression step.
 
         Packages matching the following name prefixes are removed:
           - Microsoft-Windows-WinRE-RecoveryAgent   (startup repair agent)
