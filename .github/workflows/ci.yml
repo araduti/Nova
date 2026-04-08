@@ -290,8 +290,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 2
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -311,63 +309,23 @@ jobs:
           TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
           TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT_NAME }}
           TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
-          BEFORE_SHA: ${{ github.event.before }}
         run: |
           $allScripts = Get-ChildItem -Path . -Include '*.ps1','*.psm1','*.psd1' -Recurse |
             Where-Object { $_.FullName -notmatch '[/\\]tests[/\\]' }
 
-          # Determine which scripts need signing (all on first push, only changed thereafter)
-          if (-not $env:BEFORE_SHA -or $env:BEFORE_SHA -eq '0000000000000000000000000000000000000000') {
-            Write-Host "Initial push — signing all $($allScripts.Count) production scripts."
-            $scripts = $allScripts
-          } else {
-            $changedRaw = git diff --name-only $env:BEFORE_SHA HEAD -- '*.ps1' '*.psm1' '*.psd1' 2>&1
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "Could not determine changed files — signing all $($allScripts.Count) scripts."
-              $scripts = $allScripts
-            } else {
-              $changedPaths = @($changedRaw | Where-Object { $_ -and $_ -notmatch '[/\\]tests[/\\]' })
-              $repoRoot = git rev-parse --show-toplevel 2>&1
-              if ($LASTEXITCODE -ne 0) {
-                Write-Host "Could not determine repo root — signing all $($allScripts.Count) scripts."
-                $scripts = $allScripts
-              } else {
-                $changedFull = @($changedPaths | ForEach-Object {
-                  [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($repoRoot, $_))
-                })
-                $changedSet = [System.Collections.Generic.HashSet[string]]::new(
-                  [string[]]$changedFull,
-                  [System.StringComparer]::OrdinalIgnoreCase
-                )
-                $scripts = @($allScripts | Where-Object { $changedSet.Contains($_.FullName) })
-              }
-            }
+          # Only sign scripts that don't already have a valid signature
+          # (unsigned, hash mismatch from content change, or other invalid status)
+          $scripts = @($allScripts | Where-Object {
+            $sig = Get-AuthenticodeSignature -FilePath $_.FullName
+            $sig.Status -ne 'Valid'
+          })
 
-            # Also include any production files that are not yet signed
-            $unsigned = @($allScripts | Where-Object {
-              $sig = Get-AuthenticodeSignature -FilePath $_.FullName
-              $sig.Status -ne 'Valid'
-            })
-            if ($unsigned.Count -gt 0) {
-              Write-Host "Found $($unsigned.Count) unsigned file(s) — including in signing set."
-              $existingPaths = [System.Collections.Generic.HashSet[string]]::new(
-                [string[]]@($scripts | ForEach-Object { $_.FullName }),
-                [System.StringComparer]::OrdinalIgnoreCase
-              )
-              foreach ($u in $unsigned) {
-                if (-not $existingPaths.Contains($u.FullName)) {
-                  $scripts = @($scripts) + @($u)
-                }
-              }
-            }
-
-            if ($scripts.Count -eq 0) {
-              Write-Host "No production scripts need signing — skipping."
-              exit 0
-            }
+          if ($scripts.Count -eq 0) {
+            Write-Host "All $($allScripts.Count) production scripts already have valid signatures -- nothing to sign."
+            exit 0
           }
 
-          Write-Host "Signing $($scripts.Count) of $($allScripts.Count) production script(s)..."
+          Write-Host "Signing $($scripts.Count) of $($allScripts.Count) production script(s) (skipping $($allScripts.Count - $scripts.Count) already signed)..."
           foreach ($file in $scripts) {
             Write-Host "Signing: $($file.FullName)"
             Invoke-TrustedSigning `
