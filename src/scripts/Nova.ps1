@@ -88,9 +88,11 @@ $script:EspSize = 260MB
 $script:MsrSize = 16MB
 $script:MbrSystemSize = 500MB
 $script:DefaultRecoverySize = 990MB
+$script:MinimumOsPartitionSize = 20GB
 
 # Download settings
-$script:DownloadBufferSize  = 65536   # 64 KB read buffer
+$script:DownloadBufferSize      = 65536   # 64 KB read buffer
+$script:RetryBackoffBaseSeconds = 5
 $script:ProgressIntervalMs  = 1000    # Minimum ms between progress updates
 
 # Cached GitHub token obtained via Entra ID exchange so we don't re-fetch
@@ -217,10 +219,7 @@ function Save-AssetInventory {
     try {
         $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction SilentlyContinue
         $cs   = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
-        $os   = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
         $disk = Get-Disk -Number $TargetDiskNumber -ErrorAction SilentlyContinue
-
-        $null = $os   # $os reserved for future use (OS caption, version, etc.)
 
         $inventory = @{
             deviceName     = $ComputerName
@@ -726,7 +725,7 @@ function Invoke-DownloadWithProgress {
             if ($attempt -ge $MaxRetries) {
                 throw "Download failed for '$Description' after $MaxRetries attempt(s) (URL: $Uri): $_"
             }
-            $backoff = [math]::Pow(2, $attempt - 1) * 5
+            $backoff = [math]::Pow(2, $attempt - 1) * $script:RetryBackoffBaseSeconds
             Write-Warn "Download attempt $attempt/$MaxRetries failed: $_"
             Write-Warn "Retrying in $backoff seconds..."
             Start-Sleep -Seconds $backoff
@@ -828,7 +827,7 @@ function Initialize-TargetDisk {
             $usedSpace = $script:EspSize + $script:MsrSize + $RecoveryPartitionSize
             # Additional overhead for GPT metadata (~1 MB each side)
             $osSize = $disk.Size - $usedSpace - 2MB
-            if ($osSize -lt 20GB) {
+            if ($osSize -lt $script:MinimumOsPartitionSize) {
                 throw "Insufficient disk space for OS partition with recovery. Available: $(Get-FileSizeReadable $osSize)"
             }
             $osPartition = New-Partition -DiskNumber $DiskNumber -Size $osSize -GptType $script:GptTypeBasicData
@@ -1875,11 +1874,9 @@ function Install-Application {
         [string]$InstallerUrl,
         [string]$SilentArgs = '/qn /norestart',
         [string]$ScriptUrl,
-        [string]$OSDriveLetter,
-        [string]$ScratchDir
+        [string]$OSDriveLetter
     )
 
-    $null = $ScratchDir
     Write-Step 'Staging application installation...'
 
     $stepName = ''
@@ -1979,7 +1976,6 @@ function Invoke-WindowsUpdateStaging {
         $null = New-Item -ItemType Directory -Path $scriptDir -Force
 
         $stepName = 'Generate Windows Update script'
-        $null = $Categories   # used in here-string below
         $wuScript = Join-Path $scriptDir 'Nova_WindowsUpdate.ps1'
         $scriptContent = @"
 # Nova -- Windows Update (first boot)
@@ -2359,7 +2355,7 @@ function Invoke-TaskSequenceStep {
             $silArgs  = if ($p -and $p.PSObject.Properties['silentArgs']  -and $p.silentArgs)  { $p.silentArgs }  else { '/qn /norestart' }
             $sUrl     = if ($p -and $p.PSObject.Properties['scriptUrl']   -and $p.scriptUrl)   { $p.scriptUrl }   else { '' }
             Update-BootstrapStatus -Message "Installing application..." -Detail "Mode: $mode" -Step $uiStep -Progress $pct
-            Install-Application -InstallMode $mode -PackageId $pkgId -InstallerUrl $url -SilentArgs $silArgs -ScriptUrl $sUrl -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
+            Install-Application -InstallMode $mode -PackageId $pkgId -InstallerUrl $url -SilentArgs $silArgs -ScriptUrl $sUrl -OSDriveLetter $CurrentOSDrive
         }
         'WindowsUpdate' {
             $cats = if ($p -and $p.PSObject.Properties['categories'] -and $p.categories) { @($p.categories) } else { @('SecurityUpdates', 'CriticalUpdates') }

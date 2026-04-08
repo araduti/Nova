@@ -44,7 +44,11 @@ function Set-NovaProxy {
     $proxy = New-Object System.Net.WebProxy($ProxyUrl)
     $proxy.BypassProxyOnLocal = $true
     if ($BypassList) {
-        $proxy.BypassList = $BypassList -split ',' | ForEach-Object { [regex]::Escape($_.Trim()) }
+        $proxy.BypassList = $BypassList -split ',' | ForEach-Object {
+            # WebProxy.BypassList requires regex patterns; convert wildcard entries
+            $entry = [regex]::Escape($_.Trim())
+            $entry -replace '\\\*', '.*'
+        }
     }
     if ($Credential) {
         $proxy.Credentials = $Credential.GetNetworkCredential()
