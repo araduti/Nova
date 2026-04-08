@@ -313,7 +313,7 @@ jobs:
           TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
           BEFORE_SHA: ${{ github.event.before }}
         run: |
-          $allScripts = Get-ChildItem -Path . -Include '*.ps1','*.psm1' -Recurse |
+          $allScripts = Get-ChildItem -Path . -Include '*.ps1','*.psm1','*.psd1' -Recurse |
             Where-Object { $_.FullName -notmatch '[/\\]tests[/\\]' }
 
           # Determine which scripts need signing (all on first push, only changed thereafter)
@@ -321,16 +321,12 @@ jobs:
             Write-Host "Initial push — signing all $($allScripts.Count) production scripts."
             $scripts = $allScripts
           } else {
-            $changedRaw = git diff --name-only $env:BEFORE_SHA HEAD -- '*.ps1' '*.psm1' 2>&1
+            $changedRaw = git diff --name-only $env:BEFORE_SHA HEAD -- '*.ps1' '*.psm1' '*.psd1' 2>&1
             if ($LASTEXITCODE -ne 0) {
               Write-Host "Could not determine changed files — signing all $($allScripts.Count) scripts."
               $scripts = $allScripts
             } else {
               $changedPaths = @($changedRaw | Where-Object { $_ -and $_ -notmatch '[/\\]tests[/\\]' })
-              if ($changedPaths.Count -eq 0) {
-                Write-Host "No production scripts changed in this push — skipping signing."
-                exit 0
-              }
               $repoRoot = git rev-parse --show-toplevel 2>&1
               if ($LASTEXITCODE -ne 0) {
                 Write-Host "Could not determine repo root — signing all $($allScripts.Count) scripts."
@@ -344,11 +340,30 @@ jobs:
                   [System.StringComparer]::OrdinalIgnoreCase
                 )
                 $scripts = @($allScripts | Where-Object { $changedSet.Contains($_.FullName) })
-                if ($scripts.Count -eq 0) {
-                  Write-Host "No matching production scripts found — skipping signing."
-                  exit 0
+              }
+            }
+
+            # Also include any production files that are not yet signed
+            $unsigned = @($allScripts | Where-Object {
+              $sig = Get-AuthenticodeSignature -FilePath $_.FullName
+              $sig.Status -ne 'Valid'
+            })
+            if ($unsigned.Count -gt 0) {
+              Write-Host "Found $($unsigned.Count) unsigned file(s) — including in signing set."
+              $existingPaths = [System.Collections.Generic.HashSet[string]]::new(
+                [string[]]@($scripts | ForEach-Object { $_.FullName }),
+                [System.StringComparer]::OrdinalIgnoreCase
+              )
+              foreach ($u in $unsigned) {
+                if (-not $existingPaths.Contains($u.FullName)) {
+                  $scripts = @($scripts) + @($u)
                 }
               }
+            }
+
+            if ($scripts.Count -eq 0) {
+              Write-Host "No production scripts need signing — skipping."
+              exit 0
             }
           }
 
