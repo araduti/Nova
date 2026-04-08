@@ -47,3 +47,35 @@ Describe 'Invoke-M365DeviceCodeAuth' {
         $result.GraphAccessToken | Should -BeNullOrEmpty
     }
 }
+
+Describe 'Update-M365Token' {
+    It 'returns null when called with empty refresh token' {
+        Mock -ModuleName Nova.Auth Write-Verbose {}
+        $result = Update-M365Token -TokenInfo @{
+            RefreshToken = ''
+            ClientId     = 'test-client-id'
+            Scope        = 'openid profile'
+        }
+        $result | Should -BeNullOrEmpty
+    }
+
+    It 'returns null when called with missing ClientId' {
+        Mock -ModuleName Nova.Auth Write-Verbose {}
+        $result = Update-M365Token -TokenInfo @{
+            RefreshToken = 'some-refresh-token'
+            ClientId     = ''
+            Scope        = 'openid profile'
+        }
+        $result | Should -BeNullOrEmpty
+    }
+
+    It 'returns null when called with null refresh token' {
+        Mock -ModuleName Nova.Auth Write-Verbose {}
+        $result = Update-M365Token -TokenInfo @{
+            RefreshToken = $null
+            ClientId     = 'test-client-id'
+            Scope        = 'openid profile'
+        }
+        $result | Should -BeNullOrEmpty
+    }
+}

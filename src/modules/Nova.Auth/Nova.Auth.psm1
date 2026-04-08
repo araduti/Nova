@@ -414,9 +414,17 @@ function Invoke-M365DeviceCodeAuth {
         $raw = $wc.UploadString($tokenUrl, 'POST', $body)
         $tokenResponse = $raw | ConvertFrom-Json
         if ($tokenResponse.id_token) {
-            $graphToken = if ($tokenResponse.access_token) { $tokenResponse.access_token } else { $null }
+            $graphToken   = if ($tokenResponse.access_token)  { $tokenResponse.access_token }  else { $null }
+            $refreshToken = if ($tokenResponse.refresh_token) { $tokenResponse.refresh_token } else { $null }
+            $expiresIn    = if ($tokenResponse.expires_in)    { [int]$tokenResponse.expires_in } else { 3600 }
+            $expiresAt    = (Get-Date).AddSeconds($expiresIn)
             Write-Success 'Identity verified.'
-            return @{ Authenticated = $true; GraphAccessToken = $graphToken }
+            return @{
+                Authenticated    = $true
+                GraphAccessToken = $graphToken
+                RefreshToken     = $refreshToken
+                ExpiresAt        = $expiresAt
+            }
         }
     } catch {
         Write-Verbose "Token exchange failed: $_"
@@ -426,7 +434,65 @@ function Invoke-M365DeviceCodeAuth {
     return @{ Authenticated = $false; GraphAccessToken = $null }
 }
 
-Export-ModuleMember -Function Install-WebView2SDK, Show-WebView2AuthPopup, Invoke-M365DeviceCodeAuth
+function Update-M365Token {
+    <#
+    .SYNOPSIS  Refresh an expired Microsoft 365 access token.
+    .DESCRIPTION
+        Exchanges a refresh token for a new access/refresh token pair via
+        the Azure AD token endpoint.  Designed for long-running deployments
+        where the original token may expire before completion.
+    .PARAMETER TokenInfo
+        Hashtable with keys: RefreshToken, ClientId, Scope.
+    .OUTPUTS
+        Hashtable with AccessToken, RefreshToken, ExpiresAt on success;
+        $null on failure.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Token refresh is a read-only HTTP call with no system side-effects')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$TokenInfo
+    )
+
+    $refreshToken = if ($TokenInfo.RefreshToken) { $TokenInfo.RefreshToken } else { $null }
+    $clientId     = if ($TokenInfo.ClientId)     { $TokenInfo.ClientId }     else { $null }
+    $scope        = if ($TokenInfo.Scope)        { $TokenInfo.Scope }        else { 'openid profile' }
+
+    if (-not $refreshToken -or -not $clientId) {
+        Write-Verbose 'Update-M365Token: missing RefreshToken or ClientId -- returning null.'
+        return $null
+    }
+
+    $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
+    try {
+        $body = "client_id=$([uri]::EscapeDataString($clientId))" +
+                "&scope=$([uri]::EscapeDataString($scope))" +
+                "&refresh_token=$([uri]::EscapeDataString($refreshToken))" +
+                '&grant_type=refresh_token'
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+        $raw = $wc.UploadString($tokenUrl, 'POST', $body)
+        $tokenResponse = $raw | ConvertFrom-Json
+
+        if ($tokenResponse.access_token) {
+            $newRefresh = if ($tokenResponse.refresh_token) { $tokenResponse.refresh_token } else { $refreshToken }
+            $expiresIn  = if ($tokenResponse.expires_in)    { [int]$tokenResponse.expires_in } else { 3600 }
+            $expiresAt  = (Get-Date).AddSeconds($expiresIn)
+            return @{
+                AccessToken  = $tokenResponse.access_token
+                RefreshToken = $newRefresh
+                ExpiresAt    = $expiresAt
+            }
+        }
+    } catch {
+        Write-Verbose "Token refresh failed: $_"
+    }
+
+    return $null
+}
+
+Export-ModuleMember -Function Install-WebView2SDK, Show-WebView2AuthPopup, Invoke-M365DeviceCodeAuth, Update-M365Token
 
 # SIG # Begin signature block
 # MII+LwYJKoZIhvcNAQcCoII+IDCCPhwCAQExDzANBglghkgBZQMEAgEFADB5Bgor

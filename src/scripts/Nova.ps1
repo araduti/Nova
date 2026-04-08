@@ -50,7 +50,11 @@ param(
     # schema defined in resources/task-sequence/default.json.
     [Parameter(Mandatory)]
     [ValidateNotNullOrEmpty()]
-    [string]$TaskSequencePath
+    [string]$TaskSequencePath,
+
+    # When set, validates the task sequence without performing any destructive
+    # operations (no partitioning, no imaging, no driver injection).
+    [switch]$DryRun
 )
 
 Set-StrictMode -Version Latest
@@ -77,11 +81,13 @@ $script:PsBin = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\power
 $script:GptTypeEsp = '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'   # EFI System Partition
 $script:GptTypeMsr = '{e3c9e316-0b5c-4db8-817d-f92df00215ae}'   # Microsoft Reserved
 $script:GptTypeBasicData = '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}'   # Basic Data (OS)
+$script:GptTypeRecovery = '{de94bba4-06d1-4d40-a16a-bfd50179d6ac}'   # Windows Recovery (WinRE)
 
 # Partition sizes
 $script:EspSize = 260MB
 $script:MsrSize = 16MB
 $script:MbrSystemSize = 500MB
+$script:DefaultRecoverySize = 990MB
 
 # Download settings
 $script:DownloadBufferSize  = 65536   # 64 KB read buffer
@@ -187,6 +193,62 @@ function Save-DeploymentReport {
         Push-ReportToGitHub -FilePath "deployments/reports/deployment-report-$safeName.json" -Content $report
     } catch {
         Write-Warn "Failed to save deployment report: $_"
+    }
+}
+
+function Save-AssetInventory {
+    <#
+    .SYNOPSIS  Records hardware inventory for the deployed device.
+    .DESCRIPTION
+        Collects hardware details (serial, model, manufacturer, RAM, disk,
+        TPM, etc.) and saves them alongside the deployment report for
+        fleet tracking in the monitoring dashboard.
+    #>
+    param(
+        [string]$TaskSequence = '',
+        [string]$Edition = '',
+        [string]$Language = '',
+        [string]$ComputerName = $env:COMPUTERNAME,
+        [string]$ReportDir = ''
+    )
+
+    if (-not $ReportDir) { $ReportDir = $ScratchDir }
+
+    try {
+        $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction SilentlyContinue
+        $cs   = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+        $os   = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
+        $disk = Get-Disk -Number $TargetDiskNumber -ErrorAction SilentlyContinue
+
+        $null = $os   # $os reserved for future use (OS caption, version, etc.)
+
+        $inventory = @{
+            deviceName     = $ComputerName
+            serialNumber   = if ($bios) { $bios.SerialNumber } else { '' }
+            manufacturer   = if ($cs) { $cs.Manufacturer } else { '' }
+            model          = if ($cs) { $cs.Model } else { '' }
+            totalMemoryGB  = if ($cs) { [math]::Round($cs.TotalPhysicalMemory / 1GB, 1) } else { 0 }
+            diskSizeGB     = if ($disk) { [math]::Round($disk.Size / 1GB, 0) } else { 0 }
+            diskModel      = if ($disk) { $disk.FriendlyName } else { '' }
+            processorArch  = $env:PROCESSOR_ARCHITECTURE
+            taskSequence   = $TaskSequence
+            windowsEdition = $Edition
+            language       = $Language
+            deployedAt     = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        }
+
+        $safeName = ($ComputerName -replace '[\\/:*?"<>|]', '-')
+        $inventoryPath = Join-Path $ReportDir "asset-inventory-$safeName.json"
+        $dir = Split-Path $inventoryPath
+        if ($dir -and -not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
+        $inventory | ConvertTo-Json | Set-Content -Path $inventoryPath -Force
+
+        # Push to GitHub for the monitoring dashboard
+        Push-ReportToGitHub -FilePath "deployments/inventory/asset-inventory-$safeName.json" -Content $inventory
+
+        Write-Success "Asset inventory saved to $inventoryPath"
+    } catch {
+        Write-Warn "Failed to save asset inventory: $_"
     }
 }
 
@@ -596,56 +658,83 @@ function Invoke-DownloadWithProgress {
         [string]$OutFile,
         [string]$Description = 'Downloading',
         [int]$BaseProgress   = 0,
-        [int]$ProgressRange  = 0
+        [int]$ProgressRange  = 0,
+        [int]$MaxRetries     = 3
     )
     Write-Step "$Description"
     Write-Host "  Source : $Uri"
     Write-Host "  Target : $OutFile"
 
-    $response  = $null
-    $stream    = $null
-    $fs        = $null
-    try {
-        $wr = [System.Net.WebRequest]::Create($Uri)
-        $wr.Method  = 'GET'
-        $wr.Timeout = 30000   # 30-second connection timeout (ms)
-        $response  = $wr.GetResponse()
-        $totalBytes = $response.ContentLength
-        $stream     = $response.GetResponseStream()
-        $stream.ReadTimeout = 30000   # 30-second read timeout (ms)
-        $fs         = [System.IO.File]::Create($OutFile)
-        $buffer     = New-Object byte[] $script:DownloadBufferSize
-        $downloaded = 0
-        $sw         = [System.Diagnostics.Stopwatch]::StartNew()
+    $attempt = 0
+    while ($true) {
+        $attempt++
+        $response  = $null
+        $stream    = $null
+        $fs        = $null
+        try {
+            # Check for partial file to support resume
+            $existingSize = if (Test-Path $OutFile) { (Get-Item $OutFile).Length } else { 0 }
 
-        do {
-            $read = $stream.Read($buffer, 0, $buffer.Length)
-            if ($read -gt 0) {
-                $fs.Write($buffer, 0, $read)
-                $downloaded += $read
-                if ($sw.ElapsedMilliseconds -gt $script:ProgressIntervalMs) {
-                    $pct = if ($totalBytes -gt 0) { [int]($downloaded * 100 / $totalBytes) } else { 0 }
-                    $speed = if ($sw.Elapsed.TotalSeconds -gt 0) { [long]($downloaded / $sw.Elapsed.TotalSeconds) } else { 0 }
-                    $detail = "$pct% -- $(Get-FileSizeReadable $downloaded) of $(Get-FileSizeReadable $totalBytes) @ $(Get-FileSizeReadable $speed)/s"
-                    Write-Host "  Progress: $detail" -NoNewline
-                    Write-Host "`r" -NoNewline
-                    if ($ProgressRange -gt 0) {
-                        $overallPct = [Math]::Min($BaseProgress + $ProgressRange, $BaseProgress + [int]($pct * $ProgressRange / 100))
-                        Update-BootstrapStatus -Message $Description -Detail $detail -Step 4 -Progress $overallPct
-                    }
-                    $sw.Restart()
-                }
+            $wr = [System.Net.WebRequest]::Create($Uri)
+            $wr.Method  = 'GET'
+            $wr.Timeout = 30000   # 30-second connection timeout (ms)
+
+            if ($existingSize -gt 0) {
+                $wr.AddRange([long]$existingSize)
+                Write-Host "  Resuming from $(Get-FileSizeReadable $existingSize)..."
             }
-        } while ($read -gt 0)
 
-        Write-Host ''
-        Write-Success "Download complete: $(Get-FileSizeReadable $downloaded)"
-    } catch {
-        throw "Download failed for '$Description' (URL: $Uri): $_"
-    } finally {
-        if ($fs)       { $fs.Close() }
-        if ($stream)   { $stream.Close() }
-        if ($response) { $response.Close() }
+            $response  = $wr.GetResponse()
+            $totalBytes = $response.ContentLength + $existingSize
+            $stream     = $response.GetResponseStream()
+            $stream.ReadTimeout = 30000   # 30-second read timeout (ms)
+
+            if ($existingSize -gt 0) {
+                $fs = [System.IO.FileStream]::new($OutFile, [System.IO.FileMode]::Append)
+            } else {
+                $fs = [System.IO.File]::Create($OutFile)
+            }
+
+            $buffer     = New-Object byte[] $script:DownloadBufferSize
+            $downloaded = $existingSize
+            $sw         = [System.Diagnostics.Stopwatch]::StartNew()
+
+            do {
+                $read = $stream.Read($buffer, 0, $buffer.Length)
+                if ($read -gt 0) {
+                    $fs.Write($buffer, 0, $read)
+                    $downloaded += $read
+                    if ($sw.ElapsedMilliseconds -gt $script:ProgressIntervalMs) {
+                        $pct = if ($totalBytes -gt 0) { [int]($downloaded * 100 / $totalBytes) } else { 0 }
+                        $speed = if ($sw.Elapsed.TotalSeconds -gt 0) { [long]($downloaded / $sw.Elapsed.TotalSeconds) } else { 0 }
+                        $detail = "$pct% -- $(Get-FileSizeReadable $downloaded) of $(Get-FileSizeReadable $totalBytes) @ $(Get-FileSizeReadable $speed)/s"
+                        Write-Host "  Progress: $detail" -NoNewline
+                        Write-Host "`r" -NoNewline
+                        if ($ProgressRange -gt 0) {
+                            $overallPct = [Math]::Min($BaseProgress + $ProgressRange, $BaseProgress + [int]($pct * $ProgressRange / 100))
+                            Update-BootstrapStatus -Message $Description -Detail $detail -Step 4 -Progress $overallPct
+                        }
+                        $sw.Restart()
+                    }
+                }
+            } while ($read -gt 0)
+
+            Write-Host ''
+            Write-Success "Download complete: $(Get-FileSizeReadable $downloaded)"
+            break   # Success -- exit retry loop
+        } catch {
+            if ($attempt -ge $MaxRetries) {
+                throw "Download failed for '$Description' after $MaxRetries attempt(s) (URL: $Uri): $_"
+            }
+            $backoff = [math]::Pow(2, $attempt - 1) * 5
+            Write-Warn "Download attempt $attempt/$MaxRetries failed: $_"
+            Write-Warn "Retrying in $backoff seconds..."
+            Start-Sleep -Seconds $backoff
+        } finally {
+            if ($fs)       { $fs.Close() }
+            if ($stream)   { $stream.Close() }
+            if ($response) { $response.Close() }
+        }
     }
 }
 
@@ -655,11 +744,44 @@ function Invoke-DownloadWithProgress {
 
 #region ── Disk Partitioning ────────────────────────────────────────────────────
 
+function Get-TargetDisk {
+    <#
+    .SYNOPSIS  Resolves and validates the target disk for imaging.
+    .DESCRIPTION
+        When DiskNumber is -1 (auto-select), picks the largest non-removable
+        disk.  Otherwise validates the specified disk number exists.
+    #>
+    param(
+        [int]$DiskNumber
+    )
+
+    if ($DiskNumber -eq -1) {
+        # Auto-select: pick the largest non-removable, non-USB disk
+        $disk = Get-Disk | Where-Object {
+            $_.BusType -ne 'USB' -and
+            -not $_.IsReadOnly -and
+            $_.OperationalStatus -eq 'Online'
+        } | Sort-Object Size -Descending | Select-Object -First 1
+
+        if (-not $disk) {
+            throw 'Auto-select failed: no eligible disks found (excluding USB and read-only)'
+        }
+        Write-Step "Auto-selected disk $($disk.Number): $($disk.FriendlyName) ($(Get-FileSizeReadable $disk.Size))"
+        return $disk.Number
+    }
+
+    # Validate specified disk exists
+    $null = Get-Disk -Number $DiskNumber -ErrorAction Stop
+    return $DiskNumber
+}
+
 function Initialize-TargetDisk {
     param(
         [int]$DiskNumber,
         [string]$FirmwareType,
-        [string]$OSDriveLetter
+        [string]$OSDriveLetter,
+        [switch]$CreateRecoveryPartition,
+        [long]$RecoveryPartitionSize = $script:DefaultRecoverySize
     )
 
     Write-Step "Initializing disk $DiskNumber (Firmware: $FirmwareType)..."
@@ -698,9 +820,21 @@ function Initialize-TargetDisk {
         $stepName = 'New-Partition (MSR)'
         $null = New-Partition -DiskNumber $DiskNumber -Size $script:MsrSize -GptType $script:GptTypeMsr
 
-        # Windows OS Partition - all remaining space
+        # Windows OS Partition
         $stepName = 'New-Partition (OS)'
-        $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -GptType $script:GptTypeBasicData
+        if ($CreateRecoveryPartition) {
+            # Reserve space for the recovery partition at the end of the disk
+            $disk = Get-Disk -Number $DiskNumber -ErrorAction Stop
+            $usedSpace = $script:EspSize + $script:MsrSize + $RecoveryPartitionSize
+            # Additional overhead for GPT metadata (~1 MB each side)
+            $osSize = $disk.Size - $usedSpace - 2MB
+            if ($osSize -lt 20GB) {
+                throw "Insufficient disk space for OS partition with recovery. Available: $(Get-FileSizeReadable $osSize)"
+            }
+            $osPartition = New-Partition -DiskNumber $DiskNumber -Size $osSize -GptType $script:GptTypeBasicData
+        } else {
+            $osPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -GptType $script:GptTypeBasicData
+        }
         $stepName = 'Format-Volume (OS NTFS)'
         $null = $osPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Windows' -Confirm:$false
         # Format-Volume may auto-assign the drive letter; only reassign if needed.
@@ -713,6 +847,24 @@ function Initialize-TargetDisk {
                 Remove-PartitionAccessPath -DiskNumber $conflict.DiskNumber -PartitionNumber $conflict.PartitionNumber -AccessPath "${OSDriveLetter}:\"
             }
             Set-Partition -DiskNumber $DiskNumber -PartitionNumber $osPartition.PartitionNumber -NewDriveLetter $OSDriveLetter
+        }
+
+        # Recovery Partition (optional, UEFI only)
+        if ($CreateRecoveryPartition) {
+            $stepName = 'New-Partition (Recovery)'
+            $recPartition = New-Partition -DiskNumber $DiskNumber -UseMaximumSize -GptType $script:GptTypeRecovery
+            $stepName = 'Format-Volume (Recovery NTFS)'
+            $null = $recPartition | Format-Volume -FileSystem NTFS -NewFileSystemLabel 'Recovery' -Confirm:$false
+            # Set GPT attributes: bit 0 (required) + bit 60 (read-only) +
+            # bit 62 (hidden) + bit 63 (no drive letter) = 0x8000000000000001
+            $stepName = 'Set-Partition (Recovery attributes)'
+            $recPartArgs = @{
+                DiskNumber      = $DiskNumber
+                PartitionNumber = $recPartition.PartitionNumber
+                GptType         = $script:GptTypeRecovery
+            }
+            Set-Partition @recPartArgs
+            Write-Host "  Recovery partition created: $(Get-FileSizeReadable $RecoveryPartitionSize)"
         }
 
     } else {
@@ -1187,6 +1339,83 @@ function Add-LenovoDriver {
     }
 }
 
+function Add-SurfaceDriver {
+    <#
+    .SYNOPSIS
+        Downloads and injects Microsoft Surface drivers from the Surface
+        driver and firmware MSI packages.
+    #>
+    param(
+        [string]$OSDriveLetter,
+        [string]$ScratchDir
+    )
+    Write-Step 'Fetching Microsoft Surface drivers...'
+
+    $stepName = ''
+    try {
+        $stepName = 'Detect Surface model'
+        $model = (Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).Model
+        Write-Host "  Surface model: $model"
+
+        $stepName = 'Resolve driver pack URL'
+        # Microsoft publishes cumulative driver/firmware packs per Surface model.
+        # The download URL pattern follows: https://download.microsoft.com/download/...
+        # We attempt to find the driver pack from the known model-to-URL mapping.
+        $surfaceModels = @{
+            'Surface Pro 9'       = 'SurfacePro9'
+            'Surface Pro 10'      = 'SurfacePro10'
+            'Surface Pro (11th Edition)' = 'SurfacePro11thEdition'
+            'Surface Laptop 5'    = 'SurfaceLaptop5'
+            'Surface Laptop 6'    = 'SurfaceLaptop6'
+            'Surface Laptop Studio 2' = 'SurfaceLaptopStudio2'
+            'Surface Go 4'        = 'SurfaceGo4'
+            'Surface Book 3'      = 'SurfaceBook3'
+        }
+
+        $matchedKey = $surfaceModels.Keys | Where-Object { $model -like "*$_*" } | Select-Object -First 1
+        if (-not $matchedKey) {
+            Write-Warn "No known Surface driver pack for model '$model'. Skipping Surface driver injection."
+            Write-Warn "Supported models: $($surfaceModels.Keys -join ', ')"
+            return
+        }
+
+        $driverTemp = Join-Path $ScratchDir 'Surface-Drivers'
+        $null = New-Item -ItemType Directory -Path $driverTemp -Force
+
+        $packName = $surfaceModels[$matchedKey]
+        $msiUrl = "https://download.microsoft.com/download/Surface/$packName/SurfaceUpdate.msi"
+        $msiPath = Join-Path $driverTemp 'SurfaceUpdate.msi'
+
+        $stepName = 'Download Surface driver pack'
+        Write-Host "  Downloading driver pack for $matchedKey..."
+        Invoke-DownloadWithProgress -Uri $msiUrl -OutFile $msiPath -Description "Downloading Surface drivers ($matchedKey)"
+
+        $stepName = 'Extract drivers from MSI'
+        $extractDir = Join-Path $driverTemp 'Extracted'
+        $null = New-Item -ItemType Directory -Path $extractDir -Force
+        $msiExec = Start-Process -FilePath 'msiexec.exe' `
+            -ArgumentList "/a `"$msiPath`" /qn TARGETDIR=`"$extractDir`"" `
+            -Wait -PassThru -NoNewWindow
+        if ($msiExec.ExitCode -ne 0) {
+            Write-Warn "MSI extraction returned exit code $($msiExec.ExitCode) -- attempting driver injection anyway"
+        }
+
+        $stepName = 'Inject Surface drivers'
+        $infFiles = Get-ChildItem $extractDir -Recurse -Filter '*.inf' -ErrorAction SilentlyContinue
+        if (-not $infFiles) {
+            Write-Warn 'No .inf driver files found in Surface driver pack. Skipping injection.'
+            return
+        }
+
+        Write-Host "  Injecting $($infFiles.Count) Surface driver(s) into ${OSDriveLetter}:\..."
+        $null = Add-WindowsDriver -Path "${OSDriveLetter}:\" -Driver $extractDir -Recurse `
+            -ErrorAction Continue
+        Write-Success 'Microsoft Surface drivers injected successfully.'
+    } catch {
+        throw "Add-SurfaceDriver failed at step '$stepName': $_"
+    }
+}
+
 function Invoke-OemDriverInjection {
     <#
     .SYNOPSIS
@@ -1211,6 +1440,7 @@ function Invoke-OemDriverInjection {
             '*HP*'      { Add-HpDriver      -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
             '*Hewlett*' { Add-HpDriver      -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
             '*Lenovo*'  { Add-LenovoDriver  -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
+            '*Microsoft*' { Add-SurfaceDriver -OSDriveLetter $OSDriveLetter -ScratchDir $ScratchDir }
             default {
                 Write-Warn "Manufacturer '$manufacturer' is not supported for OEM driver automation. Use -DriverPath for manual driver injection."
             }
@@ -1509,6 +1739,74 @@ function Set-OOBECustomization {
 
 #endregion
 
+#region ── BitLocker / Encryption ───────────────────────────────────────────────
+
+function Enable-BitLockerProtection {
+    <#
+    .SYNOPSIS  Stage BitLocker drive encryption for first-boot activation.
+    .DESCRIPTION
+        Creates a PowerShell script that enables BitLocker with TPM protector
+        on the OS drive and registers it for execution on first boot via
+        SetupComplete.cmd.  The recovery password is backed up to Azure AD
+        when the device is Azure AD joined.
+    .PARAMETER OSDriveLetter  Target OS drive letter (e.g. 'C').
+    .PARAMETER EncryptionMethod  BitLocker encryption algorithm (default XtsAes256).
+    .PARAMETER SkipHardwareTest  Skip the TPM hardware test during enable.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [string]$OSDriveLetter,
+        [string]$EncryptionMethod = 'XtsAes256',
+        [switch]$SkipHardwareTest
+    )
+
+    Write-Step 'Staging BitLocker encryption for first boot...'
+
+    $stepName = ''
+    try {
+        $stepName = 'Create scripts directory'
+        $scriptDir = "${OSDriveLetter}:\Windows\Setup\Scripts"
+        $null = New-Item -ItemType Directory -Path $scriptDir -Force
+
+        $stepName = 'Generate BitLocker script'
+        $skipFlag = if ($SkipHardwareTest) { ' -SkipHardwareTest' } else { '' }
+        $blScript = @"
+# Nova BitLocker -- first-boot activation
+# Generated by Nova deployment engine
+`$ErrorActionPreference = 'Stop'
+try {
+    `$drive = '$OSDriveLetter' + ':'
+    Enable-BitLocker -MountPoint `$drive -EncryptionMethod $EncryptionMethod -TpmProtector$skipFlag
+    Add-BitLockerKeyProtector -MountPoint `$drive -RecoveryPasswordProtector
+    # Back up recovery key to Azure AD if the device is joined
+    `$blv = Get-BitLockerVolume -MountPoint `$drive
+    `$rp = `$blv.KeyProtector | Where-Object { `$_.KeyProtectorType -eq 'RecoveryPassword' } | Select-Object -First 1
+    if (`$rp) {
+        try {
+            BackupToAAD-BitLockerKeyProtector -MountPoint `$drive -KeyProtectorId `$rp.KeyProtectorId -ErrorAction SilentlyContinue
+        } catch {
+            # Device may not be AAD joined -- skip backup silently
+        }
+    }
+} catch {
+    Write-EventLog -LogName Application -Source 'Nova' -EventId 1001 -EntryType Error -Message "Nova BitLocker activation failed: `$_"
+}
+"@
+        $blScriptPath = Join-Path $scriptDir 'Nova_EnableBitLocker.ps1'
+        Set-Content -Path $blScriptPath -Value $blScript -Encoding UTF8
+
+        $stepName = 'Add SetupComplete entry'
+        $setupComplete = "${OSDriveLetter}:\Windows\Setup\Scripts\SetupComplete.cmd"
+        Add-SetupCompleteEntry -FilePath $setupComplete -Line 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Nova_EnableBitLocker.ps1"'
+
+        Write-Success 'BitLocker encryption staged for first boot.'
+    } catch {
+        throw "Enable-BitLockerProtection failed at step '$stepName': $_"
+    }
+}
+
+#endregion
+
 #region ── Post-Provisioning Scripts ────────────────────────────────────────────
 
 function Invoke-PostScript {
@@ -1558,6 +1856,179 @@ function Invoke-PostScript {
 
 #endregion
 
+#region -- Application Installation -------------------------------------------
+
+function Install-Application {
+    <#
+    .SYNOPSIS  Stages application installers for first-boot execution.
+    .DESCRIPTION
+        Downloads application installers (MSI, EXE, or Winget manifests) and
+        stages them for installation on first boot via SetupComplete.cmd.
+        Supports three modes:
+          - winget: stages a Winget import file for first-boot installation
+          - url:    downloads an MSI/EXE installer and stages with silent args
+          - script: downloads and stages a custom installation script
+    #>
+    param(
+        [string]$InstallMode = 'url',
+        [string]$PackageId,
+        [string]$InstallerUrl,
+        [string]$SilentArgs = '/qn /norestart',
+        [string]$ScriptUrl,
+        [string]$OSDriveLetter,
+        [string]$ScratchDir
+    )
+
+    $null = $ScratchDir
+    Write-Step 'Staging application installation...'
+
+    $stepName = ''
+    $scriptDir = "${OSDriveLetter}:\Windows\Setup\Scripts"
+    $setupComplete = Join-Path $scriptDir 'SetupComplete.cmd'
+    $null = New-Item -ItemType Directory -Path $scriptDir -Force
+
+    try {
+        switch ($InstallMode) {
+            'winget' {
+                $stepName = 'Stage Winget installation'
+                if (-not $PackageId) {
+                    Write-Warn 'No Winget package ID specified. Skipping application installation.'
+                    return
+                }
+                # Stage a PowerShell script that installs via Winget on first boot
+                $wingetScript = Join-Path $scriptDir 'Nova_InstallApp_Winget.ps1'
+                $scriptContent = @"
+# Nova -- Winget application installation (first boot)
+`$ErrorActionPreference = 'Continue'
+`$maxRetries = 3
+for (`$i = 1; `$i -le `$maxRetries; `$i++) {
+    try {
+        winget install --id '$PackageId' --silent --accept-source-agreements --accept-package-agreements
+        if (`$LASTEXITCODE -eq 0) { break }
+    } catch { Start-Sleep -Seconds (5 * `$i) }
+}
+"@
+                Set-Content -Path $wingetScript -Value $scriptContent -Encoding UTF8
+                Add-SetupCompleteEntry -FilePath $setupComplete -Line "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0Nova_InstallApp_Winget.ps1`""
+                Write-Success "Winget installation staged for package: $PackageId"
+            }
+            'url' {
+                $stepName = 'Download installer'
+                if (-not $InstallerUrl) {
+                    Write-Warn 'No installer URL specified. Skipping application installation.'
+                    return
+                }
+                $ext = [System.IO.Path]::GetExtension($InstallerUrl).ToLower()
+                if (-not $ext) { $ext = '.exe' }
+                $installerName = "Nova_AppInstaller$ext"
+                $installerDest = Join-Path $scriptDir $installerName
+                Invoke-DownloadWithProgress -Uri $InstallerUrl -OutFile $installerDest -Description 'Downloading application installer'
+
+                $stepName = 'Stage installer'
+                if ($ext -eq '.msi') {
+                    Add-SetupCompleteEntry -FilePath $setupComplete -Line "msiexec.exe /i `"%~dp0$installerName`" $SilentArgs"
+                } else {
+                    Add-SetupCompleteEntry -FilePath $setupComplete -Line "`"%~dp0$installerName`" $SilentArgs"
+                }
+                Write-Success "Application installer staged: $installerName"
+            }
+            'script' {
+                $stepName = 'Download installation script'
+                if (-not $ScriptUrl) {
+                    Write-Warn 'No script URL specified. Skipping application installation.'
+                    return
+                }
+                $scriptDest = Join-Path $scriptDir 'Nova_InstallApp_Custom.ps1'
+                Invoke-WebRequest -Uri $ScriptUrl -OutFile $scriptDest -UseBasicParsing -TimeoutSec 30
+                Add-SetupCompleteEntry -FilePath $setupComplete -Line "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0Nova_InstallApp_Custom.ps1`""
+                Write-Success "Custom installation script staged."
+            }
+            default {
+                Write-Warn "Unknown install mode '$InstallMode'. Skipping."
+            }
+        }
+    } catch {
+        throw "Install-Application failed at step '$stepName': $_"
+    }
+}
+
+#endregion
+
+#region -- Windows Update Staging ----------------------------------------------
+
+function Invoke-WindowsUpdateStaging {
+    <#
+    .SYNOPSIS  Stages a Windows Update trigger script for first-boot execution.
+    .DESCRIPTION
+        Creates a PowerShell script that runs on first boot to install critical
+        and security updates via the built-in Windows Update client.  The script
+        uses the COM-based Windows Update Agent API which is available on all
+        Windows installations without additional modules.
+    #>
+    param(
+        [string]$OSDriveLetter,
+        [string[]]$Categories = @('SecurityUpdates', 'CriticalUpdates')
+    )
+
+    Write-Step 'Staging Windows Update for first boot...'
+
+    $stepName = ''
+    try {
+        $stepName = 'Create scripts directory'
+        $scriptDir = "${OSDriveLetter}:\Windows\Setup\Scripts"
+        $null = New-Item -ItemType Directory -Path $scriptDir -Force
+
+        $stepName = 'Generate Windows Update script'
+        $null = $Categories   # used in here-string below
+        $wuScript = Join-Path $scriptDir 'Nova_WindowsUpdate.ps1'
+        $scriptContent = @"
+# Nova -- Windows Update (first boot)
+# Installs critical and security updates using the Windows Update Agent COM API.
+`$ErrorActionPreference = 'Continue'
+`$logFile = "`$env:SystemDrive\Nova\Logs\WindowsUpdate.log"
+`$null = New-Item -ItemType Directory -Path (Split-Path `$logFile) -Force -ErrorAction SilentlyContinue
+Start-Transcript -Path `$logFile -Force -ErrorAction SilentlyContinue
+
+Write-Host 'Nova: Starting Windows Update scan...'
+try {
+    `$session    = New-Object -ComObject Microsoft.Update.Session
+    `$searcher   = `$session.CreateUpdateSearcher()
+    `$result     = `$searcher.Search('IsInstalled=0 AND IsHidden=0')
+    `$updates    = `$result.Updates
+
+    if (`$updates.Count -eq 0) {
+        Write-Host 'Nova: No updates available.'
+    } else {
+        Write-Host "Nova: Found `$(`$updates.Count) update(s). Downloading and installing..."
+        `$downloader = `$session.CreateUpdateDownloader()
+        `$downloader.Updates = `$updates
+        `$null = `$downloader.Download()
+
+        `$installer = `$session.CreateUpdateInstaller()
+        `$installer.Updates = `$updates
+        `$installResult = `$installer.Install()
+        Write-Host "Nova: Update installation complete. Result: `$(`$installResult.ResultCode)"
+    }
+} catch {
+    Write-Warning "Nova: Windows Update failed: `$_"
+}
+
+Stop-Transcript -ErrorAction SilentlyContinue
+"@
+        Set-Content -Path $wuScript -Value $scriptContent -Encoding UTF8
+
+        $stepName = 'Register in SetupComplete'
+        $setupComplete = Join-Path $scriptDir 'SetupComplete.cmd'
+        Add-SetupCompleteEntry -FilePath $setupComplete -Line "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"%~dp0Nova_WindowsUpdate.ps1`""
+
+        Write-Success "Windows Update staged for first boot (categories: $($Categories -join ', '))"
+    } catch {
+        throw "Invoke-WindowsUpdateStaging failed at step '$stepName': $_"
+    }
+}
+
+#endregion
+
 #region ── Task Sequence ────────────────────────────────────────────────────────
 
 function Read-TaskSequence {
@@ -1585,6 +2056,16 @@ function Read-TaskSequence {
         if (-not $s.type) { throw "Invalid task sequence: step '$($s.name)' is missing required 'type' property" }
         if (-not $s.name) { throw "Invalid task sequence: a step with type '$($s.type)' is missing required 'name' property" }
     }
+
+    # ── Schema version validation (forward-compatible) ──────────────
+    if ($ts.PSObject.Properties['schemaVersion'] -and $ts.schemaVersion) {
+        if ($ts.schemaVersion -ne '1.0') {
+            Write-Warning "Task sequence schema version '$($ts.schemaVersion)' may not be fully compatible with this engine (expected 1.0)"
+        }
+    } else {
+        Write-Verbose 'No schemaVersion found -- assuming 1.0 compatibility'
+    }
+
     Write-Success "Loaded task sequence '$($ts.name)' with $($ts.steps.Count) steps"
     return $ts
 }
@@ -1716,9 +2197,16 @@ function Invoke-TaskSequenceStep {
     switch ($Step.type) {
         'PartitionDisk' {
             $disk = if ($p -and $p.PSObject.Properties['diskNumber'] -and $null -ne $p.diskNumber) { $p.diskNumber } else { $CurrentDiskNumber }
+            # Auto-select disk when -1 or not specified
+            if ($disk -eq -1) {
+                $disk = Get-TargetDisk -DiskNumber -1
+            }
             $drv  = if ($p -and $p.PSObject.Properties['osDriveLetter'] -and $p.osDriveLetter) { $p.osDriveLetter } else { $CurrentOSDrive }
+            $createRecovery = if ($p -and $p.PSObject.Properties['createRecoveryPartition'] -and $p.createRecoveryPartition) { $true } else { $false }
+            $recoverySize = if ($p -and $p.PSObject.Properties['recoveryPartitionSize'] -and $p.recoveryPartitionSize -gt 0) { [long]$p.recoveryPartitionSize } else { $script:DefaultRecoverySize }
             Update-BootstrapStatus -Message "Partitioning disk..." -Detail "Creating layout on disk $disk" -Step $uiStep -Progress $pct
-            Initialize-TargetDisk -DiskNumber $disk -FirmwareType $CurrentFirmwareType -OSDriveLetter $drv
+            Initialize-TargetDisk -DiskNumber $disk -FirmwareType $CurrentFirmwareType -OSDriveLetter $drv `
+                -CreateRecoveryPartition:$createRecovery -RecoveryPartitionSize $recoverySize
         }
         'ImportAutopilot' {
             $tag   = if ($p -and $p.PSObject.Properties['groupTag']  -and $p.groupTag)  { $p.groupTag }  else { '' }
@@ -1858,10 +2346,150 @@ function Invoke-TaskSequenceStep {
             Update-BootstrapStatus -Message "Staging post-scripts..." -Detail "Downloading post-provisioning scripts" -Step $uiStep -Progress $pct
             Invoke-PostScript -ScriptUrls $urls -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
+        'EnableBitLocker' {
+            $method = if ($p -and $p.PSObject.Properties['encryptionMethod'] -and $p.encryptionMethod) { $p.encryptionMethod } else { 'XtsAes256' }
+            $skipHw = if ($p -and $p.PSObject.Properties['skipHardwareTest'] -and $p.skipHardwareTest) { $true } else { $false }
+            Update-BootstrapStatus -Message "Enabling BitLocker..." -Detail "Staging encryption for first boot" -Step $uiStep -Progress $pct
+            Enable-BitLockerProtection -OSDriveLetter $CurrentOSDrive -EncryptionMethod $method -SkipHardwareTest:$skipHw
+        }
+        'InstallApplication' {
+            $mode     = if ($p -and $p.PSObject.Properties['installMode'] -and $p.installMode) { $p.installMode } else { 'url' }
+            $pkgId    = if ($p -and $p.PSObject.Properties['packageId']   -and $p.packageId)   { $p.packageId }   else { '' }
+            $url      = if ($p -and $p.PSObject.Properties['installerUrl'] -and $p.installerUrl) { $p.installerUrl } else { '' }
+            $silArgs  = if ($p -and $p.PSObject.Properties['silentArgs']  -and $p.silentArgs)  { $p.silentArgs }  else { '/qn /norestart' }
+            $sUrl     = if ($p -and $p.PSObject.Properties['scriptUrl']   -and $p.scriptUrl)   { $p.scriptUrl }   else { '' }
+            Update-BootstrapStatus -Message "Installing application..." -Detail "Mode: $mode" -Step $uiStep -Progress $pct
+            Install-Application -InstallMode $mode -PackageId $pkgId -InstallerUrl $url -SilentArgs $silArgs -ScriptUrl $sUrl -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
+        }
+        'WindowsUpdate' {
+            $cats = if ($p -and $p.PSObject.Properties['categories'] -and $p.categories) { @($p.categories) } else { @('SecurityUpdates', 'CriticalUpdates') }
+            Update-BootstrapStatus -Message "Staging Windows Update..." -Detail "Preparing first-boot updates" -Step $uiStep -Progress $pct
+            Invoke-WindowsUpdateStaging -OSDriveLetter $CurrentOSDrive -Categories $cats
+        }
         default {
             Write-Warn "Unknown step type '$($Step.type)' -- skipping"
         }
     }
+}
+
+#endregion
+
+#region ── Log Export ───────────────────────────────────────────────────────────
+
+function Export-DeploymentLogs {
+    <#
+    .SYNOPSIS  Copies WinPE deployment logs to the target OS drive before reboot.
+    .DESCRIPTION
+        WinPE runs in RAM -- all logs are lost on reboot unless explicitly copied.
+        This function copies Nova's log files from X:\ to the target OS drive so
+        they survive the reboot and are available for troubleshooting.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = 'Exports multiple log files as a batch operation')]
+    param(
+        [string]$OSDriveLetter
+    )
+
+    $logDir = "${OSDriveLetter}:\Nova\Logs"
+    try {
+        $null = New-Item -ItemType Directory -Path $logDir -Force -ErrorAction SilentlyContinue
+        $logFiles = @(
+            'X:\Nova-Bootstrap.log',
+            'X:\Nova-Engine.log',
+            'X:\Nova-Auth.log',
+            'X:\Nova-Status.json'
+        )
+        foreach ($src in $logFiles) {
+            if (Test-Path $src) {
+                $dest = Join-Path $logDir (Split-Path $src -Leaf)
+                Copy-Item $src $dest -Force -ErrorAction SilentlyContinue
+                Write-Verbose "Copied $src -> $dest"
+            }
+        }
+        # Also copy the transcript if it's still running
+        try { Stop-Transcript -ErrorAction SilentlyContinue } catch { $null = $_ }
+        if (Test-Path $script:EngineLogPath) {
+            Copy-Item $script:EngineLogPath (Join-Path $logDir 'Nova-Engine.log') -Force -ErrorAction SilentlyContinue
+        }
+        Write-Success "Deployment logs exported to $logDir"
+    } catch {
+        Write-Warn "Log export failed (non-fatal): $_"
+    }
+}
+
+#endregion
+
+#region ── Dry-Run Validation ───────────────────────────────────────────────────
+
+function Invoke-DryRunValidation {
+    param(
+        [psobject]$TaskSequence,
+        [string]$ScratchDir,
+        [string]$OSDrive,
+        [string]$FirmwareType,
+        [int]$DiskNumber
+    )
+
+    Write-Step 'DRY RUN -- Validating deployment configuration...'
+    $errors = @()
+    $warnings = @()
+
+    $enabledSteps = @($TaskSequence.steps | Where-Object { $_.enabled -ne $false })
+    Write-Host "  Task sequence: $($TaskSequence.name)"
+    Write-Host "  Total steps: $($TaskSequence.steps.Count) ($($enabledSteps.Count) enabled)"
+    Write-Host "  Firmware type: $FirmwareType"
+    Write-Host "  Target disk: $DiskNumber"
+    Write-Host "  OS drive: ${OSDrive}:"
+    Write-Host "  Scratch dir: $ScratchDir"
+
+    foreach ($s in $enabledSteps) {
+        $p = $s.parameters
+        Write-Host "  [OK] Step '$($s.name)' ($($s.type)) -- enabled" -ForegroundColor Green
+
+        # Validate step-specific parameters
+        switch ($s.type) {
+            'DownloadImage' {
+                $url = if ($p -and $p.PSObject.Properties['imageUrl'] -and $p.imageUrl) { $p.imageUrl } else { '' }
+                if (-not $url) { $warnings += "Step '$($s.name)': No imageUrl specified -- will use ESD catalog" }
+            }
+            'PartitionDisk' {
+                try {
+                    $disk = Get-Disk -Number $DiskNumber -ErrorAction Stop
+                    Write-Host "    Disk $DiskNumber : $($disk.FriendlyName) ($(Get-FileSizeReadable $disk.Size))" -ForegroundColor Gray
+                } catch {
+                    $errors += "Step '$($s.name)': Target disk $DiskNumber not found"
+                }
+            }
+            'InjectOemDrivers' {
+                try {
+                    $mfr = (Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).Manufacturer
+                    Write-Host "    Manufacturer: $mfr" -ForegroundColor Gray
+                } catch {
+                    $warnings += "Step '$($s.name)': Could not detect manufacturer"
+                }
+            }
+            'EnableBitLocker' {
+                try {
+                    $tpm = Get-CimInstance -ClassName Win32_TPM -Namespace root\cimv2\Security\MicrosoftTpm -ErrorAction Stop
+                    if ($tpm) { Write-Host "    TPM detected: version $($tpm.SpecVersion)" -ForegroundColor Gray }
+                } catch {
+                    $warnings += "Step '$($s.name)': TPM not detected -- BitLocker may fail"
+                }
+            }
+        }
+    }
+
+    if ($warnings.Count -gt 0) {
+        Write-Warn "Validation warnings:"
+        $warnings | ForEach-Object { Write-Host "    $_" -ForegroundColor Yellow }
+    }
+    if ($errors.Count -gt 0) {
+        Write-Fail "Validation errors:"
+        $errors | ForEach-Object { Write-Host "    $_" -ForegroundColor Red }
+        throw "Dry-run validation failed with $($errors.Count) error(s)"
+    }
+
+    Write-Success "Dry-run validation passed -- $($enabledSteps.Count) steps validated, $($warnings.Count) warning(s)"
 }
 
 #endregion
@@ -1896,6 +2524,13 @@ try {
     # Read the step list from the JSON task sequence file and execute
     # each enabled step in the order defined by the editor.
     $ts = Read-TaskSequence -Path $TaskSequencePath
+
+    if ($DryRun) {
+        Invoke-DryRunValidation -TaskSequence $ts -ScratchDir $ScratchDir -OSDrive $OSDrive -FirmwareType $FirmwareType -DiskNumber $TargetDiskNumber
+        Write-Step 'DRY RUN complete -- no destructive operations performed.'
+        return
+    }
+
     Write-Step "Firmware type: $FirmwareType"
     New-ScratchDirectory -Path $ScratchDir
 
@@ -1972,6 +2607,9 @@ try {
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count `
         -StartTime $script:DeploymentStartTime
 
+    # Record asset inventory for fleet tracking
+    Save-AssetInventory -TaskSequence $tsName -ComputerName $env:COMPUTERNAME -ReportDir $ScratchDir
+
     Send-DeploymentAlert -Status 'success' -TaskSequence $tsName `
         -Duration $durString `
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count
@@ -1992,6 +2630,9 @@ try {
     if (Test-Path $ScratchDir) {
         Remove-Item $ScratchDir -Recurse -Force -ErrorAction SilentlyContinue
     }
+
+    # Export WinPE logs to OS drive for post-reboot troubleshooting
+    Export-DeploymentLogs -OSDriveLetter $OSDrive
 
     $stepName = 'Reboot'
     Start-Sleep -Seconds 15
@@ -2026,6 +2667,9 @@ try {
     # failure instead of staying stuck at the last progress state.
     Update-BootstrapStatus -Message "Imaging failed at step '$stepName'" `
         -Detail "$_" -Step 4
+
+    # Export logs even on failure for troubleshooting
+    try { Export-DeploymentLogs -OSDriveLetter $OSDrive } catch { $null = $_ }
 
     Write-Host '[Nova] Dropping to interactive shell for troubleshooting.' -ForegroundColor Yellow
     # Re-throw so Bootstrap.ps1 can close the UI before the user
