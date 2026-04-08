@@ -8,10 +8,13 @@
     PowerShell replacement for copype.cmd).
 #>
 
+Set-StrictMode -Version Latest
+
 function Get-ADKRoot {
     <#
     .SYNOPSIS Returns the ADK installation root from the registry, or $null.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param()
     $regPaths = @(
@@ -35,6 +38,7 @@ function Assert-ADKInstalled {
     .PARAMETER Architecture  WinPE arch string (amd64 or x86). ARM is not supported.
     .OUTPUTS  [string] Validated ADK root path.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param([string] $Architecture)
 
@@ -100,6 +104,7 @@ function Copy-WinPEFile {
     .PARAMETER Architecture  amd64 (default) or x86. ARM is not supported.
     .OUTPUTS   [hashtable] Keys: MediaDir, MountDir, BootWim
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param(
         [string] $ADKRoot,

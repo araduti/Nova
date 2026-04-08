@@ -8,6 +8,8 @@
     validation of deployment configurations.
 #>
 
+Set-StrictMode -Version Latest
+
 function Read-TaskSequence {
     <#
     .SYNOPSIS  Loads a task sequence JSON file produced by the web-based Editor.
@@ -15,6 +17,7 @@ function Read-TaskSequence {
         Reads the JSON file, validates the required structure (name + steps array),
         and returns a hashtable matching the schema in resources/task-sequence/default.json.
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -62,6 +65,7 @@ function Test-StepCondition {
           wmiQuery  -- run a WMI query and check whether it returns results
           registry  -- check a registry path/value
     #>
+    [OutputType([bool])]
     [CmdletBinding()]
     param(
         [psobject]$Condition
@@ -164,6 +168,7 @@ function Invoke-DryRunValidation {
     .PARAMETER DiskNumber
         Physical disk number targeted for deployment.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [psobject]$TaskSequence,
@@ -248,6 +253,7 @@ function Update-TaskSequenceFromConfig {
         CustomizeOOBE step's unattendContent XML, keeping the task sequence
         as the single source of truth for unattend.xml content.
     #>
+    [OutputType([void])]
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)]

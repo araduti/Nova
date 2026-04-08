@@ -9,6 +9,8 @@
     (Intel, Realtek, MediaTek, Qualcomm) bundled via Windows Update.
 #>
 
+Set-StrictMode -Version Latest
+
 function Get-WinREPath {
     <#
     .SYNOPSIS  Locates a usable winre.wim on the current machine.
@@ -27,6 +29,7 @@ function Get-WinREPath {
 
     .OUTPUTS  [string] Path to an accessible winre.wim, or $null when not found.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param()
 
@@ -138,6 +141,7 @@ function Get-WinREPathFromWindowsISO {
     .OUTPUTS  [string] Temp path to the extracted WinRE.wim.  The CALLER is
               responsible for deleting this file when it is no longer needed.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param(
         [string] $Architecture,
@@ -276,6 +280,7 @@ function Remove-WinRERecoveryPackage {
         package do not block removal of the others.
     .PARAMETER MountDir  Path to the mounted WIM image.
     #>
+    [OutputType([void])]
     [CmdletBinding(SupportsShouldProcess)]
     param([string] $MountDir)
 

@@ -8,6 +8,8 @@
     GitHub, and exporting WinPE logs to the target OS drive.
 #>
 
+Set-StrictMode -Version Latest
+
 # ── Module-scoped state ────────────────────────────────────────────────────────
 # Cached GitHub token obtained via Entra ID exchange so we don't re-fetch
 # on every status update call.
@@ -38,6 +40,7 @@ function Get-GitHubTokenViaEntra {
         Returns $null if the exchange is not available (no Entra token,
         no proxy configured, or proxy returns an error).
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param(
         [string]$GitHubUser,
@@ -157,6 +160,7 @@ function Push-ReportToGitHub {
         If no token can be resolved the function silently returns so that
         deployments still succeed without any token configured.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -251,6 +255,7 @@ function Save-DeploymentReport {
         directory so it can be collected by downstream tooling or the monitoring
         dashboard.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [ValidateSet('success','failed')]
@@ -309,6 +314,7 @@ function Save-AssetInventory {
         TPM, etc.) and saves them alongside the deployment report for
         fleet tracking in the monitoring dashboard.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$TaskSequence   = '',
@@ -372,6 +378,7 @@ function Update-ActiveDeploymentReport {
         Call with -Clear to remove the file after the deployment finishes or
         fails, signalling that the device is no longer actively deploying.
     #>
+    [OutputType([void])]
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$DeviceName     = $env:COMPUTERNAME,
@@ -431,6 +438,7 @@ function Send-DeploymentAlert {
         Silently skips channels that are disabled or misconfigured so that
         a notification failure never blocks the imaging pipeline.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [ValidateSet('success','failed')]
@@ -543,6 +551,7 @@ function Export-DeploymentLogs {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
         Justification = 'Exports multiple log files as a batch operation')]
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$OSDriveLetter,

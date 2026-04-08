@@ -5,6 +5,8 @@
     Provides functions for checking GitHub Releases for pre-built WinPE
     boot images and uploading new boot images to GitHub Releases.
 #>
+
+Set-StrictMode -Version Latest
 function Get-CloudBootImage {
     <#
     .SYNOPSIS  Checks GitHub Releases for a pre-built boot image.
@@ -15,6 +17,7 @@ function Get-CloudBootImage {
         available.
     .OUTPUTS   [hashtable] with BootWimUrl, BootSdiUrl, BootWimSize, PublishedAt -- or $null.
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param(
         [string] $GitHubUser,
@@ -45,6 +48,7 @@ function Publish-BootImage {
         boot.wim and boot.sdi as release assets.  Requires a Personal Access
         Token (PAT) with 'repo' scope.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string] $GitHubUser,

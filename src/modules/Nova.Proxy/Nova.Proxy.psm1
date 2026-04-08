@@ -10,6 +10,8 @@
     the configuration.
 #>
 
+Set-StrictMode -Version Latest
+
 # -- Module-scoped proxy state --------------------------------------------------
 $script:ProxyUrl    = ''
 $script:BypassList  = ''
@@ -24,6 +26,7 @@ function Set-NovaProxy {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
         Justification = 'Setting in-memory proxy state and environment variables -- no persistent system side-effects')]
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -66,6 +69,7 @@ function Get-NovaProxy {
     <#
     .SYNOPSIS  Returns the current proxy configuration as a hashtable.
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param()
 
@@ -82,6 +86,7 @@ function Clear-NovaProxy {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
         Justification = 'Clearing in-memory proxy state and environment variables -- no persistent system side-effects')]
+    [OutputType([void])]
     [CmdletBinding()]
     param()
 

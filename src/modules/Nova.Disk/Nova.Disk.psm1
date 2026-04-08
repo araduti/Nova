@@ -8,6 +8,8 @@
     OS, and optional Recovery partitions.
 #>
 
+Set-StrictMode -Version Latest
+
 # ── Constants ────────────────────────────────────────────────────────────────
 
 # Partition GUIDs (GPT type identifiers)
@@ -29,6 +31,7 @@ function Get-PartitionGuid {
     <#
     .SYNOPSIS  Returns the GPT type GUID constants used by Nova for partitioning.
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param()
     return @{
@@ -46,6 +49,7 @@ function Get-TargetDisk {
         When DiskNumber is -1 (auto-select), picks the largest non-removable
         disk.  Otherwise validates the specified disk number exists.
     #>
+    [OutputType([int])]
     [CmdletBinding()]
     param(
         [int]$DiskNumber
@@ -89,6 +93,7 @@ function Initialize-TargetDisk {
     .PARAMETER RecoveryPartitionSize
         Size of the recovery partition in bytes. Defaults to the module default.
     #>
+    [OutputType([psobject])]
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [int]$DiskNumber,

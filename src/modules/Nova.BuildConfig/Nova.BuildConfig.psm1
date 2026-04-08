@@ -9,6 +9,8 @@
     and driver injection before building.
 #>
 
+Set-StrictMode -Version Latest
+
 # ── Configuration data ─────────────────────────────────────────────────────────
 
 # Default language for WinPE optional-component language packs.
@@ -72,6 +74,7 @@ function Get-BuildConfigPath {
     <#
     .SYNOPSIS  Returns the path to the persisted build configuration file.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param()
     if ($env:APPDATA) {
@@ -86,6 +89,7 @@ function Save-BuildConfiguration {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
         Justification = 'Saving a JSON config file -- no system side-effects beyond a small user-data file')]
+    [OutputType([void])]
     [CmdletBinding()]
     param([hashtable] $Config)
     $path = Get-BuildConfigPath
@@ -102,6 +106,7 @@ function Read-SavedBuildConfiguration {
     .SYNOPSIS  Loads a previously saved build configuration, if one exists.
     .OUTPUTS   [hashtable] or $null if no saved configuration exists.
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param()
     $path = Get-BuildConfigPath
@@ -132,6 +137,7 @@ function Resolve-WinPEPackagePath {
     .SYNOPSIS  Expands package names + language into the ordered cab-path list that
                Add-WindowsPackage expects (base cab first, then its language pack).
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param(
         [string[]] $PackageNames,
@@ -153,6 +159,7 @@ function Show-BuildConfiguration {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for interactive menu UI')]
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param([string] $Architecture)
 
@@ -459,6 +466,7 @@ function Get-DefaultLanguage {
     <#
     .SYNOPSIS  Returns the default WinPE language code.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param()
     return $script:DefaultLanguage
@@ -470,6 +478,7 @@ function Get-AvailableWinPEPackages {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
         Justification = 'Returns a collection of packages -- plural noun is intentional')]
+    [OutputType([string[]])]
     [CmdletBinding()]
     param()
     return $script:AvailableWinPEPackages
