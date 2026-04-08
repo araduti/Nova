@@ -7,19 +7,19 @@
 BeforeAll {
     # Stub Windows-only DISM cmdlets that don't exist on Linux CI
     if (-not (Get-Command Get-WindowsImage -ErrorAction SilentlyContinue)) {
-        function global:Get-WindowsImage { param($ImagePath) }
+        function global:Get-WindowsImage { param($ImagePath) $null = $ImagePath }
     }
     if (-not (Get-Command Expand-WindowsImage -ErrorAction SilentlyContinue)) {
-        function global:Expand-WindowsImage { param($ImagePath, $Index, $ApplyPath, $ScratchDirectory) }
+        function global:Expand-WindowsImage { param($ImagePath, $Index, $ApplyPath, $ScratchDirectory) $null = $ImagePath, $Index, $ApplyPath, $ScratchDirectory }
     }
     if (-not (Get-Command Get-Partition -ErrorAction SilentlyContinue)) {
-        function global:Get-Partition { param($DiskNumber, $PartitionNumber) }
+        function global:Get-Partition { param($DiskNumber, $PartitionNumber) $null = $DiskNumber, $PartitionNumber }
     }
     if (-not (Get-Command Get-Volume -ErrorAction SilentlyContinue)) {
         function global:Get-Volume { }
     }
     if (-not (Get-Command Add-PartitionAccessPath -ErrorAction SilentlyContinue)) {
-        function global:Add-PartitionAccessPath { param($DiskNumber, $PartitionNumber, [switch]$AssignDriveLetter) }
+        function global:Add-PartitionAccessPath { param($DiskNumber, $PartitionNumber, [switch]$AssignDriveLetter) $null = $DiskNumber, $PartitionNumber, $AssignDriveLetter }
     }
 
     Import-Module "$PSScriptRoot/../../src/modules/Nova.Logging" -Force
