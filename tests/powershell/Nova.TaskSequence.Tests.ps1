@@ -26,7 +26,7 @@ BeforeAll {
 Describe 'Module Exports' {
     It 'exports expected functions' {
         $mod = Get-Module Nova.TaskSequence
-        $expected = @('Read-TaskSequence', 'Test-StepCondition', 'Invoke-DryRunValidation')
+        $expected = @('Read-TaskSequence', 'Test-StepCondition', 'Invoke-DryRunValidation', 'Update-TaskSequenceFromConfig')
         foreach ($fn in $expected) {
             $mod.ExportedFunctions.Keys | Should -Contain $fn
         }
@@ -155,5 +155,161 @@ Describe 'Invoke-DryRunValidation' {
             )
         }
         { Invoke-DryRunValidation -TaskSequence $ts -ScratchDir '/tmp' -OSDrive 'C' -FirmwareType 'UEFI' -DiskNumber 0 } | Should -Not -Throw
+    }
+}
+
+Describe 'Update-TaskSequenceFromConfig' {
+    BeforeEach {
+        $script:testDir = Join-Path ([System.IO.Path]::GetTempPath()) "nova-ts-update-$(New-Guid)"
+        $null = New-Item -ItemType Directory -Path $script:testDir -Force
+        $script:tsFile = Join-Path $script:testDir 'ts.json'
+    }
+
+    AfterEach {
+        Remove-Item $script:testDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    It 'does nothing when file does not exist' {
+        { Update-TaskSequenceFromConfig -TaskSequencePath '/nonexistent/path.json' -Config @{} } | Should -Not -Throw
+    }
+
+    It 'updates DownloadImage step with edition, language, and architecture' {
+        $ts = @{
+            name = 'Test TS'
+            steps = @(
+                @{ name = 'Download'; type = 'DownloadImage'; enabled = $true; parameters = @{} }
+            )
+        } | ConvertTo-Json -Depth 5
+        Set-Content $script:tsFile $ts
+
+        Update-TaskSequenceFromConfig -TaskSequencePath $script:tsFile -Config @{
+            Edition      = 'Professional'
+            OsLanguage   = 'en-US'
+            Architecture = 'x64'
+        }
+
+        $result = Get-Content $script:tsFile -Raw | ConvertFrom-Json
+        $result.steps[0].parameters.edition | Should -Be 'Professional'
+        $result.steps[0].parameters.language | Should -Be 'en-US'
+        $result.steps[0].parameters.architecture | Should -Be 'x64'
+    }
+
+    It 'updates ApplyImage step with edition' {
+        $ts = @{
+            name = 'Test TS'
+            steps = @(
+                @{ name = 'Apply'; type = 'ApplyImage'; enabled = $true; parameters = @{} }
+            )
+        } | ConvertTo-Json -Depth 5
+        Set-Content $script:tsFile $ts
+
+        Update-TaskSequenceFromConfig -TaskSequencePath $script:tsFile -Config @{
+            Edition = 'Enterprise'
+        }
+
+        $result = Get-Content $script:tsFile -Raw | ConvertFrom-Json
+        $result.steps[0].parameters.edition | Should -Be 'Enterprise'
+    }
+
+    It 'updates SetComputerName step with computer name' {
+        $ts = @{
+            name = 'Test TS'
+            steps = @(
+                @{ name = 'SetName'; type = 'SetComputerName'; enabled = $true; parameters = @{} }
+            )
+        } | ConvertTo-Json -Depth 5
+        Set-Content $script:tsFile $ts
+
+        Update-TaskSequenceFromConfig -TaskSequencePath $script:tsFile -Config @{
+            ComputerName = 'NOVA-PC-01'
+        }
+
+        $result = Get-Content $script:tsFile -Raw | ConvertFrom-Json
+        $result.steps[0].parameters.computerName | Should -Be 'NOVA-PC-01'
+    }
+
+    It 'updates SetRegionalSettings step with locale values' {
+        $ts = @{
+            name = 'Test TS'
+            steps = @(
+                @{ name = 'Region'; type = 'SetRegionalSettings'; enabled = $true; parameters = @{} }
+            )
+        } | ConvertTo-Json -Depth 5
+        Set-Content $script:tsFile $ts
+
+        Update-TaskSequenceFromConfig -TaskSequencePath $script:tsFile -Config @{
+            InputLocale  = '0409:00000409'
+            SystemLocale = 'en-US'
+            UserLocale   = 'en-US'
+            UILanguage   = 'en-US'
+        }
+
+        $result = Get-Content $script:tsFile -Raw | ConvertFrom-Json
+        $result.steps[0].parameters.inputLocale | Should -Be '0409:00000409'
+        $result.steps[0].parameters.systemLocale | Should -Be 'en-US'
+        $result.steps[0].parameters.userLocale | Should -Be 'en-US'
+        $result.steps[0].parameters.uiLanguage | Should -Be 'en-US'
+    }
+
+    It 'updates ImportAutopilot step with group tag and user email' {
+        $ts = @{
+            name = 'Test TS'
+            steps = @(
+                @{ name = 'Autopilot'; type = 'ImportAutopilot'; enabled = $true; parameters = @{} }
+            )
+        } | ConvertTo-Json -Depth 5
+        Set-Content $script:tsFile $ts
+
+        Update-TaskSequenceFromConfig -TaskSequencePath $script:tsFile -Config @{
+            AutopilotGroupTag  = 'TestGroup'
+            AutopilotUserEmail = 'user@example.com'
+        }
+
+        $result = Get-Content $script:tsFile -Raw | ConvertFrom-Json
+        $result.steps[0].parameters.groupTag | Should -Be 'TestGroup'
+        $result.steps[0].parameters.userEmail | Should -Be 'user@example.com'
+    }
+
+    It 'adds parameters property when step has none' {
+        $ts = @{
+            name = 'Test TS'
+            steps = @(
+                @{ name = 'SetName'; type = 'SetComputerName'; enabled = $true }
+            )
+        } | ConvertTo-Json -Depth 5
+        Set-Content $script:tsFile $ts
+
+        Update-TaskSequenceFromConfig -TaskSequencePath $script:tsFile -Config @{
+            ComputerName = 'TEST-PC'
+        }
+
+        $result = Get-Content $script:tsFile -Raw | ConvertFrom-Json
+        $result.steps[0].parameters.computerName | Should -Be 'TEST-PC'
+    }
+
+    It 'does nothing when steps array is missing' {
+        Set-Content $script:tsFile '{"name":"empty"}'
+        { Update-TaskSequenceFromConfig -TaskSequencePath $script:tsFile -Config @{ Edition = 'Pro' } } | Should -Not -Throw
+    }
+
+    It 'injects ComputerName into unattendContent XML for CustomizeOOBE step' {
+        $ts = @{
+            name = 'Test TS'
+            steps = @(
+                @{
+                    name = 'OOBE'; type = 'CustomizeOOBE'; enabled = $true
+                    parameters = @{ unattendSource = 'default' }
+                }
+            )
+        } | ConvertTo-Json -Depth 5
+        Set-Content $script:tsFile $ts
+
+        Update-TaskSequenceFromConfig -TaskSequencePath $script:tsFile -Config @{
+            ComputerName = 'OOBE-PC'
+        }
+
+        $result = Get-Content $script:tsFile -Raw | ConvertFrom-Json
+        $result.steps[0].parameters.unattendContent | Should -Match 'OOBE-PC'
+        $result.steps[0].parameters.unattendContent | Should -Match 'specialize'
     }
 }
