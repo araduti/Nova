@@ -10,6 +10,8 @@
     and Windows Update.
 #>
 
+Set-StrictMode -Version Latest
+
 # ── Shared helper ────────────────────────────────────────────────────────────
 
 function Add-SetupCompleteEntry {
@@ -24,6 +26,7 @@ function Add-SetupCompleteEntry {
     .PARAMETER Line
         Command line to append.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$FilePath,
@@ -56,6 +59,7 @@ function Set-AutopilotConfig {
     .PARAMETER OSDriveLetter
         Drive letter of the mounted offline Windows partition.
     #>
+    [OutputType([void])]
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$JsonUrl,
@@ -100,6 +104,7 @@ function Invoke-AutopilotImport {
         hardware hash with oa3tool.exe and uploads the device identity via Graph.
         Group tag and user email are applied when provided.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$GroupTag,
@@ -221,6 +226,7 @@ function Install-CCMSetup {
         and -Description parameters.  When not supplied the function falls back
         to Invoke-WebRequest.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$CCMSetupUrl,
@@ -301,6 +307,7 @@ function Set-OOBECustomization {
         This function simply writes the final XML to disk (or downloads /
         copies from an external source).
     #>
+    [OutputType([void])]
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$UnattendUrl,
@@ -362,6 +369,7 @@ function Enable-BitLockerProtection {
     .PARAMETER EncryptionMethod  BitLocker encryption algorithm (default XtsAes256).
     .PARAMETER SkipHardwareTest  Skip the TPM hardware test during enable.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -431,6 +439,7 @@ function Invoke-PostScript {
     .PARAMETER ScratchDir
         Working directory (reserved for future use).
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string[]]$ScriptUrls,
@@ -493,6 +502,7 @@ function Install-Application {
         and -Description parameters.  When not supplied the function falls back
         to Invoke-WebRequest.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$InstallMode = 'url',
@@ -593,6 +603,7 @@ function Invoke-WindowsUpdateStaging {
         uses the COM-based Windows Update Agent API which is available on all
         Windows installations without additional modules.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$OSDriveLetter,

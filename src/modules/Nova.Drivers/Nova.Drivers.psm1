@@ -8,6 +8,8 @@
     offline Windows installation.  Used by the Nova.ps1 imaging engine.
 #>
 
+Set-StrictMode -Version Latest
+
 # ── Generic driver injection ─────────────────────────────────────────────────
 
 function Add-Driver {
@@ -21,6 +23,7 @@ function Add-Driver {
     .PARAMETER OSDriveLetter
         Drive letter of the mounted offline Windows partition (e.g. 'W').
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$DriverPath,
@@ -66,6 +69,7 @@ function Initialize-NuGetProvider {
         Ensures NuGet is available and PSGallery is trusted so Install-Module
         works correctly, including inside WinPE.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param()
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -85,6 +89,7 @@ function Install-OemModule {
         Installs a PowerShell module from the PSGallery if it is not already
         present on the current machine.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param([string]$Name)
     if (-not (Get-Module -ListAvailable -Name $Name -ErrorAction SilentlyContinue)) {
@@ -100,6 +105,7 @@ function Get-SystemManufacturer {
     .SYNOPSIS
         Returns the trimmed manufacturer string from Win32_ComputerSystem.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param()
     $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
@@ -114,6 +120,7 @@ function Add-DellDriver {
     .SYNOPSIS
         Downloads and injects the latest Dell drivers using Dell Command | Update.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$OSDriveLetter,
@@ -157,6 +164,7 @@ function Add-HpDriver {
         Downloads and injects the latest HP drivers using HP Client Management
         Script Library (HPCMSL).
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$OSDriveLetter,
@@ -189,6 +197,7 @@ function Add-LenovoDriver {
     .SYNOPSIS
         Downloads and injects the latest Lenovo drivers using LSUClient.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$OSDriveLetter,
@@ -256,6 +265,7 @@ function Add-SurfaceDriver {
         and -Description parameters.  When not supplied the function falls back
         to Invoke-WebRequest.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [string]$OSDriveLetter,
@@ -351,6 +361,7 @@ function Invoke-OemDriverInjection {
         Optional scriptblock passed through to Add-SurfaceDriver for file
         downloads.  See Add-SurfaceDriver for details.
     #>
+    [OutputType([void])]
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$OSDriveLetter,

@@ -10,6 +10,8 @@
     Also includes WebView2 SDK download/caching.
 #>
 
+Set-StrictMode -Version Latest
+
 function Install-WebView2SDK {
     <#
     .SYNOPSIS  Download the WebView2 SDK NuGet package (cached).
@@ -20,6 +22,7 @@ function Install-WebView2SDK {
     .OUTPUTS
         Path to the directory containing the WebView2 DLLs, or $null on failure.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param()
     $sdkDir  = Join-Path $env:TEMP 'Nova-WebView2SDK'
@@ -92,6 +95,7 @@ function Show-WebView2AuthPopup {
     .OUTPUTS
         Authorization code string, or $null.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param(
         [string] $AuthorizeUrl,
@@ -230,6 +234,7 @@ function Invoke-M365DeviceCodeAuth {
           Authenticated  [bool]  $true if auth succeeded or was not required.
           GraphAccessToken [string] Microsoft Graph access token, or $null.
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param(
         [string] $GitHubUser  = 'araduti',
@@ -453,6 +458,7 @@ function Update-M365Token {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
         Justification = 'Token refresh is a read-only HTTP call with no system side-effects')]
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -531,6 +537,7 @@ function Invoke-KioskEdgeAuth {
           Success          [bool]   $true if auth succeeded.
           GraphAccessToken [string] Microsoft Graph access token, or $null.
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -726,6 +733,7 @@ function Invoke-KioskDeviceCodeAuth {
           Success          [bool]   $true if auth succeeded.
           GraphAccessToken [string] Microsoft Graph access token, or $null.
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -840,6 +848,7 @@ function Invoke-KioskM365Auth {
           GraphAccessToken [string]   Microsoft Graph access token, or $null.
           AuthConfig       [object]   The parsed auth.json config, or $null.
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param(
         [string]$GitHubUser   = 'araduti',

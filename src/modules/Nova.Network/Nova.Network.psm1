@@ -9,6 +9,8 @@
     block indefinitely or display UI).
 #>
 
+Set-StrictMode -Version Latest
+
 function Invoke-NetworkTuning {
     <#
     .SYNOPSIS  Fast synchronous TCP / firewall / IPv6 tuning.
@@ -16,6 +18,7 @@ function Invoke-NetworkTuning {
         All netsh commands complete in milliseconds and never sleep.  Safe to
         call from a WinForms timer tick without freezing the UI.
     #>
+    [OutputType([void])]
     [CmdletBinding(SupportsShouldProcess)]
     param()
     $prev = $ErrorActionPreference
@@ -51,6 +54,7 @@ function Test-HasValidIP {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'No console output -- name follows Test- verb convention')]
+    [OutputType([bool])]
     [CmdletBinding()]
     param()
     $ipOut = ipconfig 2>$null | Out-String
@@ -65,6 +69,7 @@ function Test-InternetConnectivity {
     <#
     .SYNOPSIS  Probes well-known URLs and returns $true when at least one responds.
     #>
+    [OutputType([bool])]
     [CmdletBinding()]
     param()
     $urls = @(
@@ -86,6 +91,7 @@ function Start-WlanService {
     <#
     .SYNOPSIS  Ensures the WLAN service is running (WinPE WiFi support).
     #>
+    [OutputType([void])]
     [CmdletBinding(SupportsShouldProcess)] param()
     if (-not (Get-Service -Name wlansvc -ErrorAction SilentlyContinue)) { return $false }
     if ((Get-Service wlansvc).Status -ne 'Running') {
@@ -101,6 +107,7 @@ function Get-WiFiNetwork {
     <#
     .SYNOPSIS  Returns available WiFi networks sorted by signal strength (descending).
     #>
+    [OutputType([psobject[]])]
     [CmdletBinding()]
     param()
     $prev = $ErrorActionPreference
@@ -135,6 +142,7 @@ function Get-SignalBar {
     <#
     .SYNOPSIS  Renders a 5-character signal strength bar using filled/empty block characters.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param([int]$s)
     ('█' * [Math]::Round($s/20)) + ('░' * (5-[Math]::Round($s/20)))
@@ -147,6 +155,7 @@ function Connect-WiFiNetwork {
     .PARAMETER WiFiKey  Pre-shared key (passphrase).  Ignored for open networks.
     .PARAMETER Auth     Authentication type string from netsh (e.g. 'WPA2-Personal', 'Open').
     #>
+    [OutputType([void])]
     [CmdletBinding(SupportsShouldProcess)]
     param([string]$SSID, [string]$WiFiKey, [string]$Auth)
 

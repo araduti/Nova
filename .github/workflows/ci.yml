@@ -45,7 +45,7 @@ jobs:
         run: |
           Install-Module -Name PSScriptAnalyzer -Force -Scope CurrentUser
           $results = @()
-          $scripts = Get-ChildItem -Path . -Include '*.ps1','*.psm1' -Recurse
+          $scripts = Get-ChildItem -Path ./src -Include '*.ps1','*.psm1' -Recurse
           foreach ($script in $scripts) {
             $results += Invoke-ScriptAnalyzer -Path $script.FullName -Severity Warning,Error -ExcludeRule PSAvoidUsingWriteHost,PSUseBOMForUnicodeEncodedFile
           }

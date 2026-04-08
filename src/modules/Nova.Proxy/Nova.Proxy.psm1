@@ -10,6 +10,8 @@
     the configuration.
 #>
 
+Set-StrictMode -Version Latest
+
 # -- Module-scoped proxy state --------------------------------------------------
 $script:ProxyUrl    = ''
 $script:BypassList  = ''
@@ -24,6 +26,7 @@ function Set-NovaProxy {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
         Justification = 'Setting in-memory proxy state and environment variables -- no persistent system side-effects')]
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -58,6 +61,7 @@ function Set-NovaProxy {
     # Set environment variables so external tools (curl, git, etc.) also use the proxy
     $env:HTTP_PROXY  = $ProxyUrl
     $env:HTTPS_PROXY = $ProxyUrl
+    $env:NO_PROXY    = $BypassList
 
     Write-Verbose "Nova proxy configured: $ProxyUrl (bypass: $BypassList)"
 }
@@ -66,6 +70,7 @@ function Get-NovaProxy {
     <#
     .SYNOPSIS  Returns the current proxy configuration as a hashtable.
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param()
 
@@ -82,6 +87,7 @@ function Clear-NovaProxy {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
         Justification = 'Clearing in-memory proxy state and environment variables -- no persistent system side-effects')]
+    [OutputType([void])]
     [CmdletBinding()]
     param()
 
@@ -94,6 +100,7 @@ function Clear-NovaProxy {
     # Clear environment variables
     $env:HTTP_PROXY  = $null
     $env:HTTPS_PROXY = $null
+    $env:NO_PROXY    = $null
 
     Write-Verbose 'Nova proxy configuration cleared.'
 }

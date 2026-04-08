@@ -10,6 +10,8 @@
     Extracted from Nova.ps1 to promote module-based architecture and testability.
 #>
 
+Set-StrictMode -Version Latest
+
 # ── Module-scoped Constants ──────────────────────────────────────────────────
 
 # Maps Microsoft ESD catalog edition identifiers to the keywords used
@@ -39,6 +41,7 @@ function Get-EditionNameMap {
     .OUTPUTS
         System.Collections.Hashtable
     #>
+    [OutputType([hashtable])]
     [CmdletBinding()]
     param()
     return $script:EditionNameMap
@@ -65,6 +68,7 @@ function Find-WindowsESD {
     .OUTPUTS
         The matching catalog File element.
     #>
+    [OutputType([System.Xml.XmlElement])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -142,6 +146,7 @@ function Get-WindowsImageSource {
     .OUTPUTS
         System.String -- full path to the downloaded image file.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param(
         [string]$ImageUrl,
@@ -229,6 +234,7 @@ function Install-WindowsImage {
     .PARAMETER ScratchDir
         Working directory for DISM scratch space.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -303,6 +309,7 @@ function Set-Bootloader {
         GPT type GUID for the EFI System Partition.
         Defaults to '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}'.
     #>
+    [OutputType([void])]
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)]

@@ -8,6 +8,8 @@
     downloaded files have not been corrupted or tampered with.
 #>
 
+Set-StrictMode -Version Latest
+
 function Confirm-FileIntegrity {
     <#
     .SYNOPSIS  Verifies a downloaded file against its expected SHA256 hash.
@@ -35,6 +37,7 @@ function Confirm-FileIntegrity {
     .PARAMETER GitHubRepo   Repository name.
     .PARAMETER GitHubBranch Branch to fetch the hash manifest from.
     #>
+    [OutputType([void])]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -65,7 +68,8 @@ function Confirm-FileIntegrity {
         }
     }
 
-    $expected = $HashesJson.files.$RelativeName
+    $filesObj = $HashesJson.files
+    $expected = if ($filesObj.PSObject.Properties[$RelativeName]) { $filesObj.$RelativeName } else { $null }
     if (-not $expected) {
         Remove-Item $Path -Force -ErrorAction SilentlyContinue
         throw "Integrity check FAILED for $RelativeName -- no hash entry found in manifest. " +

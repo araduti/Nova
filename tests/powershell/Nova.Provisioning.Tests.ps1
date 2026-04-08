@@ -133,6 +133,7 @@ Describe 'Install-Application' {
         Mock -ModuleName Nova.Provisioning Write-Step {}
         Mock -ModuleName Nova.Provisioning Write-Warn {}
         Mock -ModuleName Nova.Provisioning New-Item { [pscustomobject]@{} }
+        Mock -ModuleName Nova.Provisioning Join-Path { "$Path/$ChildPath" }
         Install-Application -InstallMode 'winget' -PackageId '' -OSDriveLetter 'C'
         Should -Invoke -ModuleName Nova.Provisioning Write-Warn -Times 1
     }
@@ -141,6 +142,7 @@ Describe 'Install-Application' {
         Mock -ModuleName Nova.Provisioning Write-Step {}
         Mock -ModuleName Nova.Provisioning Write-Warn {}
         Mock -ModuleName Nova.Provisioning New-Item { [pscustomobject]@{} }
+        Mock -ModuleName Nova.Provisioning Join-Path { "$Path/$ChildPath" }
         Install-Application -InstallMode 'url' -InstallerUrl '' -OSDriveLetter 'C'
         Should -Invoke -ModuleName Nova.Provisioning Write-Warn -Times 1
     }

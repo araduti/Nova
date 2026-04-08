@@ -8,6 +8,8 @@
     These pure utility functions have no external module dependencies.
 #>
 
+Set-StrictMode -Version Latest
+
 function Get-FirmwareType {
     <#
     .SYNOPSIS  Returns 'UEFI' or 'BIOS' using multiple detection methods.
@@ -18,6 +20,7 @@ function Get-FirmwareType {
                    System.PlatformNotSupportedException on non-UEFI firmware, returns
                    $true/$false on UEFI (regardless of Secure Boot state).
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param()
     # Primary: PEFirmwareType registry value written by the kernel at boot
@@ -50,6 +53,7 @@ function Get-WinPEArchitecture {
         supported because Nova is a cloud-only deployment engine targeting
         x86-64 enterprise hardware.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param()
     $map = @{
@@ -68,6 +72,7 @@ function Get-FileSizeReadable {
     <#
     .SYNOPSIS  Converts a byte count to a human-readable string (GB / MB / KB / B).
     #>
+    [OutputType([string])]
     [CmdletBinding()]
     param([long]$Bytes)
     if ($Bytes -ge 1GB) { return "{0:N2} GB" -f ($Bytes / 1GB) }

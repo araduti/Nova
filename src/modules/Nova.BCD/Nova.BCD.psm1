@@ -5,12 +5,18 @@
     Provides functions for creating and managing BCD ramdisk boot entries
     used to boot into WinPE from a full Windows installation.
 #>
+
+Set-StrictMode -Version Latest
 function Invoke-Bcdedit {
     <#
     .SYNOPSIS  Thin wrapper around bcdedit.exe with strict error checking.
     #>
+    [OutputType([string])]
     [CmdletBinding()]
-    param([string[]] $Arguments)
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string[]] $Arguments
+    )
     $output = & bcdedit.exe @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "bcdedit $($Arguments -join ' ') -> exit $LASTEXITCODE`n$output"
@@ -21,6 +27,7 @@ function New-BcdEntry {
     <#
     .SYNOPSIS  Creates a BCD entry and returns its GUID string, e.g. {abc123...}.
     #>
+    [OutputType([string])]
     [CmdletBinding(SupportsShouldProcess)]
     param([string[]] $CreateArgs)
     if (-not $PSCmdlet.ShouldProcess($CreateArgs, 'New-BcdEntry')) { return }
@@ -35,6 +42,7 @@ function New-BCDRamdiskEntry {
     .SYNOPSIS  Stages boot files and creates a one-time BCD ramdisk boot entry.
     .OUTPUTS   [string] OS loader GUID.
     #>
+    [OutputType([string])]
     [CmdletBinding(SupportsShouldProcess)]
     param(
         [string] $BootWim,

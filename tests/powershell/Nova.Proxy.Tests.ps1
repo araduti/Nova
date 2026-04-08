@@ -65,6 +65,18 @@ Describe 'Set-NovaProxy' {
         Set-NovaProxy -ProxyUrl 'http://proxy.corp:8080'
         $env:HTTPS_PROXY | Should -Be 'http://proxy.corp:8080'
     }
+
+    It 'sets NO_PROXY environment variable from bypass list' {
+        Mock -ModuleName Nova.Proxy Write-Verbose {}
+        Set-NovaProxy -ProxyUrl 'http://proxy.corp:8080' -BypassList '*.local,10.0.0.0/8'
+        $env:NO_PROXY | Should -Be '*.local,10.0.0.0/8'
+    }
+
+    It 'sets NO_PROXY to default bypass list when none specified' {
+        Mock -ModuleName Nova.Proxy Write-Verbose {}
+        Set-NovaProxy -ProxyUrl 'http://proxy.corp:8080'
+        $env:NO_PROXY | Should -Be 'localhost,127.0.0.1'
+    }
 }
 
 Describe 'Clear-NovaProxy' {
@@ -94,5 +106,12 @@ Describe 'Clear-NovaProxy' {
         Set-NovaProxy -ProxyUrl 'http://proxy.corp:8080'
         Clear-NovaProxy
         $env:HTTPS_PROXY | Should -BeNullOrEmpty
+    }
+
+    It 'clears NO_PROXY environment variable' {
+        Mock -ModuleName Nova.Proxy Write-Verbose {}
+        Set-NovaProxy -ProxyUrl 'http://proxy.corp:8080' -BypassList '*.local'
+        Clear-NovaProxy
+        $env:NO_PROXY | Should -BeNullOrEmpty
     }
 }
