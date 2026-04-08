@@ -58,6 +58,24 @@ Describe 'Invoke-WithSpinner parameter validation' {
         $cmd.Parameters.Keys | Should -Contain 'Message'
         $cmd.Parameters.Keys | Should -Contain 'ScriptBlock'
     }
+
+    It 'Message parameter is mandatory' {
+        $cmd = Get-Command Invoke-WithSpinner
+        $msgParam = $cmd.Parameters['Message']
+        $mandatory = $msgParam.Attributes | Where-Object {
+            $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory
+        }
+        $mandatory | Should -Not -BeNullOrEmpty
+    }
+
+    It 'ScriptBlock parameter is mandatory' {
+        $cmd = Get-Command Invoke-WithSpinner
+        $sbParam = $cmd.Parameters['ScriptBlock']
+        $mandatory = $sbParam.Attributes | Where-Object {
+            $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory
+        }
+        $mandatory | Should -Not -BeNullOrEmpty
+    }
 }
 
 Describe 'Build-WinPE' {
@@ -70,6 +88,24 @@ Describe 'Build-WinPE' {
         $cmd.Parameters.Keys | Should -Contain 'PackageNames'
         $cmd.Parameters.Keys | Should -Contain 'DriverPaths'
         $cmd.Parameters.Keys | Should -Contain 'WindowsISOUrl'
+    }
+
+    It 'accepts Language as a string parameter' {
+        $cmd = Get-Command Build-WinPE
+        $langParam = $cmd.Parameters['Language']
+        $langParam | Should -Not -BeNullOrEmpty
+    }
+
+    It 'defaults PackageNames to an empty array' {
+        $cmd = Get-Command Build-WinPE
+        $pkgParam = $cmd.Parameters['PackageNames']
+        $pkgParam | Should -Not -BeNullOrEmpty
+    }
+
+    It 'defaults DriverPaths to an empty array' {
+        $cmd = Get-Command Build-WinPE
+        $drvParam = $cmd.Parameters['DriverPaths']
+        $drvParam | Should -Not -BeNullOrEmpty
     }
 }
 
