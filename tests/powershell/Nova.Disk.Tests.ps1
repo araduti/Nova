@@ -17,7 +17,7 @@ BeforeAll {
         function global:Get-Disk { param($Number) }
     }
     if (-not (Get-Command Clear-Disk -ErrorAction SilentlyContinue)) {
-        function global:Clear-Disk { param($Number, [switch]$RemoveData, [switch]$RemoveOEM, [switch]$Confirm) }
+        function global:Clear-Disk { param($Number, [switch]$RemoveData, [switch]$RemoveOEM, [switch]$ConfirmAction) }
     }
     if (-not (Get-Command Initialize-Disk -ErrorAction SilentlyContinue)) {
         function global:Initialize-Disk { param($Number, $PartitionStyle) }
@@ -26,7 +26,7 @@ BeforeAll {
         function global:New-Partition { param($DiskNumber, $Size, $GptType, [switch]$UseMaximumSize, [switch]$IsActive, $MbrType) }
     }
     if (-not (Get-Command Format-Volume -ErrorAction SilentlyContinue)) {
-        function global:Format-Volume { param($Partition, $FileSystem, $NewFileSystemLabel, [switch]$Confirm) }
+        function global:Format-Volume { param($Partition, $FileSystem, $NewFileSystemLabel, [switch]$ConfirmAction) }
     }
     if (-not (Get-Command Add-PartitionAccessPath -ErrorAction SilentlyContinue)) {
         function global:Add-PartitionAccessPath { param($DiskNumber, $PartitionNumber, [switch]$AssignDriveLetter) }
