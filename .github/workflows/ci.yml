@@ -332,9 +332,9 @@ jobs:
                 Write-Host "Could not determine repo root — signing all $($allScripts.Count) scripts."
                 $scripts = $allScripts
               } else {
-                $changedFull = $changedPaths | ForEach-Object {
+                $changedFull = @($changedPaths | ForEach-Object {
                   [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($repoRoot, $_))
-                }
+                })
                 $changedSet = [System.Collections.Generic.HashSet[string]]::new(
                   [string[]]$changedFull,
                   [System.StringComparer]::OrdinalIgnoreCase
