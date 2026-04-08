@@ -107,6 +107,31 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\module
                      'Nova.ADK', 'Nova.BuildConfig', 'Nova.Auth',
                      'Nova.BCD', 'Nova.CloudImage')
     $moduleExts  = @('.psm1', '.psd1')
+
+    # ── Winget-style progress display ──────────────────────────────────────
+    # Characters constructed from code points to avoid problematic UTF-8 bytes
+    # (0x91-0x94 map to smart quotes in Windows-1252 and break PS 5.1 parsing).
+    $_barFull  = [string][char]0x2588   # Full block
+    $_barEmpty = [string][char]0x2591   # Light shade
+    $_barWidth = 30
+    $_total    = $moduleNames.Count
+    $_done     = 0
+    $_esc      = [char]0x1B
+    $_vtOK     = ($null -ne $Host.UI.psobject.Properties['SupportsVirtualTerminal'] -and
+                  $Host.UI.SupportsVirtualTerminal) -or $env:WT_SESSION
+
+    if ($_vtOK) {
+        # Header
+        Write-Host ''
+        Write-Host "  ${_esc}[36;1mDownloading Nova modules${_esc}[0m"
+        Write-Host ''
+        # Initial empty bar
+        $_line = "  $($_barEmpty * $_barWidth)  0 / $_total"
+        Write-Host $_line -NoNewline
+    } else {
+        Write-Host '  Downloading Nova modules...'
+    }
+
     foreach ($mod in $moduleNames) {
         $modDir = Join-Path $tmpModRoot $mod
         $null = New-Item -Path $modDir -ItemType Directory -Force
@@ -116,10 +141,32 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\module
             try {
                 Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
             } catch {
+                if ($_vtOK) { Write-Host '' }   # newline so error is not appended to bar
                 throw "Failed to download module $mod$ext from $url -- $($_.Exception.Message)"
             }
         }
+        $_done++
+        if ($_vtOK) {
+            $_filled = [math]::Floor(($_done / $_total) * $_barWidth)
+            $_empty  = $_barWidth - $_filled
+            $_pct    = [math]::Floor(($_done / $_total) * 100)
+            $_bar    = ($_barFull * $_filled) + ($_barEmpty * $_empty)
+            $_line   = "  $_bar  $_done / $_total  (${_pct}%)"
+            Write-Host "`r$_line" -NoNewline
+        }
     }
+
+    if ($_vtOK) {
+        # Final complete bar
+        $_bar  = $_barFull * $_barWidth
+        $_line = "  $_bar  $_total / $_total  (100%)"
+        Write-Host "`r$_line"
+        Write-Host "  ${_esc}[32;1mAll modules downloaded.${_esc}[0m"
+        Write-Host ''
+    } else {
+        Write-Host "  All modules downloaded."
+    }
+
     $tmpModRoot
 } else {
     "$PSScriptRoot\..\modules"   # Best-effort fallback
