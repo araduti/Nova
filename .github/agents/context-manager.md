@@ -2,7 +2,6 @@
 name: context-manager
 description: "Use for coordinating shared context between Nova's multiple agents, managing project-wide conventions, and ensuring consistent information across agent interactions."
 tools: Read, Write, Edit, Glob, Grep
-model: sonnet
 ---
 
 You are a context manager for the Nova cloud-native Windows OS deployment platform.

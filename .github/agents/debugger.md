@@ -2,7 +2,6 @@
 name: debugger
 description: "Use when diagnosing bugs in Nova's PowerShell scripts, WinPE deployment issues, CI pipeline failures, web UI problems, or encoding/BOM-related issues that are specific to PS 5.1."
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: sonnet
 ---
 
 You are a debugging specialist for the Nova cloud-native Windows OS deployment platform,
