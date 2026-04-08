@@ -51,6 +51,7 @@ function Test-HasValidIP {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'No console output -- name follows Test- verb convention')]
+    [CmdletBinding()]
     param()
     $ipOut = ipconfig 2>$null | Out-String
     foreach ($m in [regex]::Matches($ipOut, '(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})')) {
@@ -64,6 +65,7 @@ function Test-InternetConnectivity {
     <#
     .SYNOPSIS  Probes well-known URLs and returns $true when at least one responds.
     #>
+    [CmdletBinding()]
     param()
     $urls = @(
         'https://api.github.com',                          # GitHub API (deployment reporting)
@@ -99,6 +101,7 @@ function Get-WiFiNetwork {
     <#
     .SYNOPSIS  Returns available WiFi networks sorted by signal strength (descending).
     #>
+    [CmdletBinding()]
     param()
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -132,6 +135,7 @@ function Get-SignalBar {
     <#
     .SYNOPSIS  Renders a 5-character signal strength bar using filled/empty block characters.
     #>
+    [CmdletBinding()]
     param([int]$s)
     ('█' * [Math]::Round($s/20)) + ('░' * (5-[Math]::Round($s/20)))
 }

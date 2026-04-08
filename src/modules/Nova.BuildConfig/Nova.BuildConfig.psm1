@@ -128,6 +128,7 @@ function Resolve-WinPEPackagePath {
     .SYNOPSIS  Expands package names + language into the ordered cab-path list that
                Add-WindowsPackage expects (base cab first, then its language pack).
     #>
+    [CmdletBinding()]
     param(
         [string[]] $PackageNames,
         [string]   $Language
@@ -148,6 +149,7 @@ function Show-BuildConfiguration {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for interactive menu UI')]
+    [CmdletBinding()]
     param([string] $Architecture)
 
     $language    = $script:DefaultLanguage

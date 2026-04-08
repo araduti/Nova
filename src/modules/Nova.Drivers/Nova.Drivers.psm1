@@ -11,6 +11,17 @@
 # ── Generic driver injection ─────────────────────────────────────────────────
 
 function Add-Driver {
+    <#
+    .SYNOPSIS  Injects drivers from a directory into the offline Windows image.
+    .DESCRIPTION
+        Enumerates .inf driver files in the specified path and injects them into
+        the offline OS partition using Add-WindowsDriver.
+    .PARAMETER DriverPath
+        Path to the directory containing driver .inf files.
+    .PARAMETER OSDriveLetter
+        Drive letter of the mounted offline Windows partition (e.g. 'W').
+    #>
+    [CmdletBinding()]
     param(
         [string]$DriverPath,
         [string]$OSDriveLetter
@@ -72,6 +83,7 @@ function Install-OemModule {
         Installs a PowerShell module from the PSGallery if it is not already
         present on the current machine.
     #>
+    [CmdletBinding()]
     param([string]$Name)
     if (-not (Get-Module -ListAvailable -Name $Name -ErrorAction SilentlyContinue)) {
         Write-Host "  Installing PowerShell module: $Name"
@@ -98,6 +110,7 @@ function Add-DellDriver {
     .SYNOPSIS
         Downloads and injects the latest Dell drivers using Dell Command | Update.
     #>
+    [CmdletBinding()]
     param(
         [string]$OSDriveLetter,
         [string]$ScratchDir
@@ -140,6 +153,7 @@ function Add-HpDriver {
         Downloads and injects the latest HP drivers using HP Client Management
         Script Library (HPCMSL).
     #>
+    [CmdletBinding()]
     param(
         [string]$OSDriveLetter,
         [string]$ScratchDir
@@ -171,6 +185,7 @@ function Add-LenovoDriver {
     .SYNOPSIS
         Downloads and injects the latest Lenovo drivers using LSUClient.
     #>
+    [CmdletBinding()]
     param(
         [string]$OSDriveLetter,
         [string]$ScratchDir
@@ -237,6 +252,7 @@ function Add-SurfaceDriver {
         and -Description parameters.  When not supplied the function falls back
         to Invoke-WebRequest.
     #>
+    [CmdletBinding()]
     param(
         [string]$OSDriveLetter,
         [string]$ScratchDir,
@@ -331,6 +347,7 @@ function Invoke-OemDriverInjection {
         Optional scriptblock passed through to Add-SurfaceDriver for file
         downloads.  See Add-SurfaceDriver for details.
     #>
+    [CmdletBinding()]
     param(
         [string]$OSDriveLetter,
         [string]$ScratchDir,

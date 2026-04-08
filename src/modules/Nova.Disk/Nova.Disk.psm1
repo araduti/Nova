@@ -44,6 +44,7 @@ function Get-TargetDisk {
         When DiskNumber is -1 (auto-select), picks the largest non-removable
         disk.  Otherwise validates the specified disk number exists.
     #>
+    [CmdletBinding()]
     param(
         [int]$DiskNumber
     )
@@ -69,6 +70,24 @@ function Get-TargetDisk {
 }
 
 function Initialize-TargetDisk {
+    <#
+    .SYNOPSIS  Clears and partitions a target disk for Windows deployment.
+    .DESCRIPTION
+        Wipes the specified disk, creates the required partition layout for the
+        given firmware type (GPT for UEFI, MBR for BIOS), and optionally adds
+        a recovery partition.
+    .PARAMETER DiskNumber
+        Physical disk number to initialise (e.g. 0).
+    .PARAMETER FirmwareType
+        Firmware type: 'UEFI' creates a GPT layout, 'BIOS' creates MBR.
+    .PARAMETER OSDriveLetter
+        Drive letter to assign to the Windows (OS) partition.
+    .PARAMETER CreateRecoveryPartition
+        When set, appends a recovery partition at the end of the disk.
+    .PARAMETER RecoveryPartitionSize
+        Size of the recovery partition in bytes. Defaults to the module default.
+    #>
+    [CmdletBinding()]
     param(
         [int]$DiskNumber,
         [string]$FirmwareType,

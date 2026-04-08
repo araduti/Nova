@@ -15,6 +15,7 @@ function Read-TaskSequence {
         Reads the JSON file, validates the required structure (name + steps array),
         and returns a hashtable matching the schema in resources/task-sequence/default.json.
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$Path
@@ -61,6 +62,7 @@ function Test-StepCondition {
           wmiQuery  -- run a WMI query and check whether it returns results
           registry  -- check a registry path/value
     #>
+    [CmdletBinding()]
     param(
         [psobject]$Condition
     )
@@ -145,6 +147,24 @@ function Test-StepCondition {
 }
 
 function Invoke-DryRunValidation {
+    <#
+    .SYNOPSIS  Validates the deployment configuration without making any changes.
+    .DESCRIPTION
+        Walks through all enabled task-sequence steps and checks that required
+        resources (disks, TPM, network) are available. Reports warnings and
+        errors without modifying the system.
+    .PARAMETER TaskSequence
+        The parsed task-sequence object (from Read-TaskSequence).
+    .PARAMETER ScratchDir
+        Working directory for temporary files.
+    .PARAMETER OSDrive
+        Target OS drive letter (e.g. 'W').
+    .PARAMETER FirmwareType
+        Firmware type: 'UEFI' or 'BIOS'.
+    .PARAMETER DiskNumber
+        Physical disk number targeted for deployment.
+    #>
+    [CmdletBinding()]
     param(
         [psobject]$TaskSequence,
         [string]$ScratchDir,

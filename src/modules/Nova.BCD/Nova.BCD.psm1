@@ -9,6 +9,7 @@ function Invoke-Bcdedit {
     <#
     .SYNOPSIS  Thin wrapper around bcdedit.exe with strict error checking.
     #>
+    [CmdletBinding()]
     param([string[]] $Arguments)
     $output = & bcdedit.exe @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) {

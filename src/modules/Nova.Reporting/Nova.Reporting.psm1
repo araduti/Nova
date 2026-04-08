@@ -38,6 +38,7 @@ function Get-GitHubTokenViaEntra {
         Returns $null if the exchange is not available (no Entra token,
         no proxy configured, or proxy returns an error).
     #>
+    [CmdletBinding()]
     param(
         [string]$GitHubUser,
         [string]$GitHubRepo,
@@ -156,6 +157,7 @@ function Push-ReportToGitHub {
         If no token can be resolved the function silently returns so that
         deployments still succeed without any token configured.
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$FilePath,
@@ -249,6 +251,7 @@ function Save-DeploymentReport {
         directory so it can be collected by downstream tooling or the monitoring
         dashboard.
     #>
+    [CmdletBinding()]
     param(
         [ValidateSet('success','failed')]
         [string]$Status,
@@ -306,6 +309,7 @@ function Save-AssetInventory {
         TPM, etc.) and saves them alongside the deployment report for
         fleet tracking in the monitoring dashboard.
     #>
+    [CmdletBinding()]
     param(
         [string]$TaskSequence   = '',
         [string]$Edition        = '',
@@ -427,6 +431,7 @@ function Send-DeploymentAlert {
         Silently skips channels that are disabled or misconfigured so that
         a notification failure never blocks the imaging pipeline.
     #>
+    [CmdletBinding()]
     param(
         [ValidateSet('success','failed')]
         [string]$Status,
@@ -538,6 +543,7 @@ function Export-DeploymentLogs {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
         Justification = 'Exports multiple log files as a batch operation')]
+    [CmdletBinding()]
     param(
         [string]$OSDriveLetter,
         [string]$EngineLogPath = ''

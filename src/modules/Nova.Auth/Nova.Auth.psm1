@@ -90,6 +90,7 @@ function Show-WebView2AuthPopup {
     .OUTPUTS
         Authorization code string, or $null.
     #>
+    [CmdletBinding()]
     param(
         [string] $AuthorizeUrl,
         [string] $RedirectUriBase,
@@ -227,6 +228,7 @@ function Invoke-M365DeviceCodeAuth {
           Authenticated  [bool]  $true if auth succeeded or was not required.
           GraphAccessToken [string] Microsoft Graph access token, or $null.
     #>
+    [CmdletBinding()]
     param(
         [string] $GitHubUser  = 'araduti',
         [string] $GitHubRepo  = 'Nova',
@@ -527,6 +529,7 @@ function Invoke-KioskEdgeAuth {
           Success          [bool]   $true if auth succeeded.
           GraphAccessToken [string] Microsoft Graph access token, or $null.
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$ClientId,
@@ -721,6 +724,7 @@ function Invoke-KioskDeviceCodeAuth {
           Success          [bool]   $true if auth succeeded.
           GraphAccessToken [string] Microsoft Graph access token, or $null.
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [string]$ClientId,
@@ -834,6 +838,7 @@ function Invoke-KioskM365Auth {
           GraphAccessToken [string]   Microsoft Graph access token, or $null.
           AuthConfig       [object]   The parsed auth.json config, or $null.
     #>
+    [CmdletBinding()]
     param(
         [string]$GitHubUser   = 'araduti',
         [string]$GitHubRepo   = 'Nova',

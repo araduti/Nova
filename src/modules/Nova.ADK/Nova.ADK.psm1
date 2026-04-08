@@ -33,6 +33,7 @@ function Assert-ADKInstalled {
     .PARAMETER Architecture  WinPE arch string (amd64 or x86). ARM is not supported.
     .OUTPUTS  [string] Validated ADK root path.
     #>
+    [CmdletBinding()]
     param([string] $Architecture)
 
     Write-Step "Checking Windows ADK + WinPE add-on ($Architecture)..."
@@ -97,6 +98,7 @@ function Copy-WinPEFile {
     .PARAMETER Architecture  amd64 (default) or x86. ARM is not supported.
     .OUTPUTS   [hashtable] Keys: MediaDir, MountDir, BootWim
     #>
+    [CmdletBinding()]
     param(
         [string] $ADKRoot,
         [string] $Destination,
