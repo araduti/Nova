@@ -1,5 +1,6 @@
 {
   "name": "Default Nova Task Sequence (Copy)",
+  "schemaVersion": "1.0",
   "version": "1.0",
   "description": "Standard cloud-native Windows deployment via Nova",
   "steps": [
@@ -158,6 +159,47 @@
         "unattendContent": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\" name=\"Microsoft-Windows-Shell-Setup\" processorArchitecture=\"amd64\" publicKeyToken=\"31bf3856ad364e35\" language=\"neutral\" versionScope=\"nonSxS\">\n      <OOBE>\n        <HideEULAPage>true</HideEULAPage>\n        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>\n        <HideOnlineAccountScreens>false</HideOnlineAccountScreens>\n        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>\n        <ProtectYourPC>3</ProtectYourPC>\n        <SkipMachineOOBE>false</SkipMachineOOBE>\n        <SkipUserOOBE>false</SkipUserOOBE>\n      </OOBE>\n    </component>\n  </settings>\n</unattend>",
         "unattendUrl": "",
         "unattendPath": ""
+      }
+    },
+    {
+      "id": "enable-bitlocker",
+      "name": "Enable BitLocker",
+      "type": "EnableBitLocker",
+      "enabled": false,
+      "description": "Enable BitLocker drive encryption with TPM protector on first boot",
+      "continueOnError": true,
+      "group": "Finalization",
+      "parameters": {
+        "encryptionMethod": "XtsAes256",
+        "skipHardwareTest": false
+      }
+    },
+    {
+      "id": "install-application",
+      "name": "Install Application",
+      "type": "InstallApplication",
+      "enabled": false,
+      "description": "Stage application installer for first-boot execution (Winget, MSI/EXE, or script)",
+      "continueOnError": true,
+      "group": "Finalization",
+      "parameters": {
+        "installMode": "url",
+        "packageId": "",
+        "installerUrl": "",
+        "silentArgs": "/qn /norestart",
+        "scriptUrl": ""
+      }
+    },
+    {
+      "id": "windows-update",
+      "name": "Windows Update",
+      "type": "WindowsUpdate",
+      "enabled": false,
+      "description": "Stage critical and security updates for installation on first boot",
+      "continueOnError": true,
+      "group": "Finalization",
+      "parameters": {
+        "categories": ["SecurityUpdates", "CriticalUpdates"]
       }
     },
     {

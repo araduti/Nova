@@ -10,6 +10,7 @@
         'Install-WebView2SDK'
         'Show-WebView2AuthPopup'
         'Invoke-M365DeviceCodeAuth'
+        'Update-M365Token'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()
