@@ -12,6 +12,12 @@
 
 Set-StrictMode -Version Latest
 
+# ── Private helper: safely check if a PSCustomObject has a property ─────────
+function _HasProp {
+    param([psobject]$Obj, [string]$Name)
+    return ($null -ne $Obj -and $null -ne $Obj.PSObject.Properties[$Name])
+}
+
 function Install-WebView2SDK {
     <#
     .SYNOPSIS  Download the WebView2 SDK NuGet package (cached).
@@ -254,12 +260,12 @@ function Invoke-M365DeviceCodeAuth {
     }
 
     # If auth is not configured or not required, skip silently.
-    if (-not $authConfig -or -not $authConfig.requireAuth) {
+    if (-not $authConfig -or -not ((_HasProp $authConfig 'requireAuth') -and $authConfig.requireAuth)) {
         return @{ Authenticated = $true; GraphAccessToken = $null }
     }
 
     # Validate that the config has the minimum required fields.
-    if (-not $authConfig.clientId) {
+    if (-not ((_HasProp $authConfig 'clientId') -and $authConfig.clientId)) {
         Write-Verbose "Auth config incomplete -- skipping authentication."
         return @{ Authenticated = $true; GraphAccessToken = $null }
     }
@@ -271,7 +277,7 @@ function Invoke-M365DeviceCodeAuth {
     # (e.g. DeviceManagementServiceConfig.ReadWrite.All for Autopilot import).
     # Delegated permissions -- no client secret required.
     $scope = 'openid profile'
-    if ($authConfig.graphScopes) {
+    if ((_HasProp $authConfig 'graphScopes') -and $authConfig.graphScopes) {
         $trimmed = ($authConfig.graphScopes).Trim()
         if ($trimmed) { $scope = "openid profile $trimmed" }
     }
@@ -422,10 +428,10 @@ function Invoke-M365DeviceCodeAuth {
         $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
         $raw = $wc.UploadString($tokenUrl, 'POST', $body)
         $tokenResponse = $raw | ConvertFrom-Json
-        if ($tokenResponse.id_token) {
-            $graphToken   = if ($tokenResponse.access_token)  { $tokenResponse.access_token }  else { $null }
-            $refreshToken = if ($tokenResponse.refresh_token) { $tokenResponse.refresh_token } else { $null }
-            $expiresIn    = if ($tokenResponse.expires_in)    { [int]$tokenResponse.expires_in } else { 3600 }
+        if ((_HasProp $tokenResponse 'id_token') -and $tokenResponse.id_token) {
+            $graphToken   = if ((_HasProp $tokenResponse 'access_token')  -and $tokenResponse.access_token)  { $tokenResponse.access_token }  else { $null }
+            $refreshToken = if ((_HasProp $tokenResponse 'refresh_token') -and $tokenResponse.refresh_token) { $tokenResponse.refresh_token } else { $null }
+            $expiresIn    = if ((_HasProp $tokenResponse 'expires_in')    -and $tokenResponse.expires_in)    { [int]$tokenResponse.expires_in } else { 3600 }
             $expiresAt    = (Get-Date).AddSeconds($expiresIn)
             Write-Success 'Identity verified.'
             return @{
@@ -485,9 +491,9 @@ function Update-M365Token {
         $raw = $wc.UploadString($tokenUrl, 'POST', $body)
         $tokenResponse = $raw | ConvertFrom-Json
 
-        if ($tokenResponse.access_token) {
-            $newRefresh = if ($tokenResponse.refresh_token) { $tokenResponse.refresh_token } else { $refreshToken }
-            $expiresIn  = if ($tokenResponse.expires_in)    { [int]$tokenResponse.expires_in } else { 3600 }
+        if ((_HasProp $tokenResponse 'access_token') -and $tokenResponse.access_token) {
+            $newRefresh = if ((_HasProp $tokenResponse 'refresh_token') -and $tokenResponse.refresh_token) { $tokenResponse.refresh_token } else { $refreshToken }
+            $expiresIn  = if ((_HasProp $tokenResponse 'expires_in')    -and $tokenResponse.expires_in)    { [int]$tokenResponse.expires_in } else { 3600 }
             $expiresAt  = (Get-Date).AddSeconds($expiresIn)
             return @{
                 AccessToken  = $tokenResponse.access_token
@@ -697,8 +703,8 @@ function Invoke-KioskEdgeAuth {
         $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
         $raw = $wc.UploadString($tokenUrl, 'POST', $body)
         $tokenResponse = $raw | ConvertFrom-Json
-        if ($tokenResponse.id_token) {
-            $graphToken = if ($tokenResponse.access_token) { $tokenResponse.access_token } else { $null }
+        if ((_HasProp $tokenResponse 'id_token') -and $tokenResponse.id_token) {
+            $graphToken = if ((_HasProp $tokenResponse 'access_token') -and $tokenResponse.access_token) { $tokenResponse.access_token } else { $null }
             if ($WriteLog) { & $WriteLog "Kiosk auth succeeded -- token obtained." }
             return @{ Success = $true; GraphAccessToken = $graphToken }
         }
@@ -765,8 +771,8 @@ function Invoke-KioskDeviceCodeAuth {
 
     $userCode   = $deviceResponse.user_code
     $deviceCode = $deviceResponse.device_code
-    $expiresIn  = if ($deviceResponse.expires_in) { [int]$deviceResponse.expires_in } else { 900 }
-    $interval   = if ($deviceResponse.interval)   { [int]$deviceResponse.interval   } else { 5   }
+    $expiresIn  = if ((_HasProp $deviceResponse 'expires_in') -and $deviceResponse.expires_in) { [int]$deviceResponse.expires_in } else { 900 }
+    $interval   = if ((_HasProp $deviceResponse 'interval')   -and $deviceResponse.interval)   { [int]$deviceResponse.interval   } else { 5   }
 
     # ── Show device code in the HTML UI modal ───────────────────────────────
     if ($UpdateUi) { & $UpdateUi @{ ShowDeviceCode = $true; DeviceCode = $userCode } }
@@ -790,7 +796,7 @@ function Invoke-KioskDeviceCodeAuth {
                 $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
                 $raw = $wc.UploadString($tokenUrl, 'POST', $body)
                 $tr = $raw | ConvertFrom-Json
-                if ($tr.id_token) {
+                if ((_HasProp $tr 'id_token') -and $tr.id_token) {
                     $tokenResponse = $tr
                     break
                 }
@@ -814,8 +820,7 @@ function Invoke-KioskDeviceCodeAuth {
         return $fail
     }
 
-    $graphToken = if ($tokenResponse.access_token) { $tokenResponse.access_token } else { $null }
-    if ($WriteLog) { & $WriteLog "Device code auth succeeded -- token obtained." }
+    $graphToken = if ((_HasProp $tokenResponse 'access_token') -and $tokenResponse.access_token) { $tokenResponse.access_token } else { $null }    if ($WriteLog) { & $WriteLog "Device code auth succeeded -- token obtained." }
     return @{ Success = $true; GraphAccessToken = $graphToken }
 }
 
@@ -877,13 +882,13 @@ function Invoke-KioskM365Auth {
     }
 
     # If auth is not configured or not required, skip silently.
-    if (-not $authConfig -or -not $authConfig.requireAuth) {
+    if (-not $authConfig -or -not ((_HasProp $authConfig 'requireAuth') -and $authConfig.requireAuth)) {
         if ($WriteStatus) { & $WriteStatus 'Authentication not required' 'Green' }
         return $skip
     }
 
     # Validate that the config has the minimum required fields.
-    if (-not $authConfig.clientId) {
+    if (-not ((_HasProp $authConfig 'clientId') -and $authConfig.clientId)) {
         if ($WriteLog) { & $WriteLog "Auth config incomplete -- skipping authentication." }
         if ($WriteStatus) { & $WriteStatus 'Authentication not required' 'Green' }
         return $skip
@@ -893,7 +898,7 @@ function Invoke-KioskM365Auth {
 
     # ── Build scope string ──────────────────────────────────────────────────
     $scope = 'openid profile'
-    if ($authConfig.graphScopes) {
+    if ((_HasProp $authConfig 'graphScopes') -and $authConfig.graphScopes) {
         $trimmed = ($authConfig.graphScopes).Trim()
         if ($trimmed) { $scope = "openid profile $trimmed" }
     }
