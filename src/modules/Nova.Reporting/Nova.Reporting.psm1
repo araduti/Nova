@@ -108,8 +108,11 @@ function Get-GitHubTokenViaEntra {
 
         if ($statusCode -eq 200 -and $resp) {
             $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
-            $body   = $reader.ReadToEnd()
-            $reader.Close()
+            try {
+                $body   = $reader.ReadToEnd()
+            } finally {
+                $reader.Close()
+            }
             $result = $body | ConvertFrom-Json
             if ($result.token) {
                 Write-Verbose "GitHub token obtained via Entra ID exchange (user: $($result.user))"

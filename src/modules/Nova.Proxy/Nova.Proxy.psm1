@@ -61,6 +61,7 @@ function Set-NovaProxy {
     # Set environment variables so external tools (curl, git, etc.) also use the proxy
     $env:HTTP_PROXY  = $ProxyUrl
     $env:HTTPS_PROXY = $ProxyUrl
+    $env:NO_PROXY    = $BypassList
 
     Write-Verbose "Nova proxy configured: $ProxyUrl (bypass: $BypassList)"
 }
@@ -99,6 +100,7 @@ function Clear-NovaProxy {
     # Clear environment variables
     $env:HTTP_PROXY  = $null
     $env:HTTPS_PROXY = $null
+    $env:NO_PROXY    = $null
 
     Write-Verbose 'Nova proxy configuration cleared.'
 }

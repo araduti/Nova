@@ -94,9 +94,10 @@ function Initialize-TargetDisk {
         Size of the recovery partition in bytes. Defaults to the module default.
     #>
     [OutputType([psobject])]
-    [CmdletBinding(SupportsShouldProcess)]
+    [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
     param(
         [int]$DiskNumber,
+        [ValidateSet('UEFI', 'BIOS')]
         [string]$FirmwareType,
         [string]$OSDriveLetter,
         [switch]$CreateRecoveryPartition,

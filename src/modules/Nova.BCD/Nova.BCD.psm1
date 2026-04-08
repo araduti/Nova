@@ -13,7 +13,10 @@ function Invoke-Bcdedit {
     #>
     [OutputType([string])]
     [CmdletBinding()]
-    param([string[]] $Arguments)
+    param(
+        [ValidateNotNullOrEmpty()]
+        [string[]] $Arguments
+    )
     $output = & bcdedit.exe @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "bcdedit $($Arguments -join ' ') -> exit $LASTEXITCODE`n$output"

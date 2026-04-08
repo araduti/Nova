@@ -40,7 +40,10 @@ function Assert-ADKInstalled {
     #>
     [OutputType([string])]
     [CmdletBinding()]
-    param([string] $Architecture)
+    param(
+        [ValidateSet('amd64', 'x86')]
+        [string] $Architecture
+    )
 
     Write-Step "Checking Windows ADK + WinPE add-on ($Architecture)..."
 
