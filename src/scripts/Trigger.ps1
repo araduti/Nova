@@ -104,7 +104,8 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\module
     # iex (irm ...) scenario -- $PSScriptRoot is empty; download modules to temp dir
     $tmpModRoot = Join-Path ([System.IO.Path]::GetTempPath()) "Nova-Modules-$(Get-Random)"
     $moduleNames = @('Nova.Logging', 'Nova.Platform', 'Nova.Integrity', 'Nova.WinRE',
-                     'Nova.ADK', 'Nova.BuildConfig', 'Nova.Auth')
+                     'Nova.ADK', 'Nova.BuildConfig', 'Nova.Auth',
+                     'Nova.BCD', 'Nova.CloudImage')
     $moduleExts  = @('.psm1', '.psd1')
     foreach ($mod in $moduleNames) {
         $modDir = Join-Path $tmpModRoot $mod
@@ -130,6 +131,8 @@ Import-Module "$script:ModulesRoot\Nova.WinRE"       -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.ADK"         -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.BuildConfig" -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Auth"        -Force -ErrorAction Stop
+Import-Module "$script:ModulesRoot\Nova.BCD"         -Force -ErrorAction Stop
+Import-Module "$script:ModulesRoot\Nova.CloudImage"  -Force -ErrorAction Stop
 # Trigger.ps1 uses the default prefixes (  [>], [+], [!], [X])
 
 # Confirm-FileIntegrity is now provided by the Nova.Integrity module.
@@ -594,7 +597,9 @@ function Build-WinPE {
             Write-Success "Staged modules directory from local repo"
         } else {
             # iex (irm ...) scenario -- download modules from GitHub
-            $moduleNames = @('Nova.Logging', 'Nova.Platform', 'Nova.Network')
+            $moduleNames = @('Nova.Logging', 'Nova.Platform', 'Nova.Network',
+                             'Nova.Reporting', 'Nova.Disk', 'Nova.Imaging',
+                             'Nova.Drivers', 'Nova.Provisioning', 'Nova.TaskSequence')
             $moduleFiles = @('.psm1', '.psd1')
             $null = New-Item -Path $modulesDest -ItemType Directory -Force
             foreach ($mod in $moduleNames) {
@@ -838,278 +843,17 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\nova-start.cmd
 
 #region ── BCD Ramdisk ──────────────────────────────────────────────────────────
 
-function Invoke-Bcdedit {
-    <#
-    .SYNOPSIS  Thin wrapper around bcdedit.exe with strict error checking.
-    #>
-    param([string[]] $Arguments)
-    $output = & bcdedit.exe @Arguments 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "bcdedit $($Arguments -join ' ') → exit $LASTEXITCODE`n$output"
-    }
-    return $output
-}
-
-function New-BcdEntry {
-    <#
-    .SYNOPSIS  Creates a BCD entry and returns its GUID string, e.g. {abc123…}.
-    #>
-    [CmdletBinding(SupportsShouldProcess)]
-    param([string[]] $CreateArgs)
-    if (-not $PSCmdlet.ShouldProcess($CreateArgs, 'New-BcdEntry')) { return }
-    $output = Invoke-Bcdedit $CreateArgs
-    if ($output -match '\{([0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})\}') {
-        return "{$($Matches[1])}"
-    }
-    throw "Could not parse GUID from bcdedit output: $output"
-}
+# Invoke-Bcdedit, New-BcdEntry, and New-BCDRamdiskEntry are now provided
+# by the Nova.BCD module.
 
 # Get-FirmwareType is now provided by the Nova.Platform module.
-
-function New-BCDRamdiskEntry {
-    <#
-    .SYNOPSIS  Stages boot files and creates a one-time BCD ramdisk boot entry.
-    .OUTPUTS   [string] OS loader GUID.
-    #>
-    [CmdletBinding(SupportsShouldProcess)]
-    param(
-        [string] $BootWim,
-        [string] $RamdiskDir,
-        [string] $MediaDir
-    )
-
-    Write-Step 'Staging ramdisk boot files...'
-
-    # Ensure output directory
-    $null = New-Item -ItemType Directory -Path $RamdiskDir -Force
-
-    # Copy boot.sdi (required by the BCD ramdisk device)
-    $sdiSrc  = Join-Path $MediaDir 'boot\boot.sdi'
-    $sdiDest = Join-Path $RamdiskDir 'boot.sdi'
-    if (Test-Path $sdiSrc) {
-        Copy-Item $sdiSrc $sdiDest -Force
-        Write-Success "boot.sdi staged."
-    } else {
-        Write-Warn "boot.sdi not found at $sdiSrc -- ramdisk boot will likely fail."
-    }
-
-    # Copy WIM
-    $wimDest = Join-Path $RamdiskDir 'boot.wim'
-    Copy-Item $BootWim $wimDest -Force
-    Write-Success "boot.wim staged."
-
-    # BCD path components
-    $drive  = Split-Path $RamdiskDir -Qualifier          # C:
-    $relDir = (Split-Path $RamdiskDir -NoQualifier).TrimEnd('\') # \Nova\Boot
-    $wimBcd = "$relDir\boot.wim"
-    $sdiBcd = "$relDir\boot.sdi"
-
-    Write-Step 'Writing BCD entries...'
-
-    # ── Ramdisk device options ────────────────────────────────────────────────
-    $rdGuid = New-BcdEntry '/create', '/d', 'Nova Ramdisk Options', '/device'
-    $null = Invoke-Bcdedit '/set', $rdGuid, 'ramdisksdidevice', "partition=$drive"
-    $null = Invoke-Bcdedit '/set', $rdGuid, 'ramdisksdipath',   $sdiBcd
-    Write-Success "Ramdisk options: $rdGuid"
-
-    # ── OS loader ─────────────────────────────────────────────────────────────
-    $fw      = Get-FirmwareType
-    $winload = if ($fw -eq 'UEFI') { '\windows\system32\winload.efi' } `
-                                   else { '\windows\system32\winload.exe' }
-    Write-Step "Firmware type: $fw  →  $winload"
-
-    $ramdiskVal = "[$drive]$wimBcd,$rdGuid"
-    $osGuid     = New-BcdEntry '/create', '/d', 'Nova Boot', '/application', 'osloader'
-
-    $null = Invoke-Bcdedit '/set', $osGuid, 'device',     "ramdisk=$ramdiskVal"
-    $null = Invoke-Bcdedit '/set', $osGuid, 'osdevice',   "ramdisk=$ramdiskVal"
-    $null = Invoke-Bcdedit '/set', $osGuid, 'path',       $winload
-    $null = Invoke-Bcdedit '/set', $osGuid, 'systemroot', '\windows'
-    $null = Invoke-Bcdedit '/set', $osGuid, 'detecthal',  'yes'
-    $null = Invoke-Bcdedit '/set', $osGuid, 'winpe',      'yes'
-    $null = Invoke-Bcdedit '/set', $osGuid, 'nx',         'OptIn'
-    $null = Invoke-Bcdedit '/set', $osGuid, 'ems',        'no'
-
-    # Add to menu and arm as one-time next boot
-    $null = Invoke-Bcdedit '/displayorder', $osGuid, '/addlast'
-    $null = Invoke-Bcdedit '/bootsequence', $osGuid
-
-    Write-Success "OS loader entry: $osGuid (armed as one-time next boot)"
-    return $osGuid
-}
 
 #endregion
 
 #region ── Cloud Boot Image ─────────────────────────────────────────────────────
 
-function Get-CloudBootImage {
-    <#
-    .SYNOPSIS  Checks GitHub Releases for a pre-built boot image.
-    .DESCRIPTION
-        Queries the GitHub Releases API for a release tagged 'boot-image'.
-        If found and it contains a boot.wim asset, returns a hashtable with
-        download URLs and metadata.  Returns $null when no cloud image is
-        available.
-    .OUTPUTS   [hashtable] with BootWimUrl, BootSdiUrl, BootWimSize, PublishedAt -- or $null.
-    #>
-    param(
-        [string] $GitHubUser,
-        [string] $GitHubRepo,
-        [string] $Tag = 'boot-image'
-    )
-
-    $releaseUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/releases/tags/$Tag"
-    try {
-        $release = Invoke-RestMethod -Uri $releaseUrl -ErrorAction Stop
-    } catch {
-        return $null
-    }
-
-    $wimAsset = $release.assets | Where-Object { $_.name -eq 'boot.wim' }
-    if (-not $wimAsset) { return $null }
-
-    $sdiAsset = $release.assets | Where-Object { $_.name -eq 'boot.sdi' }
-
-    return @{
-        BootWimUrl  = $wimAsset.browser_download_url
-        BootSdiUrl  = if ($sdiAsset) { $sdiAsset.browser_download_url } else { $null }
-        BootWimSize = $wimAsset.size
-        PublishedAt = $release.published_at
-    }
-}
-
-function Publish-BootImage {
-    <#
-    .SYNOPSIS  Uploads the boot image to a GitHub Release.
-    .DESCRIPTION
-        Creates (or updates) a GitHub Release tagged 'boot-image' and uploads
-        boot.wim and boot.sdi as release assets.  Requires a Personal Access
-        Token (PAT) with 'repo' scope.
-    #>
-    param(
-        [string] $GitHubUser,
-        [string] $GitHubRepo,
-        [string] $GitHubToken,
-        [string] $BootWimPath,
-        [string] $BootSdiPath,
-        [string] $Tag = 'boot-image'
-    )
-
-    $headers = @{
-        Authorization = "token $GitHubToken"
-        Accept        = 'application/vnd.github+json'
-    }
-
-    # Check for existing release
-    $releaseUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/releases/tags/$Tag"
-    $release = $null
-    try {
-        $release = Invoke-RestMethod -Uri $releaseUrl -Headers $headers -ErrorAction Stop
-    } catch {
-        Write-Verbose "No existing release for tag '$Tag' -- will create a new one."
-    }
-
-    if ($release) {
-        # Delete existing assets so they can be replaced
-        foreach ($asset in $release.assets) {
-            $deleteUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/releases/assets/$($asset.id)"
-            try {
-                $null = Invoke-RestMethod -Uri $deleteUrl -Method Delete -Headers $headers -ErrorAction Stop
-            } catch {
-                Write-Warn "Could not delete existing asset '$($asset.name)': $_"
-            }
-        }
-    } else {
-        # Create a new release
-        $timestamp = [DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')
-        $body = @{
-            tag_name   = $Tag
-            name       = 'Nova Boot Image'
-            body       = "Pre-built WinPE boot image for Nova deployment.`nGenerated: $timestamp UTC"
-            draft      = $false
-            prerelease = $false
-        } | ConvertTo-Json
-        $createUrl = "https://api.github.com/repos/$GitHubUser/$GitHubRepo/releases"
-        $release   = Invoke-RestMethod -Uri $createUrl -Method Post -Headers $headers `
-                                       -Body $body -ContentType 'application/json' -ErrorAction Stop
-        Write-Success "GitHub Release '$Tag' created."
-    }
-
-    # Upload assets using streaming HttpWebRequest -- avoids the massive
-    # overhead of Invoke-WebRequest's built-in progress bar on large files.
-    $uploadUrlBase = $release.upload_url -replace '\{[^}]*\}', ''
-    $bufferSize    = 4 * 1MB          # 4 MB upload chunks
-    $progressMs    = 1000             # minimum ms between progress updates
-    $connectTimeMs = [int]([TimeSpan]::FromHours(2).TotalMilliseconds)    # generous for slow links
-    $ioTimeMs      = [int]([TimeSpan]::FromMinutes(10).TotalMilliseconds) # per read/write op
-
-    foreach ($file in @(
-        @{ Path = $BootWimPath; Name = 'boot.wim' },
-        @{ Path = $BootSdiPath; Name = 'boot.sdi' }
-    )) {
-        if (-not $file.Path -or -not (Test-Path $file.Path)) {
-            Write-Warn "File not found, skipping upload: $($file.Name)"
-            continue
-        }
-        $uploadUrl  = "${uploadUrlBase}?name=$($file.Name)"
-        $fileLength = (Get-Item $file.Path).Length
-        $fileSizeMB = $fileLength / 1MB
-        Write-Step "Uploading $($file.Name) ($('{0:N0}' -f $fileSizeMB) MB)..."
-
-        $fs        = $null
-        $reqStream = $null
-        $response  = $null
-        try {
-            $wr             = [System.Net.HttpWebRequest]::Create($uploadUrl)
-            $wr.Method      = 'POST'
-            $wr.ContentType = 'application/octet-stream'
-            $wr.Headers['Authorization'] = "token $GitHubToken"
-            $wr.ContentLength = $fileLength
-            $wr.AllowWriteStreamBuffering = $false   # stream directly, no RAM copy
-            $wr.SendChunked   = $false
-            $wr.Timeout       = $connectTimeMs
-            $wr.ReadWriteTimeout = $ioTimeMs
-
-            $reqStream = $wr.GetRequestStream()
-            $fs        = [System.IO.FileStream]::new(
-                             $file.Path,
-                             [System.IO.FileMode]::Open,
-                             [System.IO.FileAccess]::Read,
-                             [System.IO.FileShare]::Read,
-                             $bufferSize)
-            $buffer   = New-Object byte[] $bufferSize
-            $uploaded = [long]0
-            $sw       = [System.Diagnostics.Stopwatch]::StartNew()
-
-            do {
-                $read = $fs.Read($buffer, 0, $buffer.Length)
-                if ($read -gt 0) {
-                    $reqStream.Write($buffer, 0, $read)
-                    $uploaded += $read
-                    if ($sw.ElapsedMilliseconds -gt $progressMs) {
-                        $pct   = [int]($uploaded * 100 / $fileLength)
-                        $speed = if ($sw.Elapsed.TotalSeconds -gt 0) {
-                                     '{0:N1} MB/s' -f ($uploaded / 1MB / $sw.Elapsed.TotalSeconds)
-                                 } else { '--' }
-                        Write-Host ("  Progress: {0}% ({1:N0} / {2:N0} MB) @ {3}" -f
-                            $pct, ($uploaded / 1MB), $fileSizeMB, $speed) -NoNewline
-                        Write-Host "`r" -NoNewline
-                    }
-                }
-            } while ($read -gt 0)
-            Write-Host ''
-
-            $response = $wr.GetResponse()
-            Write-Success "$($file.Name) uploaded."
-        } catch {
-            throw "Upload failed for '$($file.Name)' to ${uploadUrl}: $_"
-        } finally {
-            if ($fs)        { $fs.Close() }
-            if ($reqStream) { $reqStream.Close() }
-            if ($response)  { $response.Close() }
-        }
-    }
-}
+# Get-CloudBootImage and Publish-BootImage are now provided by the
+# Nova.CloudImage module.
 
 #endregion
 
