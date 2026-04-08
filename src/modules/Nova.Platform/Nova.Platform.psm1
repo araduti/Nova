@@ -18,6 +18,8 @@ function Get-FirmwareType {
                    System.PlatformNotSupportedException on non-UEFI firmware, returns
                    $true/$false on UEFI (regardless of Secure Boot state).
     #>
+    [CmdletBinding()]
+    param()
     # Primary: PEFirmwareType registry value written by the kernel at boot
     try {
         $val = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control' `
@@ -48,6 +50,8 @@ function Get-WinPEArchitecture {
         supported because Nova is a cloud-only deployment engine targeting
         x86-64 enterprise hardware.
     #>
+    [CmdletBinding()]
+    param()
     $map = @{
         'AMD64' = 'amd64'
         'x86'   = 'x86'

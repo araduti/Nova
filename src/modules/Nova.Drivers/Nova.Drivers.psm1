@@ -66,6 +66,8 @@ function Initialize-NuGetProvider {
         Ensures NuGet is available and PSGallery is trusted so Install-Module
         works correctly, including inside WinPE.
     #>
+    [CmdletBinding()]
+    param()
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
         Write-Host '  Bootstrapping NuGet package provider...'
@@ -98,6 +100,8 @@ function Get-SystemManufacturer {
     .SYNOPSIS
         Returns the trimmed manufacturer string from Win32_ComputerSystem.
     #>
+    [CmdletBinding()]
+    param()
     $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
     if ($cs) { return $cs.Manufacturer.Trim() }
     return ''
@@ -347,12 +351,17 @@ function Invoke-OemDriverInjection {
         Optional scriptblock passed through to Add-SurfaceDriver for file
         downloads.  See Add-SurfaceDriver for details.
     #>
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string]$OSDriveLetter,
         [string]$ScratchDir,
         [scriptblock]$DownloadCommand
     )
+
+    if (-not $PSCmdlet.ShouldProcess($OSDriveLetter, 'Inject OEM drivers into offline Windows image')) {
+        return
+    }
+
     Write-Step 'OEM driver injection: detecting manufacturer...'
 
     $stepName = ''

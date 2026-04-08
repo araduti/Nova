@@ -97,3 +97,5 @@ function Clear-NovaProxy {
 
     Write-Verbose 'Nova proxy configuration cleared.'
 }
+
+Export-ModuleMember -Function Set-NovaProxy, Get-NovaProxy, Clear-NovaProxy

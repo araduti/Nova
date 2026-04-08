@@ -12,6 +12,8 @@ function Get-ADKRoot {
     <#
     .SYNOPSIS Returns the ADK installation root from the registry, or $null.
     #>
+    [CmdletBinding()]
+    param()
     $regPaths = @(
         'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots',
         'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots'

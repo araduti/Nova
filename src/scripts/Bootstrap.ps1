@@ -51,6 +51,9 @@ $script:ModulesRoot = if (Test-Path "$PSScriptRoot\..\modules") {
 Import-Module "$script:ModulesRoot\Nova.Network"      -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.TaskSequence" -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Auth"         -Force -ErrorAction Stop
+# Nova.Proxy is optional -- only loaded when the module is staged in the image.
+# Corporate environments can pre-configure proxy settings before network calls.
+Import-Module "$script:ModulesRoot\Nova.Proxy"        -Force -ErrorAction SilentlyContinue
 
 function Write-AuthLog {
     <#

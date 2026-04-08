@@ -72,6 +72,8 @@ function Get-BuildConfigPath {
     <#
     .SYNOPSIS  Returns the path to the persisted build configuration file.
     #>
+    [CmdletBinding()]
+    param()
     if ($env:APPDATA) {
         return Join-Path $env:APPDATA 'Nova\last-build-config.json'
     }
@@ -100,6 +102,8 @@ function Read-SavedBuildConfiguration {
     .SYNOPSIS  Loads a previously saved build configuration, if one exists.
     .OUTPUTS   [hashtable] or $null if no saved configuration exists.
     #>
+    [CmdletBinding()]
+    param()
     $path = Get-BuildConfigPath
     if (-not $path -or -not (Test-Path $path)) { return $null }
     try {
@@ -455,6 +459,8 @@ function Get-DefaultLanguage {
     <#
     .SYNOPSIS  Returns the default WinPE language code.
     #>
+    [CmdletBinding()]
+    param()
     return $script:DefaultLanguage
 }
 

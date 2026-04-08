@@ -27,6 +27,8 @@ function Get-WinREPath {
 
     .OUTPUTS  [string] Path to an accessible winre.wim, or $null when not found.
     #>
+    [CmdletBinding()]
+    param()
 
     # ── 1. Quick check in System32\Recovery ─────────────────────────────────
     $sysPath = Join-Path $env:SystemRoot 'System32\Recovery\WinRE.wim'
