@@ -79,3 +79,129 @@ Describe 'Update-M365Token' {
         $result | Should -BeNullOrEmpty
     }
 }
+
+Describe 'Module Exports - Kiosk Auth' {
+    It 'exports kiosk auth functions' {
+        $mod = Get-Module Nova.Auth
+        $expected = @('Invoke-KioskEdgeAuth', 'Invoke-KioskDeviceCodeAuth', 'Invoke-KioskM365Auth')
+        foreach ($fn in $expected) {
+            $mod.ExportedFunctions.Keys | Should -Contain $fn
+        }
+    }
+}
+
+Describe 'Invoke-KioskEdgeAuth' {
+    It 'returns failure when HtmlUiActive is false' {
+        $logMessages = @()
+        $writeLog = { param([string]$m) $logMessages += $m }.GetNewClosure()
+
+        $result = Invoke-KioskEdgeAuth `
+            -ClientId 'test-client-id' `
+            -HtmlUiActive $false `
+            -WriteLog $writeLog
+
+        $result.Success | Should -BeFalse
+        $result.GraphAccessToken | Should -BeNullOrEmpty
+    }
+
+    It 'returns expected hashtable keys' {
+        $result = Invoke-KioskEdgeAuth `
+            -ClientId 'test-client-id' `
+            -HtmlUiActive $false
+
+        $result | Should -BeOfType [hashtable]
+        $result.ContainsKey('Success') | Should -BeTrue
+        $result.ContainsKey('GraphAccessToken') | Should -BeTrue
+    }
+}
+
+Describe 'Invoke-KioskDeviceCodeAuth' {
+    It 'returns failure when device code endpoint is unreachable' {
+        $logMessages = @()
+        $writeLog = { param([string]$m) $logMessages += $m }.GetNewClosure()
+
+        # Mock the WebClient to simulate a failure
+        Mock -ModuleName Nova.Auth -CommandName 'New-Object' -ParameterFilter {
+            $TypeName -eq 'System.Net.WebClient'
+        } -MockWith {
+            $mock = [PSCustomObject]@{}
+            $mock | Add-Member -MemberType ScriptMethod -Name 'UploadString' -Value {
+                throw 'Connection refused'
+            }
+            $mock | Add-Member -MemberType NoteProperty -Name 'Headers' -Value @{}
+            $mock.Headers | Add-Member -MemberType ScriptMethod -Name 'Add' -Value { param($k,$v) } -Force
+            return $mock
+        }
+
+        $result = Invoke-KioskDeviceCodeAuth `
+            -ClientId 'test-client-id' `
+            -WriteLog $writeLog
+
+        $result.Success | Should -BeFalse
+        $result.GraphAccessToken | Should -BeNullOrEmpty
+    }
+
+    It 'returns expected hashtable keys' {
+        Mock -ModuleName Nova.Auth -CommandName 'New-Object' -ParameterFilter {
+            $TypeName -eq 'System.Net.WebClient'
+        } -MockWith {
+            $mock = [PSCustomObject]@{}
+            $mock | Add-Member -MemberType ScriptMethod -Name 'UploadString' -Value {
+                throw 'Connection refused'
+            }
+            $mock | Add-Member -MemberType NoteProperty -Name 'Headers' -Value @{}
+            $mock.Headers | Add-Member -MemberType ScriptMethod -Name 'Add' -Value { param($k,$v) } -Force
+            return $mock
+        }
+
+        $result = Invoke-KioskDeviceCodeAuth -ClientId 'test-client-id'
+        $result | Should -BeOfType [hashtable]
+        $result.ContainsKey('Success') | Should -BeTrue
+        $result.ContainsKey('GraphAccessToken') | Should -BeTrue
+    }
+}
+
+Describe 'Invoke-KioskM365Auth' {
+    It 'returns Authenticated=$true when auth config is not available' {
+        $statusMessages = @()
+        $writeStatus = { param([string]$m, [string]$c) $statusMessages += $m }.GetNewClosure()
+
+        $result = Invoke-KioskM365Auth `
+            -GitHubUser 'nonexistent-user-test' `
+            -GitHubRepo 'nonexistent-repo-test' `
+            -GitHubBranch 'nonexistent-branch' `
+            -WriteStatus $writeStatus
+
+        $result.Authenticated | Should -BeTrue
+        $result.GraphAccessToken | Should -BeNullOrEmpty
+        $result.AuthConfig | Should -BeNullOrEmpty
+    }
+
+    It 'returns expected hashtable keys' {
+        $result = Invoke-KioskM365Auth `
+            -GitHubUser 'nonexistent-user-test' `
+            -GitHubRepo 'nonexistent-repo-test' `
+            -GitHubBranch 'nonexistent-branch'
+
+        $result | Should -BeOfType [hashtable]
+        $result.ContainsKey('Authenticated') | Should -BeTrue
+        $result.ContainsKey('GraphAccessToken') | Should -BeTrue
+        $result.ContainsKey('AuthConfig') | Should -BeTrue
+    }
+
+    It 'accepts all callback parameters without error' {
+        $result = Invoke-KioskM365Auth `
+            -GitHubUser 'nonexistent-user-test' `
+            -GitHubRepo 'nonexistent-repo-test' `
+            -GitHubBranch 'nonexistent-branch' `
+            -HtmlUiActive $false `
+            -WriteLog { param($m) } `
+            -WriteStatus { param($m, $c) } `
+            -UpdateUi { param($p) } `
+            -CheckCancelled { $false } `
+            -DoEvents { } `
+            -PlaySound { param($f, $d) }
+
+        $result.Authenticated | Should -BeTrue
+    }
+}
