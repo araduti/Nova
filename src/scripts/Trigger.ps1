@@ -600,7 +600,7 @@ function Build-WinPE {
             $moduleNames = @('Nova.Logging', 'Nova.Platform', 'Nova.Network',
                              'Nova.Reporting', 'Nova.Disk', 'Nova.Imaging',
                              'Nova.Drivers', 'Nova.Provisioning', 'Nova.TaskSequence',
-                             'Nova.Auth')
+                             'Nova.Auth', 'Nova.Proxy')
             $moduleFiles = @('.psm1', '.psd1')
             $null = New-Item -Path $modulesDest -ItemType Directory -Force
             foreach ($mod in $moduleNames) {

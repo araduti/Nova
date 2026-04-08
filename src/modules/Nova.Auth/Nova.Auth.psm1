@@ -20,6 +20,8 @@ function Install-WebView2SDK {
     .OUTPUTS
         Path to the directory containing the WebView2 DLLs, or $null on failure.
     #>
+    [CmdletBinding()]
+    param()
     $sdkDir  = Join-Path $env:TEMP 'Nova-WebView2SDK'
     $coreDll = Join-Path $sdkDir 'Microsoft.Web.WebView2.Core.dll'
 

@@ -29,6 +29,8 @@ function Get-PartitionGuid {
     <#
     .SYNOPSIS  Returns the GPT type GUID constants used by Nova for partitioning.
     #>
+    [CmdletBinding()]
+    param()
     return @{
         Esp       = $script:GptTypeEsp
         Msr       = $script:GptTypeMsr
@@ -87,7 +89,7 @@ function Initialize-TargetDisk {
     .PARAMETER RecoveryPartitionSize
         Size of the recovery partition in bytes. Defaults to the module default.
     #>
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [int]$DiskNumber,
         [string]$FirmwareType,
@@ -95,6 +97,10 @@ function Initialize-TargetDisk {
         [switch]$CreateRecoveryPartition,
         [long]$RecoveryPartitionSize = $script:DefaultRecoverySize
     )
+
+    if (-not $PSCmdlet.ShouldProcess("Disk $DiskNumber", 'Clear and partition for Windows deployment')) {
+        return
+    }
 
     Write-Step "Initializing disk $DiskNumber (Firmware: $FirmwareType)..."
 
