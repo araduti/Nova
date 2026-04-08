@@ -68,7 +68,8 @@ function Confirm-FileIntegrity {
         }
     }
 
-    $expected = $HashesJson.files.$RelativeName
+    $filesObj = $HashesJson.files
+    $expected = if ($filesObj.PSObject.Properties[$RelativeName]) { $filesObj.$RelativeName } else { $null }
     if (-not $expected) {
         Remove-Item $Path -Force -ErrorAction SilentlyContinue
         throw "Integrity check FAILED for $RelativeName -- no hash entry found in manifest. " +

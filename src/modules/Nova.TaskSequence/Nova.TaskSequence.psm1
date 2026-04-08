@@ -10,6 +10,12 @@
 
 Set-StrictMode -Version Latest
 
+# ── Private helper: safely check if a PSCustomObject has a property ─────────
+function _HasProp {
+    param([psobject]$Obj, [string]$Name)
+    return ($null -ne $Obj -and $null -ne $Obj.PSObject.Properties[$Name])
+}
+
 function Read-TaskSequence {
     <#
     .SYNOPSIS  Loads a task sequence JSON file produced by the web-based Editor.
@@ -30,12 +36,12 @@ function Read-TaskSequence {
     $raw = Get-Content $Path -Raw -ErrorAction Stop
     $ts  = $raw | ConvertFrom-Json -ErrorAction Stop
 
-    if (-not $ts.steps -or $ts.steps -isnot [System.Collections.IEnumerable]) {
+    if (-not (_HasProp $ts 'steps') -or $ts.steps -isnot [System.Collections.IEnumerable]) {
         throw "Invalid task sequence file: missing 'steps' array"
     }
     foreach ($s in $ts.steps) {
-        if (-not $s.type) { throw "Invalid task sequence: step '$($s.name)' is missing required 'type' property" }
-        if (-not $s.name) { throw "Invalid task sequence: a step with type '$($s.type)' is missing required 'name' property" }
+        if (-not (_HasProp $s 'type')) { throw "Invalid task sequence: step '$($s.name)' is missing required 'type' property" }
+        if (-not (_HasProp $s 'name')) { throw "Invalid task sequence: a step with type '$($s.type)' is missing required 'name' property" }
     }
 
     # ── Schema version validation (forward-compatible) ──────────────
@@ -71,15 +77,15 @@ function Test-StepCondition {
         [psobject]$Condition
     )
 
-    if (-not $Condition -or -not $Condition.type) { return $true }
+    if (-not $Condition -or -not (_HasProp $Condition 'type')) { return $true }
 
     switch ($Condition.type) {
         'variable' {
-            $varName = $Condition.variable
+            $varName = if (_HasProp $Condition 'variable') { $Condition.variable } else { $null }
             if (-not $varName) { return $true }
             $actual = [System.Environment]::GetEnvironmentVariable($varName)
-            $op = if ($Condition.operator) { $Condition.operator } else { 'equals' }
-            $expected = if ($Condition.value) { $Condition.value } else { '' }
+            $op = if ((_HasProp $Condition 'operator') -and $Condition.operator) { $Condition.operator } else { 'equals' }
+            $expected = if ((_HasProp $Condition 'value') -and $Condition.value) { $Condition.value } else { '' }
 
             switch ($op) {
                 'equals'     { return ($actual -eq $expected) }
@@ -92,9 +98,9 @@ function Test-StepCondition {
             }
         }
         'wmiQuery' {
-            $query = $Condition.query
+            $query = if (_HasProp $Condition 'query') { $Condition.query } else { $null }
             if (-not $query) { return $true }
-            $ns = if ($Condition.namespace) { $Condition.namespace } else { 'root\cimv2' }
+            $ns = if ((_HasProp $Condition 'namespace') -and $Condition.namespace) { $Condition.namespace } else { 'root\cimv2' }
             try {
                 $results = Get-CimInstance -Query $query -Namespace $ns -ErrorAction Stop
                 return ($null -ne $results -and @($results).Count -gt 0)
@@ -104,11 +110,11 @@ function Test-StepCondition {
             }
         }
         'registry' {
-            $regPath = $Condition.registryPath
+            $regPath = if (_HasProp $Condition 'registryPath') { $Condition.registryPath } else { $null }
             if (-not $regPath) { return $true }
-            $regValue = $Condition.registryValue
-            $op = if ($Condition.operator) { $Condition.operator } else { 'exists' }
-            $expected = if ($Condition.value) { $Condition.value } else { '' }
+            $regValue = if (_HasProp $Condition 'registryValue') { $Condition.registryValue } else { $null }
+            $op = if ((_HasProp $Condition 'operator') -and $Condition.operator) { $Condition.operator } else { 'exists' }
+            $expected = if ((_HasProp $Condition 'value') -and $Condition.value) { $Condition.value } else { '' }
 
             try {
                 if (-not $regValue) {
@@ -265,34 +271,34 @@ function Update-TaskSequenceFromConfig {
 
     $raw = Get-Content $TaskSequencePath -Raw -ErrorAction Stop
     $ts  = $raw | ConvertFrom-Json -ErrorAction Stop
-    if (-not $ts.steps) { return }
+    if (-not (_HasProp $ts 'steps')) { return }
 
     foreach ($step in $ts.steps) {
-        if (-not $step.parameters) {
+        if (-not (_HasProp $step 'parameters')) {
             $step | Add-Member -NotePropertyName parameters -NotePropertyValue ([pscustomobject]@{}) -Force
         }
 
         switch ($step.type) {
             'DownloadImage' {
-                if ($Config.Edition)      { $step.parameters | Add-Member -NotePropertyName edition      -NotePropertyValue $Config.Edition      -Force }
-                if ($Config.OsLanguage)   { $step.parameters | Add-Member -NotePropertyName language     -NotePropertyValue $Config.OsLanguage   -Force }
-                if ($Config.Architecture) { $step.parameters | Add-Member -NotePropertyName architecture -NotePropertyValue $Config.Architecture -Force }
+                if ($Config['Edition'])      { $step.parameters | Add-Member -NotePropertyName edition      -NotePropertyValue $Config['Edition']      -Force }
+                if ($Config['OsLanguage'])   { $step.parameters | Add-Member -NotePropertyName language     -NotePropertyValue $Config['OsLanguage']   -Force }
+                if ($Config['Architecture']) { $step.parameters | Add-Member -NotePropertyName architecture -NotePropertyValue $Config['Architecture'] -Force }
             }
             'ApplyImage' {
-                if ($Config.Edition) { $step.parameters | Add-Member -NotePropertyName edition -NotePropertyValue $Config.Edition -Force }
+                if ($Config['Edition']) { $step.parameters | Add-Member -NotePropertyName edition -NotePropertyValue $Config['Edition'] -Force }
             }
             'SetComputerName' {
-                if ($Config.ComputerName) { $step.parameters | Add-Member -NotePropertyName computerName -NotePropertyValue $Config.ComputerName -Force }
+                if ($Config['ComputerName']) { $step.parameters | Add-Member -NotePropertyName computerName -NotePropertyValue $Config['ComputerName'] -Force }
             }
             'SetRegionalSettings' {
-                if ($Config.InputLocale)  { $step.parameters | Add-Member -NotePropertyName inputLocale  -NotePropertyValue $Config.InputLocale  -Force }
-                if ($Config.SystemLocale) { $step.parameters | Add-Member -NotePropertyName systemLocale -NotePropertyValue $Config.SystemLocale -Force }
-                if ($Config.UserLocale)   { $step.parameters | Add-Member -NotePropertyName userLocale   -NotePropertyValue $Config.UserLocale   -Force }
-                if ($Config.UILanguage)   { $step.parameters | Add-Member -NotePropertyName uiLanguage   -NotePropertyValue $Config.UILanguage   -Force }
+                if ($Config['InputLocale'])  { $step.parameters | Add-Member -NotePropertyName inputLocale  -NotePropertyValue $Config['InputLocale']  -Force }
+                if ($Config['SystemLocale']) { $step.parameters | Add-Member -NotePropertyName systemLocale -NotePropertyValue $Config['SystemLocale'] -Force }
+                if ($Config['UserLocale'])   { $step.parameters | Add-Member -NotePropertyName userLocale   -NotePropertyValue $Config['UserLocale']   -Force }
+                if ($Config['UILanguage'])   { $step.parameters | Add-Member -NotePropertyName uiLanguage   -NotePropertyValue $Config['UILanguage']   -Force }
             }
             'ImportAutopilot' {
-                if ($Config.ContainsKey('AutopilotGroupTag'))  { $step.parameters | Add-Member -NotePropertyName groupTag  -NotePropertyValue $Config.AutopilotGroupTag  -Force }
-                if ($Config.ContainsKey('AutopilotUserEmail')) { $step.parameters | Add-Member -NotePropertyName userEmail -NotePropertyValue $Config.AutopilotUserEmail -Force }
+                if ($Config.ContainsKey('AutopilotGroupTag'))  { $step.parameters | Add-Member -NotePropertyName groupTag  -NotePropertyValue $Config['AutopilotGroupTag']  -Force }
+                if ($Config.ContainsKey('AutopilotUserEmail')) { $step.parameters | Add-Member -NotePropertyName userEmail -NotePropertyValue $Config['AutopilotUserEmail'] -Force }
             }
         }
     }
@@ -300,13 +306,13 @@ function Update-TaskSequenceFromConfig {
     # ── Update unattendContent in CustomizeOOBE with ComputerName / locale ──
     # This connects the config-modal choices directly to the unattend.xml
     # stored in the task sequence so the engine writes it as-is.
-    $hasUnattendChanges = $Config.ComputerName -or $Config.InputLocale -or
-                          $Config.SystemLocale -or $Config.UserLocale -or
-                          $Config.UILanguage
+    $hasUnattendChanges = $Config['ComputerName'] -or $Config['InputLocale'] -or
+                          $Config['SystemLocale'] -or $Config['UserLocale'] -or
+                          $Config['UILanguage']
     if ($hasUnattendChanges) {
         $oobeStep = $ts.steps | Where-Object { $_.type -eq 'CustomizeOOBE' } | Select-Object -First 1
-        if ($oobeStep -and $oobeStep.parameters) {
-            $src = $oobeStep.parameters.unattendSource
+        if ($oobeStep -and (_HasProp $oobeStep 'parameters')) {
+            $src = if (_HasProp $oobeStep.parameters 'unattendSource') { $oobeStep.parameters.unattendSource } else { $null }
             if (-not $src -or $src -eq 'default') {
                 $defaultXml = @"
 <?xml version="1.0" encoding="utf-8"?>
@@ -331,14 +337,14 @@ function Update-TaskSequenceFromConfig {
   </settings>
 </unattend>
 "@
-                $xml = if ($oobeStep.parameters.unattendContent) { $oobeStep.parameters.unattendContent } else { $defaultXml }
+                $xml = if ((_HasProp $oobeStep.parameters 'unattendContent') -and $oobeStep.parameters.unattendContent) { $oobeStep.parameters.unattendContent } else { $defaultXml }
                 try {
                     [xml]$xd = $xml
                     $nsMgr = New-Object System.Xml.XmlNamespaceManager($xd.NameTable)
                     $nsMgr.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
 
                     # ComputerName -> specialize pass
-                    if ($Config.ComputerName) {
+                    if ($Config['ComputerName']) {
                         $specSetting = $xd.SelectSingleNode('//u:settings[@pass="specialize"]', $nsMgr)
                         if (-not $specSetting) {
                             $specSetting = $xd.CreateElement('settings', 'urn:schemas-microsoft-com:unattend')
@@ -356,17 +362,17 @@ function Update-TaskSequenceFromConfig {
                             $specSetting.AppendChild($shellComp) | Out-Null
                         }
                         $cnNode = $shellComp.SelectSingleNode('u:ComputerName', $nsMgr)
-                        if ($cnNode) { $cnNode.InnerText = $Config.ComputerName }
+                        if ($cnNode) { $cnNode.InnerText = $Config['ComputerName'] }
                         else {
                             $cnNode = $xd.CreateElement('ComputerName', 'urn:schemas-microsoft-com:unattend')
-                            $cnNode.InnerText = $Config.ComputerName
+                            $cnNode.InnerText = $Config['ComputerName']
                             $shellComp.AppendChild($cnNode) | Out-Null
                         }
                     }
 
                     # Locale -> oobeSystem pass
-                    $iL = $Config.InputLocale; $sL = $Config.SystemLocale
-                    $uL = $Config.UserLocale;  $uiL = $Config.UILanguage
+                    $iL = $Config['InputLocale']; $sL = $Config['SystemLocale']
+                    $uL = $Config['UserLocale'];  $uiL = $Config['UILanguage']
                     if ($iL -or $sL -or $uL -or $uiL) {
                         $oobeSetting = $xd.SelectSingleNode('//u:settings[@pass="oobeSystem"]', $nsMgr)
                         if (-not $oobeSetting) {
