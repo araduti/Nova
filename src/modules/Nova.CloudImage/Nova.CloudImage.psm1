@@ -49,7 +49,7 @@ function Publish-BootImage {
         Token (PAT) with 'repo' scope.
     #>
     [OutputType([void])]
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [string] $GitHubUser,
         [string] $GitHubRepo,
@@ -58,6 +58,11 @@ function Publish-BootImage {
         [string] $BootSdiPath,
         [string] $Tag = 'boot-image'
     )
+
+    if (-not $PSCmdlet.ShouldProcess("GitHub Release '$Tag'", 'Upload boot image')) {
+        return
+    }
+
     $headers = @{
         Authorization = "token $GitHubToken"
         Accept        = 'application/vnd.github+json'

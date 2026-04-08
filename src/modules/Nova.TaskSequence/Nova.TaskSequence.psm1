@@ -12,6 +12,7 @@ Set-StrictMode -Version Latest
 
 # ── Private helper: safely check if a PSCustomObject has a property ─────────
 function _HasProp {
+    [CmdletBinding()]
     param([psobject]$Obj, [string]$Name)
     return ($null -ne $Obj -and $null -ne $Obj.PSObject.Properties[$Name])
 }

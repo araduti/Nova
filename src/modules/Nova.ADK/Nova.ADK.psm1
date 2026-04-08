@@ -39,7 +39,7 @@ function Assert-ADKInstalled {
     .OUTPUTS  [string] Validated ADK root path.
     #>
     [OutputType([string])]
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [ValidateSet('amd64', 'x86')]
         [string] $Architecture
@@ -55,6 +55,10 @@ function Assert-ADKInstalled {
     if ($adkRoot -and $winPEDir -and (Test-Path (Join-Path $winPEDir $Architecture))) {
         Write-Success "ADK found: $adkRoot"
         return $adkRoot
+    }
+
+    if (-not $PSCmdlet.ShouldProcess('Windows ADK + WinPE add-on', 'Download and install')) {
+        return $null
     }
 
     Write-Warn 'ADK or WinPE add-on not found -- downloading installers...'
@@ -108,9 +112,8 @@ function Copy-WinPEFile {
     .OUTPUTS   [hashtable] Keys: MediaDir, MountDir, BootWim
     #>
     [OutputType([hashtable])]
-    [CmdletBinding()]
-    param(
-        [string] $ADKRoot,
+    [CmdletBinding(SupportsShouldProcess)]
+    param(        [string] $ADKRoot,
         [string] $Destination,
         [ValidateSet('amd64','x86')]
         [string] $Architecture = 'amd64',
@@ -150,6 +153,10 @@ function Copy-WinPEFile {
     $mediaDir   = Join-Path $Destination 'media'
     $mountDir   = Join-Path $Destination 'mount'
     $sourcesDir = Join-Path $mediaDir    'sources'
+
+    if (-not $PSCmdlet.ShouldProcess($Destination, 'Create WinPE workspace')) {
+        return $null
+    }
 
     if (Test-Path $Destination) { Remove-Item $Destination -Recurse -Force }
     $null = New-Item -ItemType Directory -Path $mediaDir, $mountDir, $sourcesDir -Force
