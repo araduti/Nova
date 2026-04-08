@@ -48,7 +48,9 @@ $script:ModulesRoot = if (Test-Path "$PSScriptRoot\..\modules") {
 } else {
     "$PSScriptRoot\..\modules"   # Best-effort fallback
 }
-Import-Module "$script:ModulesRoot\Nova.Network" -Force -ErrorAction Stop
+Import-Module "$script:ModulesRoot\Nova.Network"      -Force -ErrorAction Stop
+Import-Module "$script:ModulesRoot\Nova.TaskSequence" -Force -ErrorAction Stop
+Import-Module "$script:ModulesRoot\Nova.Auth"         -Force -ErrorAction Stop
 
 function Write-AuthLog {
     <#
@@ -855,558 +857,69 @@ function Show-ConfigurationMenu {
     }
 }
 
-function Update-TaskSequenceFromConfig {
-    <#
-    .SYNOPSIS  Writes user configuration choices into the task sequence JSON.
-    .DESCRIPTION
-        After the user submits the configuration modal, this function updates
-        the relevant step parameters in the task sequence JSON file so that
-        the engine reads all values from the task sequence -- no separate
-        command-line parameters needed.
-
-        ComputerName and locale settings are also injected into the
-        CustomizeOOBE step's unattendContent XML, keeping the task sequence
-        as the single source of truth for unattend.xml content.
-    #>
-    [CmdletBinding(SupportsShouldProcess)]
-    param(
-        [Parameter(Mandatory)]
-        [string]$TaskSequencePath,
-        [hashtable]$Config
-    )
-
-    if (-not (Test-Path $TaskSequencePath)) { return }
-
-    $raw = Get-Content $TaskSequencePath -Raw -ErrorAction Stop
-    $ts  = $raw | ConvertFrom-Json -ErrorAction Stop
-    if (-not $ts.steps) { return }
-
-    foreach ($step in $ts.steps) {
-        if (-not $step.parameters) {
-            $step | Add-Member -NotePropertyName parameters -NotePropertyValue ([pscustomobject]@{}) -Force
-        }
-
-        switch ($step.type) {
-            'DownloadImage' {
-                if ($Config.Edition)      { $step.parameters | Add-Member -NotePropertyName edition      -NotePropertyValue $Config.Edition      -Force }
-                if ($Config.OsLanguage)   { $step.parameters | Add-Member -NotePropertyName language     -NotePropertyValue $Config.OsLanguage   -Force }
-                if ($Config.Architecture) { $step.parameters | Add-Member -NotePropertyName architecture -NotePropertyValue $Config.Architecture -Force }
-            }
-            'ApplyImage' {
-                if ($Config.Edition) { $step.parameters | Add-Member -NotePropertyName edition -NotePropertyValue $Config.Edition -Force }
-            }
-            'SetComputerName' {
-                if ($Config.ComputerName) { $step.parameters | Add-Member -NotePropertyName computerName -NotePropertyValue $Config.ComputerName -Force }
-            }
-            'SetRegionalSettings' {
-                if ($Config.InputLocale)  { $step.parameters | Add-Member -NotePropertyName inputLocale  -NotePropertyValue $Config.InputLocale  -Force }
-                if ($Config.SystemLocale) { $step.parameters | Add-Member -NotePropertyName systemLocale -NotePropertyValue $Config.SystemLocale -Force }
-                if ($Config.UserLocale)   { $step.parameters | Add-Member -NotePropertyName userLocale   -NotePropertyValue $Config.UserLocale   -Force }
-                if ($Config.UILanguage)   { $step.parameters | Add-Member -NotePropertyName uiLanguage   -NotePropertyValue $Config.UILanguage   -Force }
-            }
-            'ImportAutopilot' {
-                if ($Config.ContainsKey('AutopilotGroupTag'))  { $step.parameters | Add-Member -NotePropertyName groupTag  -NotePropertyValue $Config.AutopilotGroupTag  -Force }
-                if ($Config.ContainsKey('AutopilotUserEmail')) { $step.parameters | Add-Member -NotePropertyName userEmail -NotePropertyValue $Config.AutopilotUserEmail -Force }
-            }
-        }
-    }
-
-    # ── Update unattendContent in CustomizeOOBE with ComputerName / locale ──
-    # This connects the config-modal choices directly to the unattend.xml
-    # stored in the task sequence so the engine writes it as-is.
-    $hasUnattendChanges = $Config.ComputerName -or $Config.InputLocale -or
-                          $Config.SystemLocale -or $Config.UserLocale -or
-                          $Config.UILanguage
-    if ($hasUnattendChanges) {
-        $oobeStep = $ts.steps | Where-Object { $_.type -eq 'CustomizeOOBE' } | Select-Object -First 1
-        if ($oobeStep -and $oobeStep.parameters) {
-            $src = $oobeStep.parameters.unattendSource
-            if (-not $src -or $src -eq 'default') {
-                $defaultXml = @"
-<?xml version="1.0" encoding="utf-8"?>
-<unattend xmlns="urn:schemas-microsoft-com:unattend">
-  <settings pass="oobeSystem">
-    <component name="Microsoft-Windows-Shell-Setup"
-               processorArchitecture="amd64"
-               publicKeyToken="31bf3856ad364e35"
-               language="neutral"
-               versionScope="nonSxS"
-               xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
-      <OOBE>
-        <HideEULAPage>true</HideEULAPage>
-        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
-        <HideOnlineAccountScreens>false</HideOnlineAccountScreens>
-        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>
-        <ProtectYourPC>3</ProtectYourPC>
-        <SkipMachineOOBE>false</SkipMachineOOBE>
-        <SkipUserOOBE>false</SkipUserOOBE>
-      </OOBE>
-    </component>
-  </settings>
-</unattend>
-"@
-                $xml = if ($oobeStep.parameters.unattendContent) { $oobeStep.parameters.unattendContent } else { $defaultXml }
-                try {
-                    [xml]$xd = $xml
-                    $nsMgr = New-Object System.Xml.XmlNamespaceManager($xd.NameTable)
-                    $nsMgr.AddNamespace('u', 'urn:schemas-microsoft-com:unattend')
-
-                    # ComputerName → specialize pass
-                    if ($Config.ComputerName) {
-                        $specSetting = $xd.SelectSingleNode('//u:settings[@pass="specialize"]', $nsMgr)
-                        if (-not $specSetting) {
-                            $specSetting = $xd.CreateElement('settings', 'urn:schemas-microsoft-com:unattend')
-                            $specSetting.SetAttribute('pass', 'specialize')
-                            $xd.DocumentElement.AppendChild($specSetting) | Out-Null
-                        }
-                        $shellComp = $specSetting.SelectSingleNode('u:component[@name="Microsoft-Windows-Shell-Setup"]', $nsMgr)
-                        if (-not $shellComp) {
-                            $shellComp = $xd.CreateElement('component', 'urn:schemas-microsoft-com:unattend')
-                            $shellComp.SetAttribute('name', 'Microsoft-Windows-Shell-Setup')
-                            $shellComp.SetAttribute('processorArchitecture', 'amd64')
-                            $shellComp.SetAttribute('publicKeyToken', '31bf3856ad364e35')
-                            $shellComp.SetAttribute('language', 'neutral')
-                            $shellComp.SetAttribute('versionScope', 'nonSxS')
-                            $specSetting.AppendChild($shellComp) | Out-Null
-                        }
-                        $cnNode = $shellComp.SelectSingleNode('u:ComputerName', $nsMgr)
-                        if ($cnNode) { $cnNode.InnerText = $Config.ComputerName }
-                        else {
-                            $cnNode = $xd.CreateElement('ComputerName', 'urn:schemas-microsoft-com:unattend')
-                            $cnNode.InnerText = $Config.ComputerName
-                            $shellComp.AppendChild($cnNode) | Out-Null
-                        }
-                    }
-
-                    # Locale → oobeSystem pass
-                    $iL = $Config.InputLocale; $sL = $Config.SystemLocale
-                    $uL = $Config.UserLocale;  $uiL = $Config.UILanguage
-                    if ($iL -or $sL -or $uL -or $uiL) {
-                        $oobeSetting = $xd.SelectSingleNode('//u:settings[@pass="oobeSystem"]', $nsMgr)
-                        if (-not $oobeSetting) {
-                            $oobeSetting = $xd.CreateElement('settings', 'urn:schemas-microsoft-com:unattend')
-                            $oobeSetting.SetAttribute('pass', 'oobeSystem')
-                            $xd.DocumentElement.AppendChild($oobeSetting) | Out-Null
-                        }
-                        $intlComp = $oobeSetting.SelectSingleNode('u:component[@name="Microsoft-Windows-International-Core"]', $nsMgr)
-                        if (-not $intlComp) {
-                            $intlComp = $xd.CreateElement('component', 'urn:schemas-microsoft-com:unattend')
-                            $intlComp.SetAttribute('name', 'Microsoft-Windows-International-Core')
-                            $intlComp.SetAttribute('processorArchitecture', 'amd64')
-                            $intlComp.SetAttribute('publicKeyToken', '31bf3856ad364e35')
-                            $intlComp.SetAttribute('language', 'neutral')
-                            $intlComp.SetAttribute('versionScope', 'nonSxS')
-                            $oobeSetting.AppendChild($intlComp) | Out-Null
-                        }
-                        foreach ($pair in @(
-                            @('InputLocale',  $iL),
-                            @('SystemLocale', $sL),
-                            @('UserLocale',   $uL),
-                            @('UILanguage',   $uiL)
-                        )) {
-                            if ($pair[1]) {
-                                $node = $intlComp.SelectSingleNode("u:$($pair[0])", $nsMgr)
-                                if ($node) { $node.InnerText = $pair[1] }
-                                else {
-                                    $node = $xd.CreateElement($pair[0], 'urn:schemas-microsoft-com:unattend')
-                                    $node.InnerText = $pair[1]
-                                    $intlComp.AppendChild($node) | Out-Null
-                                }
-                            }
-                        }
-                    }
-
-                    $sw = New-Object System.IO.StringWriter
-                    $xw = [System.Xml.XmlTextWriter]::new($sw)
-                    $xw.Formatting = [System.Xml.Formatting]::Indented
-                    $xw.Indentation = 2
-                    $xd.WriteTo($xw); $xw.Flush()
-                    $oobeStep.parameters | Add-Member -NotePropertyName unattendContent -NotePropertyValue $sw.ToString() -Force
-                } catch {
-                    Write-Warning "Could not update unattendContent from config: $_"
-                }
-            }
-        }
-    }
-
-    $ts | ConvertTo-Json -Depth 20 | Set-Content $TaskSequencePath -Encoding UTF8 -Force
-}
-
 #region ── M365 Authentication ────────────────────────────────────────────────
-
-function Invoke-M365EdgeAuth {
-    <#
-    .SYNOPSIS  Authenticate the operator via the kiosk Edge browser (Auth Code + PKCE).
-    .DESCRIPTION
-        Navigates the existing Edge kiosk browser to the Azure AD authorization
-        endpoint.  The user signs in directly in the kiosk browser window.
-        A temporary localhost HTTP listener captures the redirect carrying the
-        authorization code, then exchanges it for tokens using PKCE.
-        After authentication completes (or fails), the listener redirects the
-        browser back to the Nova-UI page.
-        WinPE-safe -- no separate Edge process or WinForms dialog is created.
-    .PARAMETER ClientId
-        Azure AD application (client) ID.
-    .OUTPUTS
-        $true on success, $false on failure or cancellation.
-    #>
-    param(
-        [string] $ClientId,
-        [string] $Scope = 'openid profile'
-    )
-
-    # ── Verify the HTML UI is active (kiosk Edge must be running) ───────────
-    if (-not $script:HtmlUiActive) {
-        Write-AuthLog "HTML UI not active -- cannot use in-kiosk auth."
-        return $false
-    }
-
-    # ── Log environment diagnostics ─────────────────────────────────────────
-    Write-AuthLog "Kiosk auth starting"
-
-    # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────
-    $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $bytes = New-Object byte[] 32
-    $rng.GetBytes($bytes)
-    $codeVerifier  = [Convert]::ToBase64String($bytes) -replace '\+','-' -replace '/','_' -replace '='
-
-    $sha256        = [System.Security.Cryptography.SHA256]::Create()
-    $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
-    $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
-
-    # ── Start a temporary localhost HTTP listener ───────────────────────────
-    # A random high port is used to avoid conflicts.  The listener captures
-    # the OAuth redirect after the user completes sign-in in Edge.
-    $listener    = New-Object System.Net.HttpListener
-    $redirectUri = $null
-    foreach ($attempt in 1..5) {
-        $port        = Get-Random -Minimum 49152 -Maximum 65535
-        $redirectUri = "http://localhost:$port/"
-        $listener.Prefixes.Clear()
-        $listener.Prefixes.Add($redirectUri)
-        try {
-            $listener.Start()
-            Write-AuthLog "HTTP listener started on port $port"
-            break
-        } catch {
-            Write-AuthLog "Listener port $port failed (attempt $attempt of 5): $_"
-            if ($attempt -eq 5) {
-                Write-AuthLog "Could not start HTTP listener after $attempt attempts."
-                return $false
-            }
-        }
-    }
-
-    try {
-
-    # ── Build the authorize URL ─────────────────────────────────────────────
-    $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
-        "client_id=$([uri]::EscapeDataString($ClientId))" +
-        '&response_type=code' +
-        "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-        "&scope=$([uri]::EscapeDataString($Scope))" +
-        "&code_challenge=$codeChallenge" +
-        '&code_challenge_method=S256' +
-        '&prompt=select_account'
-
-    # ── Signal the HTML UI to open the login page in a popup ───────────────
-    # The kiosk Edge browser opens a popup window for Azure AD sign-in.
-    # After the user signs in, Azure AD redirects to the localhost listener
-    # which captures the auth code and closes the popup via window.close().
-    Write-AuthLog "Opening auth popup via kiosk UI"
-    Update-HtmlUi -Message $S.AuthSigning -Step 3 -AuthUrl $authorizeUrl
-
-    # ── Wait for the redirect callback ──────────────────────────────────────
-    $script:_edgeAuthCode   = $null
-    $script:_edgeAuthError  = $null
-    $script:_authCancelled  = $false
-    $asyncResult = $listener.BeginGetContext($null, $null)
-
-    # 5-minute timeout -- Azure AD sessions are valid for 10 minutes,
-    # 5 minutes gives enough time without leaving the kiosk unattended.
-    $timeout = [datetime]::UtcNow.AddMinutes(5)
-
-    while (-not $script:_edgeAuthCode -and -not $script:_edgeAuthError `
-           -and -not $script:_authCancelled -and [datetime]::UtcNow -lt $timeout) {
-
-        if ($asyncResult.IsCompleted -or $asyncResult.AsyncWaitHandle.WaitOne(0)) {
-            try {
-                $context = $listener.EndGetContext($asyncResult)
-
-                # Parse authorization code (or error) from the query string.
-                foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
-                    $kv = $pair.Split('=', 2)
-                    if ($kv.Count -eq 2) {
-                        if ($kv[0] -eq 'code')  { $script:_edgeAuthCode  = [uri]::UnescapeDataString($kv[1]) }
-                        if ($kv[0] -eq 'error') { $script:_edgeAuthError = [uri]::UnescapeDataString($kv[1]) }
-                    }
-                }
-
-                # Clear the auth signal before the popup closes.
-                Update-HtmlUi -Message $S.AuthSigning -Step 3
-
-                # Send a response page that closes the auth popup window.
-                $html = if ($script:_edgeAuthCode) {
-                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
-                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
-                    '<div style="text-align:center"><h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
-                    '<p>This window will close automatically...</p></div>' +
-                    '<script>setTimeout(function(){window.close()},1500)</script></body></html>'
-                } else {
-                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
-                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
-                    '<div style="text-align:center"><h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
-                    '<p>This window will close automatically...</p></div>' +
-                    '<script>setTimeout(function(){window.close()},2500)</script></body></html>'
-                }
-                $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
-                $context.Response.ContentType     = 'text/html; charset=utf-8'
-                $context.Response.ContentLength64 = $buf.Length
-                $context.Response.OutputStream.Write($buf, 0, $buf.Length)
-                $context.Response.OutputStream.Close()
-            } catch {
-                Write-AuthLog "Listener callback error: $_"
-            }
-        }
-
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 200
-    }
-
-    # ── Always clear auth signal ────────────────────────────────────────────
-    # Prevents the UI from re-opening the auth popup on the next poll
-    # (e.g. if auth timed out or was cancelled before the listener fired).
-    Update-HtmlUi -Message $S.AuthSigning -Step 3
-
-    } finally {
-        try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
-    }
-
-    if ($script:_authCancelled -or -not $script:_edgeAuthCode) {
-        $codeStatus = if ($script:_edgeAuthCode) { 'present' } else { 'missing' }
-        Write-AuthLog "Kiosk auth ended without auth code. Cancelled=$($script:_authCancelled), AuthCode=$codeStatus"
-        if ($script:_edgeAuthError) {
-            Write-AuthLog "Auth error: $($script:_edgeAuthError)"
-        }
-        return $false
-    }
-
-    # ── Exchange authorization code for tokens ──────────────────────────────
-    $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
-    try {
-        $body = "client_id=$([uri]::EscapeDataString($ClientId))" +
-                "&scope=$([uri]::EscapeDataString($Scope))" +
-                "&code=$([uri]::EscapeDataString($script:_edgeAuthCode))" +
-                "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-                '&grant_type=authorization_code' +
-                "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-        $raw = $wc.UploadString($tokenUrl, 'POST', $body)
-        $tokenResponse = $raw | ConvertFrom-Json
-        if ($tokenResponse.id_token) {
-            if ($tokenResponse.access_token) {
-                $script:GraphAccessToken = $tokenResponse.access_token
-            }
-            Write-AuthLog "Kiosk auth succeeded -- token obtained."
-            return $true
-        }
-    } catch {
-        Write-AuthLog "Token exchange failed: $_"
-    }
-
-    return $false
-}
-
-function Invoke-M365DeviceCodeAuth {
-    <#
-    .SYNOPSIS  Authenticate the operator via Device Code Flow (fallback).
-    .DESCRIPTION
-        Fallback authentication path used when the kiosk Edge auth is not
-        available.  Initiates the Device Code Flow and shows the one-time
-        code and verification URL in the HTML UI as a modal overlay.
-    .PARAMETER ClientId
-        Azure AD application (client) ID.
-    .PARAMETER Scope
-        OAuth 2.0 scopes to request (space-separated).
-    .OUTPUTS
-        $true on success, $false on failure or cancellation.
-    #>
-    param(
-        [string] $ClientId,
-        [string] $Scope = 'openid profile'
-    )
-
-    $deviceCodeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/devicecode'
-    $tokenUrl      = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
-    $grantType     = 'urn:ietf:params:oauth:grant-type:device_code'
-
-    $deviceResponse = $null
-    try {
-        $body = "client_id=$([uri]::EscapeDataString($ClientId))&scope=$([uri]::EscapeDataString($Scope))"
-        $wc   = New-Object System.Net.WebClient
-        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-        $raw  = $wc.UploadString($deviceCodeUrl, 'POST', $body)
-        $deviceResponse = $raw | ConvertFrom-Json
-    } catch {
-        Write-AuthLog "Device code request failed: $_"
-        return $false
-    }
-
-    $userCode   = $deviceResponse.user_code
-    $deviceCode = $deviceResponse.device_code
-    $expiresIn  = if ($deviceResponse.expires_in) { [int]$deviceResponse.expires_in } else { 900 }
-    $interval   = if ($deviceResponse.interval)   { [int]$deviceResponse.interval   } else { 5   }
-
-    # ── Show device code in the HTML UI modal ───────────────────────────────
-    $script:_authCancelled = $false
-    Update-HtmlUi -Message $S.AuthDeviceCodePrompt -Step 3 `
-                  -ShowDeviceCode -DeviceCode $userCode -DeviceCodeUrl $S.AuthUrl
-
-    # ── Poll for token ──────────────────────────────────────────────────────
-    $expiry   = [datetime]::UtcNow.AddSeconds($expiresIn)
-    $nextPoll = [datetime]::UtcNow.AddSeconds($interval)
-    $tokenResponse = $null
-
-    while (-not $script:_authCancelled -and [datetime]::UtcNow -lt $expiry) {
-        if ([datetime]::UtcNow -ge $nextPoll) {
-            try {
-                $body = "grant_type=$([uri]::EscapeDataString($grantType))" +
-                        "&client_id=$([uri]::EscapeDataString($ClientId))" +
-                        "&device_code=$([uri]::EscapeDataString($deviceCode))"
-                $wc = New-Object System.Net.WebClient
-                $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-                $raw = $wc.UploadString($tokenUrl, 'POST', $body)
-                $tr = $raw | ConvertFrom-Json
-                if ($tr.id_token) {
-                    $tokenResponse = $tr
-                    if ($tr.access_token) {
-                        $script:GraphAccessToken = $tr.access_token
-                    }
-                    break
-                }
-            } catch {
-                $msg = $_.ToString()
-                if ($msg -notmatch 'authorization_pending' -and $msg -notmatch 'slow_down') {
-                    Write-AuthLog "Token poll error: $msg"
-                }
-            }
-            $nextPoll = [datetime]::UtcNow.AddSeconds($interval)
-        }
-
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 200
-    }
-
-    # ── Clear the device code modal ─────────────────────────────────────────
-    Update-HtmlUi -Message $S.AuthSigning -Step 3
-
-    if (-not $tokenResponse) {
-        return $false
-    }
-
-    Write-AuthLog "Device code auth succeeded -- token obtained."
-    return $true
-}
+# The core kiosk auth functions (Invoke-KioskEdgeAuth, Invoke-KioskDeviceCodeAuth,
+# Invoke-KioskM365Auth) are now in the Nova.Auth module.  This wrapper bridges
+# the module's callback parameters to Bootstrap.ps1's UI layer.
 
 function Invoke-M365Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via M365 (kiosk browser, Device Code fallback).
+    .SYNOPSIS  Authenticate the operator via the Nova.Auth module's kiosk auth flow.
     .DESCRIPTION
-        Downloads config/auth.json from the GitHub repository.  When
-        requireAuth is true and a clientId is configured, the function
-        first attempts interactive sign-in by navigating the existing
-        kiosk Edge browser to Azure AD (Authorization Code Flow with
-        PKCE).  If the kiosk UI is not active or fails, it falls back
-        to Device Code Flow, showing the code in an HTML modal.
-        Tenant restrictions are enforced at the Entra ID app registration
-        level -- only tenants explicitly allowed in the app's
-        "Supported account types" configuration can complete sign-in.
+        Delegates to Invoke-KioskM365Auth from the Nova.Auth module, passing
+        Bootstrap.ps1's UI functions as scriptblock callbacks.  Returns $true
+        when auth succeeded or was not required, $false on failure.
     .OUTPUTS
         $true  if authentication succeeded or was not required.
         $false if authentication failed.
     #>
 
-    # ── Fetch auth configuration from the repository ────────────────────────
-    $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/auth.json"
-    $authConfig    = $null
-    try {
-        $wc      = New-Object System.Net.WebClient
-        $rawJson = $wc.DownloadString($authConfigUrl)
-        $authConfig = $rawJson | ConvertFrom-Json
-    } catch {
-        Write-AuthLog "Could not fetch auth config: $_"
+    # ── Callback scriptblocks bridge the module to Bootstrap.ps1's UI ──────
+    $writeLog = {
+        param([string]$Message)
+        Write-AuthLog $Message
+    }
+    $writeStatus = {
+        param([string]$Message, [string]$Color)
+        Write-Status $Message $Color
+    }
+    $updateUi = {
+        param([hashtable]$Params)
+        if ($Params.AuthUrl) {
+            Update-HtmlUi -Message $S.AuthSigning -Step 3 -AuthUrl $Params.AuthUrl
+        } elseif ($Params.ShowDeviceCode) {
+            Update-HtmlUi -Message $S.AuthDeviceCodePrompt -Step 3 `
+                          -ShowDeviceCode -DeviceCode $Params.DeviceCode -DeviceCodeUrl $S.AuthUrl
+        } elseif ($Params.ClearAuth) {
+            Update-HtmlUi -Message $S.AuthSigning -Step 3
+        }
+    }
+    $checkCancelled = {
+        $script:_authCancelled
+    }
+    $doEvents = {
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    $playSound = {
+        param([int]$Freq, [int]$Duration)
+        Invoke-Sound $Freq $Duration
     }
 
-    # If auth is not configured or not required, skip silently.
-    if (-not $authConfig -or -not $authConfig.requireAuth) {
-        Write-Status $S.AuthSkipped 'Green'
-        return $true
+    $result = Invoke-KioskM365Auth `
+        -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch `
+        -HtmlUiActive ([bool]$script:HtmlUiActive) `
+        -WriteLog $writeLog -WriteStatus $writeStatus -UpdateUi $updateUi `
+        -CheckCancelled $checkCancelled -DoEvents $doEvents -PlaySound $playSound
+
+    # ── Expose results in Bootstrap.ps1 script scope ────────────────────────
+    if ($result.GraphAccessToken) {
+        $script:GraphAccessToken = $result.GraphAccessToken
+    }
+    if ($result.AuthConfig) {
+        $script:AuthConfig = $result.AuthConfig
     }
 
-    # Validate that the config has the minimum required fields.
-    if (-not $authConfig.clientId) {
-        Write-AuthLog "Auth config incomplete -- skipping authentication."
-        Write-Status $S.AuthSkipped 'Green'
-        return $true
-    }
-
-    $clientId = $authConfig.clientId
-
-    # ── Build scope string ──────────────────────────────────────────────────
-    # Always include openid profile; append Graph API scopes when configured
-    # (e.g. DeviceManagementServiceConfig.ReadWrite.All for Autopilot import).
-    # Delegated permissions -- no client secret required.
-    $scope = 'openid profile'
-    if ($authConfig.graphScopes) {
-        $trimmed = ($authConfig.graphScopes).Trim()
-        if ($trimmed) { $scope = "openid profile $trimmed" }
-    }
-
-    # Expose the auth config for post-auth integration (Autopilot import).
-    $script:AuthConfig = $authConfig
-
-    Write-Status $S.AuthSigning 'Cyan'
-    [System.Windows.Forms.Application]::DoEvents()
-
-    # ── Try kiosk Edge browser auth first ──────────────────────────────────
-    # Navigates the existing kiosk Edge to Azure AD for interactive sign-in.
-    # A localhost HTTP listener captures the OAuth redirect.  If the kiosk
-    # UI is not active or auth fails, fall back to Device Code Flow, which
-    # shows the one-time code in an HTML modal overlay.
-    $browserOk = $false
-    try {
-        $browserOk = Invoke-M365EdgeAuth -ClientId $clientId -Scope $scope
-    } catch {
-        Write-AuthLog "Kiosk auth failed, will fall back to Device Code Flow: $_"
-    }
-
-    if ($browserOk) {
-        Write-Status $S.AuthSuccess 'Green'
-        Invoke-Sound 1000 200
-        Start-Sleep -Seconds 1
-        return $true
-    }
-
-    # ── Fallback: Device Code Flow ──────────────────────────────────────────
-    Write-AuthLog "Falling back to Device Code Flow... (see $script:AuthLogPath for details)"
-    $deviceOk = $false
-    try {
-        $deviceOk = Invoke-M365DeviceCodeAuth -ClientId $clientId -Scope $scope
-    } catch {
-        Write-AuthLog "Device Code Flow failed: $_"
-    }
-
-    if ($deviceOk) {
-        Write-Status $S.AuthSuccess 'Green'
-        Invoke-Sound 1000 200
-        Start-Sleep -Seconds 1
-        return $true
-    }
-
-    Write-Status $S.AuthFailed 'Red'
-    Start-Sleep -Seconds 3
-    return $false
+    return $result.Authenticated
 }
 #endregion
 

@@ -9,6 +9,7 @@
         'Read-TaskSequence'
         'Test-StepCondition'
         'Invoke-DryRunValidation'
+        'Update-TaskSequenceFromConfig'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()

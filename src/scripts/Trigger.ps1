@@ -599,7 +599,8 @@ function Build-WinPE {
             # iex (irm ...) scenario -- download modules from GitHub
             $moduleNames = @('Nova.Logging', 'Nova.Platform', 'Nova.Network',
                              'Nova.Reporting', 'Nova.Disk', 'Nova.Imaging',
-                             'Nova.Drivers', 'Nova.Provisioning', 'Nova.TaskSequence')
+                             'Nova.Drivers', 'Nova.Provisioning', 'Nova.TaskSequence',
+                             'Nova.Auth')
             $moduleFiles = @('.psm1', '.psd1')
             $null = New-Item -Path $modulesDest -ItemType Directory -Force
             foreach ($mod in $moduleNames) {
