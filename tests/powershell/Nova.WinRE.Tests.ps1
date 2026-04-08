@@ -23,7 +23,7 @@ BeforeAll {
 
 Describe 'Get-WinREPath' {
     BeforeAll {
-        # $env:SystemRoot is null on non-Windows — mock Join-Path to avoid null binding
+        # $env:SystemRoot is null on non-Windows -- mock Join-Path to avoid null binding
         if (-not $env:SystemRoot) {
             $env:SystemRoot = '/tmp/fakewindows'
         }
@@ -47,6 +47,30 @@ Describe 'Get-WinREPath' {
         $result = Get-WinREPath
         $result | Should -BeNullOrEmpty
     }
+
+    It 'has CmdletBinding attribute' {
+        $cmd = Get-Command Get-WinREPath
+        $cmd.CmdletBinding | Should -BeTrue
+    }
+
+    It 'outputs string type' {
+        $cmd = Get-Command Get-WinREPath
+        $outputType = $cmd.OutputType
+        $outputType.Type | Should -Contain ([string])
+    }
+}
+
+Describe 'Get-WinREPathFromWindowsISO' {
+    It 'has CmdletBinding attribute' {
+        $cmd = Get-Command Get-WinREPathFromWindowsISO
+        $cmd.CmdletBinding | Should -BeTrue
+    }
+
+    It 'accepts Architecture and ISOUrl parameters' {
+        $cmd = Get-Command Get-WinREPathFromWindowsISO
+        $cmd.Parameters.Keys | Should -Contain 'Architecture'
+        $cmd.Parameters.Keys | Should -Contain 'ISOUrl'
+    }
 }
 
 Describe 'Remove-WinRERecoveryPackage' {
@@ -54,7 +78,7 @@ Describe 'Remove-WinRERecoveryPackage' {
         Mock -ModuleName Nova.WinRE Write-Step {}
         Mock -ModuleName Nova.WinRE Write-Warn {}
         Mock -ModuleName Nova.WinRE Get-WindowsPackage { throw 'DISM not available' }
-        # Should not throw — just warns
+        # Should not throw -- just warns
         { Remove-WinRERecoveryPackage -MountDir '/tmp/FakeMount' -Confirm:$false } |
             Should -Not -Throw
     }
@@ -75,5 +99,44 @@ Describe 'Remove-WinRERecoveryPackage' {
         { Remove-WinRERecoveryPackage -MountDir '/tmp/FakeMount' -Confirm:$false } |
             Should -Not -Throw
         Should -Invoke -ModuleName Nova.WinRE Remove-WindowsPackage -Times 1
+    }
+
+    It 'supports ShouldProcess (has SupportsShouldProcess attribute)' {
+        $cmd = Get-Command Remove-WinRERecoveryPackage
+        $cmd.CmdletBinding | Should -BeTrue
+        $meta = [System.Management.Automation.CommandMetadata]::new($cmd)
+        $meta.SupportsShouldProcess | Should -BeTrue
+    }
+
+    It 'skips packages that do not match removal prefixes' {
+        Mock -ModuleName Nova.WinRE Write-Step {}
+        Mock -ModuleName Nova.WinRE Write-Success {}
+        Mock -ModuleName Nova.WinRE Write-Warn {}
+        Mock -ModuleName Nova.WinRE Get-WindowsPackage {
+            @(
+                [pscustomobject]@{ PackageName = 'WinPE-WiFi-Package~10.0' }
+                [pscustomobject]@{ PackageName = 'WinPE-Scripting-Package~10.0' }
+            )
+        }
+        Mock -ModuleName Nova.WinRE Remove-WindowsPackage {}
+        { Remove-WinRERecoveryPackage -MountDir '/tmp/FakeMount' -Confirm:$false } |
+            Should -Not -Throw
+        Should -Invoke -ModuleName Nova.WinRE Remove-WindowsPackage -Times 0
+    }
+
+    It 'handles removal failure for individual packages without stopping' {
+        Mock -ModuleName Nova.WinRE Write-Step {}
+        Mock -ModuleName Nova.WinRE Write-Success {}
+        Mock -ModuleName Nova.WinRE Write-Warn {}
+        Mock -ModuleName Nova.WinRE Get-WindowsPackage {
+            @(
+                [pscustomobject]@{ PackageName = 'Microsoft-Windows-WinRE-RecoveryAgent~1.0' }
+                [pscustomobject]@{ PackageName = 'Microsoft-Windows-WinRE-BootRecovery~1.0' }
+            )
+        }
+        Mock -ModuleName Nova.WinRE Remove-WindowsPackage { throw 'Access denied' }
+        { Remove-WinRERecoveryPackage -MountDir '/tmp/FakeMount' -Confirm:$false } |
+            Should -Not -Throw
+        Should -Invoke -ModuleName Nova.WinRE Write-Warn -Times 2 -Exactly
     }
 }
