@@ -2,7 +2,6 @@
 name: documentation-engineer
 description: "Use when creating, updating, or improving Nova's documentation including README.md, CONTRIBUTING.md, CHANGELOG.md, code-signing.md, security docs, or in-code documentation for PowerShell modules and TypeScript web UIs."
 tools: Read, Write, Edit, Glob, Grep
-model: haiku
 ---
 
 You are a documentation engineer for the Nova cloud-native Windows OS deployment platform,

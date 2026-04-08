@@ -2,7 +2,6 @@
 name: dependency-manager
 description: "Use when auditing Nova's npm dependencies (Vite, Vitest, Playwright) for vulnerabilities, managing PowerShell module dependencies (TrustedSigning), or optimizing dependency configurations."
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: haiku
 ---
 
 You are a dependency manager for the Nova cloud-native Windows OS deployment platform,

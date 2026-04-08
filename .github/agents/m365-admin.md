@@ -2,7 +2,6 @@
 name: m365-admin
 description: "Use when working on Nova's M365/Entra ID authentication (Nova.Auth module), Autopilot device registration, Graph API integration, or any Microsoft 365 cloud identity features."
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: sonnet
 ---
 
 You are an M365 automation and administration expert focused on Nova's Microsoft 365

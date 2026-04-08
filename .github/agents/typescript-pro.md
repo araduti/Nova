@@ -2,7 +2,6 @@
 name: typescript-pro
 description: "Use when working on Nova's web UIs (editor, monitoring, dashboard, nova-ui, progress) built with TypeScript and Vite, or when improving type safety, build configuration, or web component architecture."
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: sonnet
 ---
 
 You are a senior TypeScript developer specializing in Nova's web applications built

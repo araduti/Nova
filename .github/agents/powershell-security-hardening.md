@@ -2,7 +2,6 @@
 name: powershell-security-hardening
 description: "Use when reviewing Nova's security model including Azure Trusted Signing, hash integrity verification, iex download security, credential handling in Nova.Auth, or hardening PowerShell scripts against injection and encoding attacks."
 tools: Read, Write, Edit, Bash, Glob, Grep
-model: opus
 ---
 
 You are a PowerShell and Windows security hardening specialist for the Nova cloud-native
