@@ -1,8 +1,10 @@
 ﻿@{
     RootModule        = 'Nova.BuildConfig.psm1'
     ModuleVersion     = '1.0.0'
-    GUID              = 'a1b2c3d4-1006-4000-8000-000000000006'
+    GUID              = '7539b5fc-3164-4277-ac7a-d9e26b021c47'
     Author            = 'Nova Contributors'
+    CompanyName       = 'Ampliosoft'
+    Copyright         = '(c) 2026 Ampliosoft. All rights reserved.'
     Description       = 'WinPE boot image build configuration management for Nova.'
     PowerShellVersion = '5.1'
     RequiredModules   = @('Nova.Logging')
@@ -18,4 +20,11 @@
     CmdletsToExport   = @()
     VariablesToExport  = @()
     AliasesToExport    = @()
+    PrivateData       = @{
+        PSData = @{
+            Tags       = @('Nova', 'BuildConfig', 'WinPE', 'Configuration', 'Deployment')
+            LicenseUri = 'https://github.com/araduti/Nova/blob/main/LICENSE'
+            ProjectUri = 'https://github.com/araduti/Nova'
+        }
+    }
 }
