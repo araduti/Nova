@@ -165,6 +165,17 @@ jobs:
           }
           Write-Host "No en-dash or em-dash characters found in module files."
 
+  validate-hashes:
+    name: Integrity — Validate Hashes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate config/hashes.json
+        shell: pwsh
+        run: .github/scripts/Validate-Hashes.ps1
+
   regenerate-hashes:
     name: Integrity — Regenerate Hashes
     # Only run on PRs or on main when signing is NOT available.
