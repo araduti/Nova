@@ -487,6 +487,13 @@ function Build-WinPE {
                 if (-not (Test-Path $fontDir)) {
                     $null = New-Item -ItemType Directory -Path $fontDir -Force
                 }
+                # The mounted WinPE image may have restrictive ACLs on
+                # Windows\Fonts.  Grant the current user full control so
+                # the copy succeeds without "Access is denied" errors.
+                try {
+                    $null = & takeown.exe /F $fontDir /A 2>&1
+                    $null = & icacls.exe $fontDir /grant "${env:USERNAME}:(OI)(CI)F" /T /Q 2>&1
+                } catch { }
                 Copy-Item -Path $mdl2Local -Destination $mdl2FontDest -Force -ErrorAction Stop
                 $fontInjected = $true
             } catch {
