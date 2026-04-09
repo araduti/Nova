@@ -95,6 +95,13 @@ $script:RamdiskDir   = Join-Path $WorkDir 'Boot'
 #   0 = x86 | 5 = arm | 9 = amd64 | 12 = arm64
 $script:WimArchIntMap = @{ 0 = 'x86'; 5 = 'arm'; 9 = 'amd64'; 12 = 'arm64' }
 
+# Bypass the WinINet HTTP cache for all raw.githubusercontent.com downloads.
+# Without this, Invoke-WebRequest / Invoke-RestMethod may serve stale content
+# from %LOCALAPPDATA%\Microsoft\Windows\INetCache for up to 300 s (the
+# Cache-Control max-age returned by GitHub).  This caused failures on devices
+# that had previously fetched unsigned script versions.
+$script:NoCacheHeaders = @{ 'Cache-Control' = 'no-cache' }
+
 # ── Import shared modules ──────────────────────────────────────────────────────
 $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\modules")) {
     "$PSScriptRoot\..\modules"
@@ -141,7 +148,7 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\module
             $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/modules/$mod/$mod$ext"
             $dest = Join-Path $modDir "$mod$ext"
             try {
-                Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+                Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop
             } catch {
                 $ProgressPreference = $prevProgressPref
                 if ($_vtOK) { Write-Host '' }   # newline so error is not appended to bar
@@ -595,7 +602,7 @@ function Build-WinPE {
                 $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/autopilot/$f"
                 $dest = Join-Path $customDest $f
                 try {
-                    Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+                    Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop
                     $staged++
                 } catch {
                     Write-Verbose "Autopilot file '$f' not available from GitHub: $_"
@@ -617,7 +624,7 @@ function Build-WinPE {
         $hashesUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
         $hashesJson = $null
         try {
-            $hashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
+            $hashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop -TimeoutSec 15
             Write-Success 'Integrity manifest loaded.'
         } catch {
             throw "Could not load integrity manifest from $hashesUrl -- aborting build: $_"
@@ -627,7 +634,7 @@ function Build-WinPE {
         $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/scripts/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
         Write-Step "Fetching Bootstrap.ps1 from $bootstrapUrl"
-        Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing
+        Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing -Headers $script:NoCacheHeaders
         Confirm-FileIntegrity -Path $bootstrapDest -RelativeName 'src/scripts/Bootstrap.ps1' -HashesJson $hashesJson
 
         # ── 5b. Pre-stage Nova.ps1 ──────────────────────────────────────
@@ -636,7 +643,7 @@ function Build-WinPE {
         $novaUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/scripts/Nova.ps1"
         $novaDest = Join-Path $paths.MountDir 'Windows\System32\Nova.ps1'
         Write-Step "Fetching Nova.ps1 from $novaUrl"
-        Invoke-WebRequest -Uri $novaUrl -OutFile $novaDest -UseBasicParsing
+        Invoke-WebRequest -Uri $novaUrl -OutFile $novaDest -UseBasicParsing -Headers $script:NoCacheHeaders
         Confirm-FileIntegrity -Path $novaDest -RelativeName 'src/scripts/Nova.ps1' -HashesJson $hashesJson
 
         # ── 5c. Stage shared PowerShell modules ────────────────────────────────
@@ -662,7 +669,7 @@ function Build-WinPE {
                     $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/modules/$mod/$mod$ext"
                     $dest = Join-Path $modDir "$mod$ext"
                     try {
-                        Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
+                        Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop
                     } catch {
                         Write-Warn "Failed to download module file $mod$ext -- $($_.Exception.Message)"
                     }
@@ -713,7 +720,7 @@ function Build-WinPE {
             $progressUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/web/progress/index.html"
             $progressFile = Join-Path $progressDest 'index.html'
             try {
-                Invoke-WebRequest -Uri $progressUrl -OutFile $progressFile -UseBasicParsing -ErrorAction Stop
+                Invoke-WebRequest -Uri $progressUrl -OutFile $progressFile -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop
                 Write-Success 'HTML Progress UI downloaded and embedded.'
             } catch {
                 Write-Warn "HTML Progress UI not available (non-fatal): $_"
@@ -735,7 +742,7 @@ function Build-WinPE {
             $uiUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/web/nova-ui/index.html"
             $uiFile = Join-Path $uiDest 'index.html'
             try {
-                Invoke-WebRequest -Uri $uiUrl -OutFile $uiFile -UseBasicParsing -ErrorAction Stop
+                Invoke-WebRequest -Uri $uiUrl -OutFile $uiFile -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop
                 Write-Success 'Nova-UI downloaded and embedded.'
             } catch {
                 Write-Warn "Nova-UI not available (non-fatal): $_"
