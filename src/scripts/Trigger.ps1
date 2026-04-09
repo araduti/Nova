@@ -1066,6 +1066,58 @@ try {
             $wimSize = if (Test-Path $paths.BootWim) {
                 '{0:N0} MB' -f ((Get-Item $paths.BootWim).Length / 1MB)
             } else { 'unknown' }
+
+            # Try to obtain a GitHub token via the Entra ID token exchange
+            # (same mechanism used by Nova.Reporting) so the user doesn't
+            # need to supply a PAT manually.
+            $entraGitHubToken = $null
+            if ($script:GraphAccessToken -and $authResult.AuthConfig) {
+                $proxyUrl = $null
+                if ($authResult.AuthConfig.PSObject.Properties['githubOAuthProxy']) {
+                    $proxyUrl = $authResult.AuthConfig.githubOAuthProxy
+                }
+                if ($proxyUrl) {
+                    try {
+                        $exchangeUrl = "$proxyUrl/api/token-exchange"
+                        $req = [System.Net.HttpWebRequest]::Create($exchangeUrl)
+                        $req.Method      = 'POST'
+                        $req.ContentType = 'application/json'
+                        $req.Headers.Add('Authorization', "Bearer $($script:GraphAccessToken)")
+                        $req.UserAgent       = 'Nova-Trigger'
+                        $req.Timeout         = 15000
+                        $req.ReadWriteTimeout = 15000
+
+                        $statusCode = 0
+                        $resp = $null
+                        try {
+                            $resp       = $req.GetResponse()
+                            $statusCode = [int]$resp.StatusCode
+                        } catch [System.Net.WebException] {
+                            $resp       = $_.Exception.Response
+                            $statusCode = if ($resp) { [int]$resp.StatusCode } else { 0 }
+                        }
+
+                        if ($statusCode -eq 200 -and $resp) {
+                            $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+                            try {
+                                $body = $reader.ReadToEnd()
+                            } finally {
+                                $reader.Close()
+                            }
+                            $result = $body | ConvertFrom-Json
+                            if ($result.token) {
+                                $entraGitHubToken = $result.token
+                                Write-Step "GitHub token obtained via Entra ID (user: $($result.user))"
+                            }
+                        }
+                        if ($resp) { $resp.Close() }
+                    } catch {
+                        Write-Verbose "Entra->GitHub token exchange failed: $_"
+                    }
+                }
+            }
+
+            $authMethod = if ($entraGitHubToken) { 'Entra ID (automatic)' } else { 'PAT required (repo scope)' }
             Write-Host ''
             Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
             Write-Host '  ║         Publish Boot Image                               ║' -ForegroundColor Cyan
@@ -1074,14 +1126,20 @@ try {
             Write-Host "    File   : $($paths.BootWim)" -ForegroundColor White
             Write-Host "    Size   : $wimSize" -ForegroundColor White
             Write-Host "    Target : $GitHubUser/$GitHubRepo (GitHub Releases)" -ForegroundColor White
-            Write-Host "    Scope  : PAT requires ${script:AnsiBold}repo${script:AnsiReset} scope" -ForegroundColor DarkGray
+            Write-Host "    Auth   : $authMethod" -ForegroundColor $(if ($entraGitHubToken) { 'Green' } else { 'DarkGray' })
             Write-Host ''
             $uploadChoice = Read-Host "  ${script:AnsiCyan}›${script:AnsiReset} Upload this boot image for future use? (y/N)"
             if ($uploadChoice -match '^[Yy]') {
-                $tokenSecure = Read-Host '  GitHub Personal Access Token' -AsSecureString
-                $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($tokenSecure)
+                $tokenPlain = $null
+                $bstr       = $null
                 try {
-                    $tokenPlain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+                    if ($entraGitHubToken) {
+                        $tokenPlain = $entraGitHubToken
+                    } else {
+                        $tokenSecure = Read-Host '  GitHub Personal Access Token' -AsSecureString
+                        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($tokenSecure)
+                        $tokenPlain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+                    }
                     $sdiPath = Join-Path $paths.MediaDir 'boot\boot.sdi'
                     Publish-BootImage `
                         -GitHubUser  $GitHubUser `
@@ -1094,7 +1152,8 @@ try {
                     Write-Warn "Upload failed (non-fatal): $_"
                 } finally {
                     $tokenPlain = $null
-                    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+                    $entraGitHubToken = $null
+                    if ($bstr) { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
                 }
             }
         }

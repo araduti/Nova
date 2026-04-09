@@ -45,8 +45,9 @@ function Publish-BootImage {
     .SYNOPSIS  Uploads the boot image to a GitHub Release.
     .DESCRIPTION
         Creates (or updates) a GitHub Release tagged 'boot-image' and uploads
-        boot.wim and boot.sdi as release assets.  Requires a Personal Access
-        Token (PAT) with 'repo' scope.
+        boot.wim and boot.sdi as release assets.  Accepts either a GitHub App
+        installation token (obtained via the Entra ID token exchange) or a
+        Personal Access Token (PAT) with 'repo' scope.
     #>
     [OutputType([void])]
     [CmdletBinding(SupportsShouldProcess)]
