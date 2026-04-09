@@ -27,7 +27,7 @@ Test files under `tests/` are excluded from signing.
 ## When Signing Occurs
 
 - **Release workflow** (`release.yml`): All scripts are signed after tests pass. Signed scripts are packaged into a `nova-signed-scripts.zip` artifact and attached to the GitHub Release. Hashes in `config/hashes.json` are regenerated to reflect the signed file contents.
-- **CI workflow** (`ci.yml`): On pushes to `main` (not on pull requests), only scripts that changed in the push are signed (incremental signing). On the initial push or when the base commit is unavailable, all scripts are signed. Signed artifacts are uploaded with a 7-day retention period.
+- **CI workflow** (`ci.yml`): On pushes to `main` (not on pull requests), all scripts are signed unconditionally so that hashes are always in sync with the signed files. Signed artifacts are uploaded with a 7-day retention period.
 
 ## Azure Setup
 
