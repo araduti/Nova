@@ -86,7 +86,7 @@ jobs:
           $trackedFiles = @(
             (Get-ChildItem -Path 'src/scripts'          -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
             (Get-ChildItem -Path 'resources/autopilot'   -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
-            (Get-ChildItem -Path 'src/web'               -Filter 'index.html' -Recurse -File | ForEach-Object { $_.FullName })
+            (Get-ChildItem -Path 'src/modules'           -Filter '*.psm1' -Recurse -File | ForEach-Object { $_.FullName })
           )
           $repoRoot = (Get-Location).Path + '/'
           $newFiles = [ordered]@{}
