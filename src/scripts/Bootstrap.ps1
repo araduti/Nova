@@ -184,17 +184,15 @@ function Import-LocaleJson {
     }
 }
 
-# Pre-load locale files.  English is the required fallback; if it cannot be
-# loaded the script embeds a minimal inline default so the UI is never blank.
+# Use inline EN strings at boot.  Locale files are downloaded later once
+# internet connectivity is confirmed (inside ProceedToEngine), avoiding
+# blocking WebClient calls before the network stack is initialised.
+# Without this deferral the three DownloadString calls block the script
+# for up to several minutes (waiting for DNS/TCP timeouts on a NIC with
+# no connectivity), which prevents the HTTP listener, F8 hotkey, and init
+# state machine from starting -- hanging the UI and disabling F8.
 $Strings = @{}
-foreach ($lc in @('EN', 'FR', 'ES')) {
-    $loaded = Import-LocaleJson -LangCode $lc
-    if ($loaded) { $Strings[$lc] = $loaded }
-}
-
-if (-not $Strings.ContainsKey('EN')) {
-    # Minimal inline fallback -- only used when the network fetch fails for EN.
-    $Strings['EN'] = @{
+$Strings['EN'] = @{
         Header="N O V A"; Subtitle="Cloud Imaging Engine";
         Step1="Network"; Step2="Connect"; Step3="Sign in"; Step4="Deploy";
         StatusInit="Initialising network stack...";
@@ -226,7 +224,6 @@ if (-not $Strings.ContainsKey('EN')) {
         AuthEdgePrompt="Microsoft Edge has opened for sign-in.`nComplete the sign-in in the browser window, then this dialog will close automatically.";
         AuthDeviceCodePrompt="To sign in, use a web browser on another device`nand enter this code:"
     }
-}
 
 $script:S = $Strings[$script:Lang]
 #endregion
@@ -951,6 +948,15 @@ function ProceedToEngine {
     }
 
     Update-Step 4
+
+    # ── Download locale files now that internet is available ─────────────
+    # Deferred from startup to avoid blocking WebClient calls before the
+    # network stack is initialised.
+    foreach ($lc in @('EN', 'FR', 'ES')) {
+        $loaded = Import-LocaleJson -LangCode $lc
+        if ($loaded) { $Strings[$lc] = $loaded }
+    }
+    $script:S = $Strings[$script:Lang]
 
     # Unified configuration dialog: language + all Windows options in one step.
     $config = Show-ConfigurationMenu

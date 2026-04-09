@@ -817,7 +817,11 @@ if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\Nova-UI\index.html" (
         --guest ^
         --disable-save-password-bubble ^
         --allow-file-access-from-files ^
-        --disable-popup-blocking
+        --disable-popup-blocking ^
+        --disable-renderer-backgrounding ^
+        --disable-background-timer-throttling ^
+        --disable-backgrounding-occluded-windows ^
+        --disable-hang-monitor
 )
 
 REM Give Edge time to render the initial UI before PowerShell starts.
