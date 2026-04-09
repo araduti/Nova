@@ -730,8 +730,9 @@ function Build-WinPE {
 
         # ── 5f. Verify module integrity (iex scenario) ────────────────────────
         if (-not ($modulesSrc -and (Test-Path $modulesSrc))) {
+            $verifyExts = @('.psm1', '.psd1')
             foreach ($mod in $moduleNames) {
-                foreach ($ext in $moduleFiles) {
+                foreach ($ext in $verifyExts) {
                     $modFile = Join-Path $modulesDest "$mod\$mod$ext"
                     $relName = "src/modules/$mod/$mod$ext"
                     if (Test-Path $modFile) {

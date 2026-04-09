@@ -110,6 +110,8 @@ jobs:
             echo "No signing changes to commit."
           else
             git commit -m "chore: commit signed scripts and updated hashes"
+            # Save the signing commit SHA before any rebase attempts
+            signing_sha=$(git rev-parse HEAD)
             max_attempts=3
             for attempt in $(seq 1 $max_attempts); do
               git fetch origin "${{ github.ref_name }}"
@@ -121,6 +123,8 @@ jobs:
                   exit 1
                 fi
                 sleep $((attempt * 5))
+                # Restore the original signing commit for next attempt
+                git checkout "$signing_sha" 2>/dev/null || true
                 continue
               }
               if git push origin "HEAD:${{ github.ref }}" 2>&1; then
@@ -133,8 +137,8 @@ jobs:
                   exit 1
                 fi
                 sleep $((attempt * 5))
-                git reset --hard HEAD~1 2>/dev/null || true
-                git cherry-pick ORIG_HEAD 2>/dev/null || true
+                # Restore the original signing commit for next attempt
+                git checkout "$signing_sha" 2>/dev/null || true
               fi
             done
           fi
