@@ -88,10 +88,11 @@ jobs:
             (Get-ChildItem -Path 'resources/autopilot'   -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
             (Get-ChildItem -Path 'src/modules'           -Filter '*.psm1' -Recurse -File | ForEach-Object { $_.FullName })
           )
-          $repoRoot = (Get-Location).Path + '/'
+          # Normalize to forward slashes so the prefix strip works on Windows and Linux
+          $repoRoot = ((Get-Location).Path -replace '\\', '/').TrimEnd('/') + '/'
           $newFiles = [ordered]@{}
           foreach ($fullPath in ($trackedFiles | Sort-Object)) {
-            $relative = $fullPath.Replace($repoRoot, '').Replace('\', '/')
+            $relative = ($fullPath -replace '\\', '/').Replace($repoRoot, '')
             $hash = (Get-FileHash -Path $fullPath -Algorithm SHA256).Hash
             $newFiles[$relative] = $hash
             Write-Host "Hashed: $relative"

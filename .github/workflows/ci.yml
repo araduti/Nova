@@ -176,10 +176,11 @@ jobs:
             (Get-ChildItem -Path 'resources/autopilot'   -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
             (Get-ChildItem -Path 'src/modules'           -Filter '*.psm1' -Recurse -File | ForEach-Object { $_.FullName })
           )
-          $repoRoot = (Get-Location).Path + '/'
+          # Normalize to forward slashes so the prefix strip works on Windows and Linux
+          $repoRoot = ((Get-Location).Path -replace '\\', '/').TrimEnd('/') + '/'
           $newFiles = [ordered]@{}
           foreach ($fullPath in ($trackedFiles | Sort-Object)) {
-            $relative = $fullPath.Replace($repoRoot, '').Replace('\', '/')
+            $relative = ($fullPath -replace '\\', '/').Replace($repoRoot, '')
             $hash = (Get-FileHash -Path $fullPath -Algorithm SHA256).Hash
             $newFiles[$relative] = $hash
             Write-Host "Hashed: $relative"
@@ -313,22 +314,10 @@ jobs:
           TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT_NAME }}
           TRUSTED_SIGNING_PROFILE: ${{ secrets.TRUSTED_SIGNING_CERTIFICATE_PROFILE_NAME }}
         run: |
-          $allScripts = Get-ChildItem -Path . -Include '*.ps1','*.psm1','*.psd1' -Recurse |
+          $scripts = Get-ChildItem -Path . -Include '*.ps1','*.psm1','*.psd1' -Recurse |
             Where-Object { $_.FullName -notmatch '[/\\]tests[/\\]' }
 
-          # Only sign scripts that don't already have a valid signature
-          # (unsigned, hash mismatch from content change, or other invalid status)
-          $scripts = @($allScripts | Where-Object {
-            $sig = Get-AuthenticodeSignature -FilePath $_.FullName
-            $sig.Status -ne 'Valid'
-          })
-
-          if ($scripts.Count -eq 0) {
-            Write-Host "All $($allScripts.Count) production scripts already have valid signatures -- nothing to sign."
-            exit 0
-          }
-
-          Write-Host "Signing $($scripts.Count) of $($allScripts.Count) production script(s) (skipping $($allScripts.Count - $scripts.Count) already signed)..."
+          Write-Host "Signing all $($scripts.Count) production script(s)..."
           foreach ($file in $scripts) {
             Write-Host "Signing: $($file.FullName)"
             Invoke-TrustedSigning `
@@ -358,10 +347,11 @@ jobs:
             (Get-ChildItem -Path 'resources/autopilot'   -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
             (Get-ChildItem -Path 'src/modules'           -Filter '*.psm1' -Recurse -File | ForEach-Object { $_.FullName })
           )
-          $repoRoot = (Get-Location).Path + '/'
+          # Normalize to forward slashes so the prefix strip works on Windows and Linux
+          $repoRoot = ((Get-Location).Path -replace '\\', '/').TrimEnd('/') + '/'
           $newFiles = [ordered]@{}
           foreach ($fullPath in ($trackedFiles | Sort-Object)) {
-            $relative = $fullPath.Replace($repoRoot, '').Replace('\', '/')
+            $relative = ($fullPath -replace '\\', '/').Replace($repoRoot, '')
             $hash = (Get-FileHash -Path $fullPath -Algorithm SHA256).Hash
             $newFiles[$relative] = $hash
             Write-Host "Hashed: $relative"
