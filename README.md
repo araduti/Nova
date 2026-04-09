@@ -113,11 +113,11 @@ Nova operates in three stages. Each stage hands off to the next automatically.
 | 🚫 | **Zero media** | No USB, ISO, or PXE server needed |
 | 📡 | **WiFi out-of-the-box** | WinRE ships with Intel, Realtek, MediaTek & Qualcomm drivers |
 | ⚡ | **Instant updates** | Edit defaults on GitHub — active immediately |
-| 🔐 | **M365 auth gate** | Optional Entra ID sign-in with PKCE; tenant restrictions server-side |
+| 🔐 | **M365 auth gate** | Optional Entra ID sign-in (Auth Code + PKCE primary, Device Code fallback); tenant restrictions server-side |
 | 🔧 | **Autopilot ready** | Registers devices and embeds provisioning JSON |
 | 🏢 | **Intune / ConfigMgr** | First-boot ccmsetup staging built in |
 | 🖥️ | **Bare-metal or in-place** | Works on new hardware or existing Windows |
-| 🌐 | **Multi-language** | Localized UI strings (English, Spanish, French) |
+| 🌐 | **Multi-language** | Localized UI strings (English, Spanish, French, German, Japanese, Portuguese, Chinese) |
 | 📋 | **Task sequence editor** | Browser-based drag-and-drop step builder |
 | 📊 | **Real-time progress UI** | HTML dashboard in Edge kiosk mode during imaging |
 
@@ -129,7 +129,8 @@ Nova operates in three stages. Each stage hands off to the next automatically.
 Nova/
 ├── src/scripts/Trigger.ps1   # Stage 1 — entry point, WinPE builder
 ├── src/scripts/Bootstrap.ps1 # Stage 2 — network, auth, engine launcher
-├── src/scripts/Nova.ps1      # Stage 3 — full imaging engine
+├── src/scripts/Nova.ps1      # Stage 3 — task-sequence-driven imaging engine
+├── src/modules/              # 17 shared PowerShell modules (Nova.*)
 ├── src/web/nova-ui/          # Real-time progress UI (HTML/CSS/JS, WinPE embedded)
 ├── src/web/editor/           # Task sequence editor (GitHub Pages SPA)
 │   ├── index.html
@@ -138,21 +139,24 @@ Nova/
 │   └── lib/                 # MSAL.js (vendored)
 ├── src/web/monitoring/       # Live deployment monitoring dashboard
 │   └── index.html
+├── src/web/dashboard/        # Root dashboard UI (CSS/JS)
+├── src/web/progress/         # Pre-boot progress UI (WinPE embedded)
 ├── config/
 │   ├── auth.json            # OAuth / M365 configuration
 │   ├── alerts.json          # Notification settings (Teams, Slack, email)
-│   └── locale/              # UI localization (en, es, fr)
+│   ├── hashes.json          # SHA-256 integrity manifest (CI-generated)
+│   └── locale/              # UI localization (de, en, es, fr, ja, pt, zh)
 ├── resources/task-sequence/
 │   └── default.json         # Default deployment task sequence
 ├── resources/autopilot/      # Autopilot device import utilities
-├── resources/drivers/        # Bundled NetKVM drivers (Hyper-V / KVM)
 ├── resources/unattend/       # Default unattend.xml template
-├── src/web/progress/         # Pre-boot progress UI (WinPE embedded)
+├── resources/products.xml    # Microsoft Windows ESD catalog
 ├── oauth-proxy/             # Cloudflare Worker — GitHub OAuth CORS proxy
 │   ├── src/                 # TypeScript source (modular)
 │   │   ├── index.ts         # Worker entry point
 │   │   ├── cors.ts          # CORS header builder
 │   │   ├── crypto.ts        # PKCS key handling, JWT creation
+│   │   ├── rate-limit.ts    # Rate limiting
 │   │   ├── types.ts         # TypeScript interfaces
 │   │   └── handlers/        # Route handlers
 │   │       ├── device-flow.ts
@@ -163,9 +167,8 @@ Nova/
 │   └── wrangler.toml
 ├── vite.config.js           # Vite build config (Editor, Monitoring, Dashboard)
 ├── package.json             # Root project (Vite build system)
-├── products.xml             # Microsoft Windows ESD catalog
-├── Deployments/             # Active + historical deployment data
-├── docs/                    # Improvement proposals
+├── deployments/             # Active + historical deployment data
+├── docs/                    # Documentation (CONTRIBUTING, SECURITY, CHANGELOG, etc.)
 └── index.html               # Root dashboard landing page
 ```
 
@@ -201,10 +204,10 @@ Nova/
 | `GitHubUser` | `araduti` | GitHub username or organization |
 | `GitHubRepo` | `Nova` | Repository name |
 | `GitHubBranch` | `main` | Branch to fetch scripts from |
-| `WinPEWorkDir` | `C:\Nova\WinPE` | Working directory for the WinPE build |
-| `RamdiskVHD` | `C:\Nova\boot.vhd` | Path for BCD ramdisk files |
-| `ADKInstallPath` | `C:\Program Files (x86)\Windows Kits\10` | ADK installation path |
+| `WorkDir` | `C:\Nova` | Root working directory for all artefacts |
+| `WindowsISOUrl` | _(empty)_ | Path or URL to a Windows ISO (used when WinRE arch/version mismatch requires fresh extraction) |
 | `NoReboot` | `$false` | Skip automatic reboot (useful for testing) |
+| `AcceptDefaults` | `$false` | Skip all interactive menus and use defaults (for CI/scripted use) |
 
 </details>
 
@@ -216,30 +219,27 @@ Nova/
 | `GitHubUser` | `araduti` | GitHub username |
 | `GitHubRepo` | `Nova` | Repository name |
 | `GitHubBranch` | `main` | Branch to fetch from |
-| `MaxWaitSeconds` | `600` | Maximum seconds to wait for internet |
-| `RetryInterval` | `5` | Seconds between connectivity checks |
+| `MaxWaitSeconds` | `300` | Maximum seconds to wait for internet |
 
 </details>
 
 <details>
 <summary><strong>Nova.ps1</strong> — Imaging Engine</summary>
 
+Nova.ps1 is task-sequence-driven. Individual imaging options (Windows image URL, drivers, Autopilot, unattend, etc.) are configured as steps in the task sequence JSON, not as script parameters.
+
 | Parameter | Default | Description |
 |-----------|---------|-------------|
+| `GitHubUser` | `araduti` | GitHub username |
+| `GitHubRepo` | `Nova` | Repository name |
+| `GitHubBranch` | `main` | Branch to fetch from |
 | `TargetDiskNumber` | `0` | Disk to image (disk index) |
 | `FirmwareType` | `UEFI` | `UEFI` or `BIOS` |
-| `WindowsImageUrl` | _(empty)_ | Direct URL to `.wim` or `.esd`; leave empty for the Microsoft ESD catalog |
-| `WindowsEdition` | `Windows 11 Pro` | Edition name to apply |
-| `WindowsLanguage` | `en-us` | Language for ESD catalog lookup |
-| `DriverPath` | _(empty)_ | Folder containing driver `.inf` files |
-| `AutopilotJsonUrl` | _(empty)_ | URL to `AutopilotConfigurationFile.json` |
-| `AutopilotJsonPath` | _(empty)_ | Local WinPE path to Autopilot JSON |
-| `CCMSetupUrl` | _(empty)_ | URL to `ccmsetup.exe` |
-| `UnattendUrl` | _(empty)_ | URL to custom `unattend.xml` |
-| `UnattendPath` | _(empty)_ | Local WinPE path to `unattend.xml` |
-| `UnattendContent` | _(empty)_ | Inline XML content (from the editor) |
-| `PostScriptUrls` | `@()` | URLs to PowerShell scripts for first-boot execution |
+| `ScratchDir` | `X:\Nova` | Scratch / temp directory inside WinPE |
 | `OSDrive` | `C` | Drive letter to assign to the OS partition |
+| `StatusFile` | _(empty)_ | IPC status file for Bootstrap.ps1 progress UI |
+| `TaskSequencePath` | _(required)_ | Path to the task sequence JSON file |
+| `DryRun` | `$false` | Validate task sequence without destructive operations |
 
 </details>
 
@@ -310,7 +310,7 @@ Nova includes a browser-based **Task Sequence Editor** for visually creating dep
 ### Fork-and-own
 
 1. **Fork** this repository
-2. Edit `src/scripts/Nova.ps1` defaults (image URL, Autopilot JSON, drivers, etc.)
+2. Edit `resources/task-sequence/default.json` to configure your deployment steps (image URL, Autopilot, drivers, etc.) or use the [Task Sequence Editor](#task-sequence-editor) to create your own
 3. Update `config/auth.json` with your own app registrations
 4. Run the trigger pointing at your fork:
 
@@ -318,22 +318,7 @@ Nova includes a browser-based **Task Sequence Editor** for visually creating dep
 irm https://raw.githubusercontent.com/YOURUSER/Nova/main/src/scripts/Trigger.ps1 | iex
 ```
 
-Changes to `Nova.ps1` take effect **immediately** — no rebuild cycle.
-
-### Example: custom image + Autopilot
-
-```powershell
-$params = @{
-    WindowsImageUrl  = 'https://mycdn.example.com/custom-win11.wim'
-    WindowsEdition   = 'Windows 11 Enterprise'
-    AutopilotJsonUrl = 'https://mycdn.example.com/autopilot.json'
-    UnattendUrl      = 'https://mycdn.example.com/unattend.xml'
-    PostScriptUrls   = @(
-        'https://mycdn.example.com/Install-Apps.ps1',
-        'https://mycdn.example.com/Set-Branding.ps1'
-    )
-}
-```
+Changes to scripts fetched at runtime (Nova.ps1, task sequences, config) take effect **immediately** — no rebuild cycle. Note that Bootstrap.ps1 is embedded in the boot image, so changes to it require a rebuild.
 
 ---
 
@@ -370,9 +355,11 @@ npm run deploy     # deploy to Cloudflare Workers
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `ci.yml` | Push/PR to `main` | TypeScript lint, unit tests, PSScriptAnalyzer, web build |
+| `ci.yml` | Push/PR to `main` | TypeScript lint, unit tests, PSScriptAnalyzer, web build, hash regeneration, code signing |
 | `codeql.yml` | Push/PR to `main` + weekly | CodeQL security scanning (JavaScript/TypeScript) |
 | `pages.yml` | Push to `main` (web files) | Build and deploy web UIs to GitHub Pages |
+| `release.yml` | Published release | Code signing, hash regeneration, release artifacts |
+| `sign.yml` | Manual dispatch | On-demand code signing for all scripts |
 
 ---
 
@@ -391,19 +378,19 @@ Nova follows modern security best practices for public-client OAuth 2.0 applicat
 | **No secrets in code** | Public client IDs only; no client secrets committed |
 | **GitHub PAT** | Collected via `SecureString`; memory zeroed after use |
 
-For a detailed analysis of all authentication flows and security findings, see [**SECURITY_ANALYSIS.md**](SECURITY_ANALYSIS.md).
+For a detailed analysis of all authentication flows and security findings, see [**SECURITY_ANALYSIS.md**](docs/SECURITY_ANALYSIS.md).
 
-For a comprehensive review of the codebase covering architecture, performance, and improvement opportunities, see [**CODEBASE_ANALYSIS.md**](CODEBASE_ANALYSIS.md).
+For a comprehensive review of the codebase covering architecture, performance, and improvement opportunities, see [**CODEBASE_ANALYSIS.md**](docs/CODEBASE_ANALYSIS.md).
 
 ### Responsible disclosure
 
-If you discover a security vulnerability, please report it privately. See [**SECURITY.md**](SECURITY.md) for our full security policy.
+If you discover a security vulnerability, please report it privately. See [**SECURITY.md**](docs/SECURITY.md) for our full security policy.
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please read [**CONTRIBUTING.md**](CONTRIBUTING.md) before submitting a pull request.
+Contributions are welcome! Please read [**CONTRIBUTING.md**](docs/CONTRIBUTING.md) before submitting a pull request.
 
 ---
 
