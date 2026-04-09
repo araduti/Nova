@@ -271,6 +271,9 @@ jobs:
     needs: [check-signing, lint-powershell, test-powershell, validate-modules]
     runs-on: windows-latest
     timeout-minutes: 15
+    concurrency:
+      group: sign-main
+      cancel-in-progress: false
     permissions:
       id-token: write
       contents: write
@@ -347,11 +350,32 @@ jobs:
             echo "No signing changes to commit."
           else
             git commit -m "chore: commit signed scripts and updated hashes"
-            git fetch origin main
-            git rebase -X theirs origin/main || {
-              echo "::warning::Rebase failed — signed scripts must be committed manually."
-              git rebase --abort 2>/dev/null || true
-              exit 0
-            }
-            push_output=$(git push origin HEAD:refs/heads/main 2>&1) || echo "::warning::Push failed — signed scripts must be committed manually. Error: $push_output"
+            max_attempts=3
+            for attempt in $(seq 1 $max_attempts); do
+              git fetch origin main
+              git rebase -X theirs origin/main || {
+                echo "::warning::Rebase failed on attempt $attempt/$max_attempts"
+                git rebase --abort 2>/dev/null || true
+                if [ "$attempt" -eq "$max_attempts" ]; then
+                  echo "::error::All $max_attempts rebase attempts failed -- signed scripts must be committed manually."
+                  exit 1
+                fi
+                sleep $((attempt * 5))
+                continue
+              }
+              if git push origin HEAD:refs/heads/main 2>&1; then
+                echo "Push succeeded on attempt $attempt."
+                break
+              else
+                echo "::warning::Push failed on attempt $attempt/$max_attempts"
+                if [ "$attempt" -eq "$max_attempts" ]; then
+                  echo "::error::All $max_attempts push attempts failed -- signed scripts must be committed manually."
+                  exit 1
+                fi
+                sleep $((attempt * 5))
+                # Reset to pre-rebase state for next attempt
+                git reset --hard HEAD~1 2>/dev/null || true
+                git cherry-pick ORIG_HEAD 2>/dev/null || true
+              fi
+            done
           fi

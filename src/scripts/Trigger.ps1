@@ -194,6 +194,28 @@ Import-Module "$script:ModulesRoot\Nova.BCD"         -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.CloudImage"  -Force -ErrorAction Stop
 # Trigger.ps1 uses the default prefixes (  [>], [+], [!], [X])
 
+# ── Verify downloaded modules against integrity manifest (iex scenario) ────
+# When modules were downloaded from GitHub (not from a local repo checkout),
+# verify each file's SHA256 against hashes.json to detect CDN inconsistencies.
+if (-not $PSScriptRoot) {
+    $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
+    try {
+        $_iexHashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop -TimeoutSec 15
+        foreach ($mod in $moduleNames) {
+            foreach ($ext in $moduleExts) {
+                $modFile = Join-Path $script:ModulesRoot "$mod\$mod$ext"
+                $relName = "src/modules/$mod/$mod$ext"
+                if (Test-Path $modFile) {
+                    Confirm-FileIntegrity -Path $modFile -RelativeName $relName `
+                        -HashesJson $_iexHashesJson -RetryOnMismatch -NoCacheHeaders $script:NoCacheHeaders
+                }
+            }
+        }
+    } catch {
+        Write-Host "  WARNING: Could not verify module integrity: $_" -ForegroundColor Yellow
+    }
+}
+
 # Confirm-FileIntegrity is now provided by the Nova.Integrity module.
 # Get-WinPEArchitecture is now provided by the Nova.Platform module.
 
@@ -634,26 +656,16 @@ function Build-WinPE {
             Write-Warn 'Autopilot directory found but no tool files present.'
         }
 
-        # ── 5. Load integrity manifest ─────────────────────────────────────────
-        # NOTE: The manifest comes from the same repo/branch as the scripts.
-        # This detects corruption and CDN inconsistencies but does not protect
-        # against a compromised repository.  For tamper protection, the manifest
-        # would need to be cryptographically signed or hosted separately.
-        $hashesUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
-        $hashesJson = $null
-        try {
-            $hashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop -TimeoutSec 15
-            Write-Success 'Integrity manifest loaded.'
-        } catch {
-            throw "Could not load integrity manifest from $hashesUrl -- aborting build: $_"
-        }
+        # ── 5. Download scripts and modules, then verify integrity ────────────
+        # Download ALL files first, then load the manifest last to minimise the
+        # window for CDN split-brain (file vs manifest out of sync).  If any
+        # hash check fails, retry once after a short delay to handle propagation.
 
         # ── 5a. Embed Bootstrap.ps1 ───────────────────────────────────────────
         $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/scripts/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
         Write-Step "Fetching Bootstrap.ps1 from $bootstrapUrl"
         Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing -Headers $script:NoCacheHeaders
-        Confirm-FileIntegrity -Path $bootstrapDest -RelativeName 'src/scripts/Bootstrap.ps1' -HashesJson $hashesJson
 
         # ── 5b. Pre-stage Nova.ps1 ──────────────────────────────────────
         # Embedding Nova.ps1 eliminates the internet dependency at boot time.
@@ -662,7 +674,6 @@ function Build-WinPE {
         $novaDest = Join-Path $paths.MountDir 'Windows\System32\Nova.ps1'
         Write-Step "Fetching Nova.ps1 from $novaUrl"
         Invoke-WebRequest -Uri $novaUrl -OutFile $novaDest -UseBasicParsing -Headers $script:NoCacheHeaders
-        Confirm-FileIntegrity -Path $novaDest -RelativeName 'src/scripts/Nova.ps1' -HashesJson $hashesJson
 
         # ── 5c. Stage shared PowerShell modules ────────────────────────────────
         # Copy the src/modules/ directory so that Bootstrap.ps1 and Nova.ps1 can
@@ -694,6 +705,41 @@ function Build-WinPE {
                 }
             }
             Write-Success "Staged modules directory from GitHub"
+        }
+
+        # ── 5d. Load integrity manifest AFTER all downloads ───────────────────
+        # NOTE: The manifest comes from the same repo/branch as the scripts.
+        # Loading it after all downloads minimises the CDN propagation window.
+        # This detects corruption and CDN inconsistencies but does not protect
+        # against a compromised repository.  For tamper protection, the manifest
+        # would need to be cryptographically signed or hosted separately.
+        $hashesUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
+        $hashesJson = $null
+        try {
+            $hashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop -TimeoutSec 15
+            Write-Success 'Integrity manifest loaded.'
+        } catch {
+            throw "Could not load integrity manifest from $hashesUrl -- aborting build: $_"
+        }
+
+        # ── 5e. Verify script integrity (with CDN retry) ─────────────────────
+        Confirm-FileIntegrity -Path $bootstrapDest -RelativeName 'src/scripts/Bootstrap.ps1' `
+            -HashesJson $hashesJson -RetryOnMismatch -NoCacheHeaders $script:NoCacheHeaders
+        Confirm-FileIntegrity -Path $novaDest -RelativeName 'src/scripts/Nova.ps1' `
+            -HashesJson $hashesJson -RetryOnMismatch -NoCacheHeaders $script:NoCacheHeaders
+
+        # ── 5f. Verify module integrity (iex scenario) ────────────────────────
+        if (-not ($modulesSrc -and (Test-Path $modulesSrc))) {
+            foreach ($mod in $moduleNames) {
+                foreach ($ext in $moduleFiles) {
+                    $modFile = Join-Path $modulesDest "$mod\$mod$ext"
+                    $relName = "src/modules/$mod/$mod$ext"
+                    if (Test-Path $modFile) {
+                        Confirm-FileIntegrity -Path $modFile -RelativeName $relName `
+                            -HashesJson $hashesJson -RetryOnMismatch -NoCacheHeaders $script:NoCacheHeaders
+                    }
+                }
+            }
         }
 
         # ── 5d. Generate default background image ──────────────────────────────

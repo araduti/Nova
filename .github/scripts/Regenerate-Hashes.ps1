@@ -69,7 +69,7 @@ if (-not $Force) {
 
 $manifest.files = [PSCustomObject]$newFiles
 $manifest.generated = (Get-Date -Format 'yyyy-MM-dd')
-$manifest | ConvertTo-Json -Depth 5 | Set-Content $hashesPath -NoNewline
+$manifest | ConvertTo-Json -Depth 5 | Set-Content $hashesPath -NoNewline -Encoding utf8NoBOM
 Write-Host "`nHashes updated in config/hashes.json."
 
 # SIG # Begin signature block
