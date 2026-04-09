@@ -132,6 +132,8 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\module
         Write-Host '  Downloading Nova modules...'
     }
 
+    $prevProgressPref = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
     foreach ($mod in $moduleNames) {
         $modDir = Join-Path $tmpModRoot $mod
         $null = New-Item -Path $modDir -ItemType Directory -Force
@@ -141,6 +143,7 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\module
             try {
                 Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -ErrorAction Stop
             } catch {
+                $ProgressPreference = $prevProgressPref
                 if ($_vtOK) { Write-Host '' }   # newline so error is not appended to bar
                 throw "Failed to download module $mod$ext from $url -- $($_.Exception.Message)"
             }
@@ -155,6 +158,8 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\module
             Write-Host "`r$_line" -NoNewline
         }
     }
+
+    $ProgressPreference = $prevProgressPref
 
     if ($_vtOK) {
         # Final complete bar
