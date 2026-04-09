@@ -3,6 +3,10 @@ name: Sign Scripts
 on:
   workflow_dispatch:
 
+concurrency:
+  group: sign-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -10,6 +14,7 @@ jobs:
   check-signing:
     name: Check Signing Availability
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       available: ${{ steps.check.outputs.available }}
     steps:
@@ -30,6 +35,7 @@ jobs:
     needs: check-signing
     if: needs.check-signing.outputs.available == 'true'
     runs-on: windows-latest
+    timeout-minutes: 15
     permissions:
       id-token: write
       contents: write
@@ -81,27 +87,7 @@ jobs:
 
       - name: Regenerate hashes for signed files
         shell: pwsh
-        run: |
-          # Dynamically discover all tracked files instead of relying on a fixed list
-          $trackedFiles = @(
-            (Get-ChildItem -Path 'src/scripts'          -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
-            (Get-ChildItem -Path 'resources/autopilot'   -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
-            (Get-ChildItem -Path 'src/modules'           -Filter '*.psm1' -Recurse -File | ForEach-Object { $_.FullName })
-          )
-          # Normalize to forward slashes so the prefix strip works on Windows and Linux
-          $repoRoot = ((Get-Location).Path -replace '\\', '/').TrimEnd('/') + '/'
-          $newFiles = [ordered]@{}
-          foreach ($fullPath in ($trackedFiles | Sort-Object)) {
-            $relative = ($fullPath -replace '\\', '/').Replace($repoRoot, '')
-            $hash = (Get-FileHash -Path $fullPath -Algorithm SHA256).Hash
-            $newFiles[$relative] = $hash
-            Write-Host "Hashed: $relative"
-          }
-          $manifest = Get-Content 'config/hashes.json' -Raw | ConvertFrom-Json
-          $manifest.files = [PSCustomObject]$newFiles
-          $manifest.generated = (Get-Date -Format 'yyyy-MM-dd')
-          $manifest | ConvertTo-Json -Depth 5 | Set-Content 'config/hashes.json' -NoNewline
-          Write-Host "Hashes regenerated for signed files."
+        run: .github/scripts/Regenerate-Hashes.ps1 -Force
 
       - name: Upload signed artifacts
         uses: actions/upload-artifact@v4
