@@ -483,6 +483,10 @@ function Build-WinPE {
         if (Test-Path $mdl2Local) {
             Write-Step "Copying Segoe MDL2 Assets from local system..."
             try {
+                $fontDir = Split-Path $mdl2FontDest
+                if (-not (Test-Path $fontDir)) {
+                    $null = New-Item -ItemType Directory -Path $fontDir -Force
+                }
                 Copy-Item -Path $mdl2Local -Destination $mdl2FontDest -Force -ErrorAction Stop
                 $fontInjected = $true
             } catch {
@@ -498,6 +502,10 @@ function Build-WinPE {
                 Expand-Archive -Path $fontZip -DestinationPath $fontTmp -Force
                 $mdl2File = Get-ChildItem -Path $fontTmp -Filter $mdl2Name -Recurse -File | Select-Object -First 1
                 if ($mdl2File) {
+                    $fontDir = Split-Path $mdl2FontDest
+                    if (-not (Test-Path $fontDir)) {
+                        $null = New-Item -ItemType Directory -Path $fontDir -Force
+                    }
                     Copy-Item -Path $mdl2File.FullName -Destination $mdl2FontDest -Force
                     $fontInjected = $true
                 } else {
