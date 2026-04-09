@@ -38,6 +38,7 @@ $script:AnsiCyan         = "${script:ESC}[36;1m"
 $script:AnsiReset        = "${script:ESC}[0m"
 $script:AnsiDim          = "${script:ESC}[90m"
 $script:AnsiBold         = "${script:ESC}[1m"
+$script:AnsiYellow       = "${script:ESC}[33;1m"
 $script:AnsiReverse      = "${script:ESC}[7m"
 $script:AnsiCursorHome   = "${script:ESC}[H"
 $script:AnsiClearScreen  = "${script:ESC}[2J"
@@ -225,30 +226,36 @@ function Show-BuildConfiguration {
             Write-Host '  ║       Nova Build Console · Premium Interactive Mode      ║' -ForegroundColor Cyan
             Write-Host '  ╚════════════════════════════════════════════════════════════╝' -ForegroundColor Cyan
             Write-Host ''
-            Write-Host "    Architecture  $Architecture" -ForegroundColor White
-            Write-Host "    Language      $language" -ForegroundColor White
+            Write-Host "    ${script:AnsiDim}Architecture${script:AnsiReset}  ${script:AnsiBold}$Architecture${script:AnsiReset}" -ForegroundColor White
+            Write-Host "    ${script:AnsiDim}Language${script:AnsiReset}      ${script:AnsiBold}$language${script:AnsiReset}" -ForegroundColor White
             Write-Host ''
-            Write-Host '  WinPE Optional Components' -ForegroundColor White
+            $selCountDisplay = ($selected | Where-Object { $_ }).Count
+            Write-Host "  WinPE Optional Components  ${script:AnsiDim}($selCountDisplay/$pkgCount selected)${script:AnsiReset}" -ForegroundColor White
             Write-Host '  ─────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
 
             for ($i = 0; $i -lt $pkgCount; $i++) {
                 $pkg  = $script:AvailableWinPEPackages[$i]
-                $mark = if ($selected[$i]) { '■' } else { ' ' }
-                $tag  = if ($pkg.Required) { ' (required)' } else { '' }
+                $mark = if ($selected[$i]) { '■' } else { '□' }
                 $num  = '{0,2}' -f ($i + 1)
                 $padName = $pkg.Name.PadRight(24)
                 $isHighlighted = ($i -eq $cursorIndex)
                 if ($isHighlighted -and $supportsVT) {
                     $color = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
-                    Write-Host "  ${script:AnsiReverse}  [$mark] $num. $padName $($pkg.Description)$tag  ${script:AnsiReset}" -ForegroundColor $color
+                    $reqTag = if ($pkg.Required) { " ${script:AnsiReset}${script:AnsiYellow}(required)${script:AnsiReverse}" } else { '' }
+                    Write-Host "  ${script:AnsiReverse}  [$mark] $num. $padName $($pkg.Description)$reqTag  ${script:AnsiReset}" -ForegroundColor $color
                 } else {
                     $color = if ($selected[$i]) { 'Green' } else { 'DarkGray' }
-                    Write-Host "    [$mark] $num. $padName $($pkg.Description)$tag" -ForegroundColor $color
+                    if ($pkg.Required -and $supportsVT) {
+                        Write-Host "    [$mark] $num. $padName $($pkg.Description) ${script:AnsiYellow}(required)${script:AnsiReset}" -ForegroundColor $color
+                    } else {
+                        $tag = if ($pkg.Required) { ' (required)' } else { '' }
+                        Write-Host "    [$mark] $num. $padName $($pkg.Description)$tag" -ForegroundColor $color
+                    }
                 }
             }
 
             Write-Host ''
-            Write-Host '  WinPE Drivers' -ForegroundColor White
+            Write-Host "  WinPE Drivers  ${script:AnsiDim}($($driverPaths.Count) added)${script:AnsiReset}" -ForegroundColor White
             Write-Host '  ─────────────────────────────────────────────────────────────' -ForegroundColor DarkGray
 
             if ($driverPaths.Count -gt 0) {
@@ -264,17 +271,22 @@ function Show-BuildConfiguration {
 
             Write-Host ''
             if ($statusMessage) {
-                Write-Host "  ${script:AnsiDim}Status:${script:AnsiReset} $statusMessage" -ForegroundColor Yellow
+                Write-Host "  ${script:AnsiCyan}Status:${script:AnsiReset} $statusMessage" -ForegroundColor Yellow
             } else {
-                Write-Host '  Status: Ready' -ForegroundColor DarkGray
+                Write-Host "  ${script:AnsiDim}Status: Ready${script:AnsiReset}" -ForegroundColor DarkGray
             }
-            Write-Host '  ┌──────────────────────────────────────────────────────────┐' -ForegroundColor DarkGray
-            Write-Host '  │  ↑/↓  navigate          Space  toggle item             │' -ForegroundColor DarkGray
-            Write-Host '  │  1-9  toggle package     L  change language            │' -ForegroundColor DarkGray
-            Write-Host '  │  D    add driver path    U  add driver URL             │' -ForegroundColor DarkGray
-            Write-Host '  │  A    select all pkgs    N  deselect optional pkgs     │' -ForegroundColor DarkGray
-            Write-Host '  │  R    remove driver      Enter  continue with build  ⏎ │' -ForegroundColor DarkGray
-            Write-Host '  └──────────────────────────────────────────────────────────┘' -ForegroundColor DarkGray
+            # Key shortcut hints -- highlight keys when terminal supports ANSI
+            $kc = if ($supportsVT) { $script:AnsiCyan } else { '' }
+            $kr = if ($supportsVT) { $script:AnsiReset + $script:AnsiDim } else { '' }
+            $dr = if ($supportsVT) { $script:AnsiReset } else { '' }
+            $dp = if ($supportsVT) { $script:AnsiDim }  else { '' }
+            Write-Host "  ${dp}┌──────────────────────────────────────────────────────────┐${dr}" -ForegroundColor DarkGray
+            Write-Host "  ${dp}│  ${kc}↑/↓${kr}  navigate          ${kc}Space${kr}  toggle item             ${dr}│" -ForegroundColor DarkGray
+            Write-Host "  ${dp}│  ${kc}1-9${kr}  toggle package     ${kc}L${kr}  change language            ${dr}│" -ForegroundColor DarkGray
+            Write-Host "  ${dp}│  ${kc}D${kr}    add driver path    ${kc}U${kr}  add driver URL             ${dr}│" -ForegroundColor DarkGray
+            Write-Host "  ${dp}│  ${kc}A${kr}    select all pkgs    ${kc}N${kr}  deselect optional pkgs     ${dr}│" -ForegroundColor DarkGray
+            Write-Host "  ${dp}│  ${kc}R${kr}    remove driver      ${kc}Enter${kr}  continue with build  ⏎ ${dr}│" -ForegroundColor DarkGray
+            Write-Host "  ${dp}└──────────────────────────────────────────────────────────┘${dr}" -ForegroundColor DarkGray
             Write-Host ''
 
         # ── Read input ───────────────────────────────────────────────────────
