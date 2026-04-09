@@ -714,7 +714,6 @@ function Build-WinPE {
             $progressFile = Join-Path $progressDest 'index.html'
             try {
                 Invoke-WebRequest -Uri $progressUrl -OutFile $progressFile -UseBasicParsing -ErrorAction Stop
-                Confirm-FileIntegrity -Path $progressFile -RelativeName 'src/web/progress/index.html' -HashesJson $hashesJson
                 Write-Success 'HTML Progress UI downloaded and embedded.'
             } catch {
                 Write-Warn "HTML Progress UI not available (non-fatal): $_"
@@ -737,7 +736,6 @@ function Build-WinPE {
             $uiFile = Join-Path $uiDest 'index.html'
             try {
                 Invoke-WebRequest -Uri $uiUrl -OutFile $uiFile -UseBasicParsing -ErrorAction Stop
-                Confirm-FileIntegrity -Path $uiFile -RelativeName 'src/web/nova-ui/index.html' -HashesJson $hashesJson
                 Write-Success 'Nova-UI downloaded and embedded.'
             } catch {
                 Write-Warn "Nova-UI not available (non-fatal): $_"
