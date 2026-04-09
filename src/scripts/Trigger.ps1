@@ -493,7 +493,10 @@ function Build-WinPE {
                 try {
                     $null = & takeown.exe /F $fontDir /A 2>&1
                     $null = & icacls.exe $fontDir /grant "${env:USERNAME}:(OI)(CI)F" /T /Q 2>&1
-                } catch { }
+                } catch {
+                    # ACL failures are non-fatal; the outer catch handles any real copy error.
+                    $null = $_.Exception
+                }
                 Copy-Item -Path $mdl2Local -Destination $mdl2FontDest -Force -ErrorAction Stop
                 $fontInjected = $true
             } catch {
