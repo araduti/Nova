@@ -82,13 +82,22 @@ jobs:
       - name: Regenerate hashes for signed files
         shell: pwsh
         run: |
-          $manifest = Get-Content 'config/hashes.json' -Raw | ConvertFrom-Json
-          foreach ($entry in $manifest.files.PSObject.Properties) {
-            if (Test-Path $entry.Name) {
-              $hash = (Get-FileHash -Path $entry.Name -Algorithm SHA256).Hash
-              $manifest.files.($entry.Name) = $hash
-            }
+          # Dynamically discover all tracked files instead of relying on a fixed list
+          $trackedFiles = @(
+            (Get-ChildItem -Path 'src/scripts'          -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
+            (Get-ChildItem -Path 'resources/autopilot'   -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
+            (Get-ChildItem -Path 'src/web'               -Filter 'index.html' -Recurse -File | ForEach-Object { $_.FullName })
+          )
+          $repoRoot = (Get-Location).Path + '/'
+          $newFiles = [ordered]@{}
+          foreach ($fullPath in ($trackedFiles | Sort-Object)) {
+            $relative = $fullPath.Replace($repoRoot, '').Replace('\', '/')
+            $hash = (Get-FileHash -Path $fullPath -Algorithm SHA256).Hash
+            $newFiles[$relative] = $hash
+            Write-Host "Hashed: $relative"
           }
+          $manifest = Get-Content 'config/hashes.json' -Raw | ConvertFrom-Json
+          $manifest.files = [PSCustomObject]$newFiles
           $manifest.generated = (Get-Date -Format 'yyyy-MM-dd')
           $manifest | ConvertTo-Json -Depth 5 | Set-Content 'config/hashes.json' -NoNewline
           Write-Host "Hashes regenerated for signed files."
