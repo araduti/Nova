@@ -183,6 +183,67 @@ $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\module
 } else {
     "$PSScriptRoot\..\modules"   # Best-effort fallback
 }
+
+# ── Pre-import integrity verification (iex scenario) ──────────────────────────
+# When modules were downloaded from GitHub (not from a local repo checkout),
+# verify each file's SHA256 against hashes.json BEFORE importing any module.
+# This prevents potentially tampered or corrupted code from being loaded into
+# memory.  The check is inline (not using Confirm-FileIntegrity) because the
+# Nova.Integrity module has not been imported yet.
+if (-not $PSScriptRoot) {
+    $_hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
+    try {
+        $_iexHashesJson = Invoke-RestMethod -Uri $_hashesUrl -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop -TimeoutSec 15
+    } catch {
+        Remove-Item $script:ModulesRoot -Recurse -Force -ErrorAction SilentlyContinue
+        throw "FATAL: Could not load integrity manifest from $_hashesUrl -- cannot verify module safety. Aborting."
+    }
+
+    $_integrityFailed = $false
+    foreach ($mod in $moduleNames) {
+        foreach ($ext in $moduleExts) {
+            $modFile = Join-Path $script:ModulesRoot "$mod\$mod$ext"
+            $relName = "src/modules/$mod/$mod$ext"
+            if (-not (Test-Path $modFile)) { continue }
+
+            $_expected = if ($_iexHashesJson.files.PSObject.Properties[$relName]) { $_iexHashesJson.files.$relName } else { $null }
+            if (-not $_expected) {
+                Write-Host "  [X] No hash entry for $relName in manifest." -ForegroundColor Red
+                $_integrityFailed = $true
+                continue
+            }
+
+            $_actual = (Get-FileHash -Path $modFile -Algorithm SHA256).Hash
+            if ($_actual -eq $_expected) { continue }
+
+            # CDN propagation retry -- re-download manifest once after a short delay
+            Write-Host "  [!] Hash mismatch for $relName -- retrying in 5s (CDN propagation window)..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 5
+            try {
+                $_iexHashesJson = Invoke-RestMethod -Uri $_hashesUrl -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop -TimeoutSec 15
+            } catch {
+                Remove-Item $script:ModulesRoot -Recurse -Force -ErrorAction SilentlyContinue
+                throw "FATAL: Could not reload integrity manifest on retry -- aborting."
+            }
+            $_expected = if ($_iexHashesJson.files.PSObject.Properties[$relName]) { $_iexHashesJson.files.$relName } else { $null }
+            if (-not $_expected -or $_actual -ne $_expected) {
+                Write-Host "  [X] Integrity check FAILED for $relName (after retry)" -ForegroundColor Red
+                Write-Host "    Expected: $_expected" -ForegroundColor Red
+                Write-Host "    Actual:   $_actual" -ForegroundColor Red
+                $_integrityFailed = $true
+            }
+        }
+    }
+
+    if ($_integrityFailed) {
+        Remove-Item $script:ModulesRoot -Recurse -Force -ErrorAction SilentlyContinue
+        throw "FATAL: One or more modules failed integrity verification. " +
+              "Downloaded modules have been removed. " +
+              "This may indicate the hash manifest is out of date or the download was tampered with."
+    }
+    Write-Host '  [+] All modules passed integrity verification.' -ForegroundColor Green
+}
+
 Import-Module "$script:ModulesRoot\Nova.Logging"     -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Platform"    -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Integrity"   -Force -ErrorAction Stop
@@ -193,28 +254,6 @@ Import-Module "$script:ModulesRoot\Nova.Auth"        -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.BCD"         -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.CloudImage"  -Force -ErrorAction Stop
 # Trigger.ps1 uses the default prefixes (  [>], [+], [!], [X])
-
-# ── Verify downloaded modules against integrity manifest (iex scenario) ────
-# When modules were downloaded from GitHub (not from a local repo checkout),
-# verify each file's SHA256 against hashes.json to detect CDN inconsistencies.
-if (-not $PSScriptRoot) {
-    $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
-    try {
-        $_iexHashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop -TimeoutSec 15
-        foreach ($mod in $moduleNames) {
-            foreach ($ext in $moduleExts) {
-                $modFile = Join-Path $script:ModulesRoot "$mod\$mod$ext"
-                $relName = "src/modules/$mod/$mod$ext"
-                if (Test-Path $modFile) {
-                    Confirm-FileIntegrity -Path $modFile -RelativeName $relName `
-                        -HashesJson $_iexHashesJson -RetryOnMismatch -NoCacheHeaders $script:NoCacheHeaders
-                }
-            }
-        }
-    } catch {
-        Write-Host "  WARNING: Could not verify module integrity: $_" -ForegroundColor Yellow
-    }
-}
 
 # Confirm-FileIntegrity is now provided by the Nova.Integrity module.
 # Get-WinPEArchitecture is now provided by the Nova.Platform module.
