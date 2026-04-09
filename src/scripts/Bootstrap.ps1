@@ -983,6 +983,9 @@ function ProceedToEngine {
             $localNova = 'X:\Nova.ps1'
             Write-Status ($S.Download -f 0)
             $web = New-Object System.Net.WebClient
+            # Add cache-busting headers to avoid WinINet serving stale content
+            $web.Headers.Add('Cache-Control', 'no-cache')
+            $web.Headers.Add('Pragma', 'no-cache')
             $web.add_DownloadProgressChanged({
                 param($eventSender, $e)
                 $null = $eventSender  # Required by .NET delegate signature
@@ -997,31 +1000,41 @@ function ProceedToEngine {
 
             # ── Verify downloaded Nova.ps1 integrity ──────────────────
             # NOTE: The manifest comes from the same repo/branch as the script.
-            # This detects corruption and CDN inconsistencies but does not protect
-            # against a compromised repository.  For tamper protection, the manifest
-            # would need to be cryptographically signed or hosted separately.
+            # Loading the manifest AFTER the download minimises the CDN
+            # propagation window.  If the hash mismatches, we retry once
+            # after a short delay to handle CDN propagation delays.
+            $noCacheHeaders = @{ 'Cache-Control' = 'no-cache'; 'Pragma' = 'no-cache' }
             $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
-            try {
-                $manifest = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -ErrorAction Stop -TimeoutSec 15
-            } catch {
-                Remove-Item $localNova -Force -ErrorAction SilentlyContinue
-                throw "Integrity check FAILED -- could not download hash manifest from $hashesUrl : $_"
+
+            for ($attempt = 1; $attempt -le 2; $attempt++) {
+                try {
+                    $manifest = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -Headers $noCacheHeaders -ErrorAction Stop -TimeoutSec 15
+                } catch {
+                    Remove-Item $localNova -Force -ErrorAction SilentlyContinue
+                    throw "Integrity check FAILED -- could not download hash manifest from $hashesUrl : $_"
+                }
+                $expected = $manifest.files.'src/scripts/Nova.ps1'
+                if (-not $expected) {
+                    Remove-Item $localNova -Force -ErrorAction SilentlyContinue
+                    throw "Integrity check FAILED -- no src/scripts/Nova.ps1 entry in hash manifest"
+                }
+                $actual = [System.BitConverter]::ToString(
+                    [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+                        [System.IO.File]::ReadAllBytes($localNova)
+                    )
+                ) -replace '-', ''
+                if ($actual -eq $expected) {
+                    Write-AuthLog 'Nova.ps1 integrity verified (SHA256 match).'
+                    break
+                }
+                if ($attempt -eq 1) {
+                    Write-AuthLog 'Hash mismatch for Nova.ps1 -- retrying in 5s (CDN propagation window)...'
+                    Start-Sleep -Seconds 5
+                } else {
+                    Remove-Item $localNova -Force -ErrorAction SilentlyContinue
+                    throw "Integrity check FAILED for Nova.ps1 (after retry) -- Expected: $expected, Got: $actual"
+                }
             }
-            $expected = $manifest.files.'src/scripts/Nova.ps1'
-            if (-not $expected) {
-                Remove-Item $localNova -Force -ErrorAction SilentlyContinue
-                throw "Integrity check FAILED -- no src/scripts/Nova.ps1 entry in hash manifest"
-            }
-            $actual = [System.BitConverter]::ToString(
-                [System.Security.Cryptography.SHA256]::Create().ComputeHash(
-                    [System.IO.File]::ReadAllBytes($localNova)
-                )
-            ) -replace '-', ''
-            if ($actual -ne $expected) {
-                Remove-Item $localNova -Force -ErrorAction SilentlyContinue
-                throw "Integrity check FAILED for Nova.ps1 -- Expected: $expected, Got: $actual"
-            }
-            Write-AuthLog 'Nova.ps1 integrity verified (SHA256 match).'
         }
 
         # Run Nova.ps1 in a dedicated process so the UI thread

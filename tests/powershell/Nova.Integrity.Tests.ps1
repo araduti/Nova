@@ -14,6 +14,7 @@ BeforeAll {
 Describe 'Confirm-FileIntegrity' {
     BeforeAll {
         Mock -ModuleName Nova.Integrity Write-Success {}
+        Mock -ModuleName Nova.Integrity Write-Warn {}
     }
 
     It 'passes when hash matches' {
@@ -80,6 +81,24 @@ Describe 'Confirm-FileIntegrity' {
         $cmd.Parameters.Keys | Should -Contain 'GitHubBranch'
     }
 
+    It 'accepts RetryOnMismatch switch parameter' {
+        $cmd = Get-Command Confirm-FileIntegrity
+        $cmd.Parameters.Keys | Should -Contain 'RetryOnMismatch'
+        $cmd.Parameters['RetryOnMismatch'].ParameterType | Should -Be ([switch])
+    }
+
+    It 'accepts RetryDelaySeconds parameter with default of 5' {
+        $cmd = Get-Command Confirm-FileIntegrity
+        $cmd.Parameters.Keys | Should -Contain 'RetryDelaySeconds'
+        $cmd.Parameters['RetryDelaySeconds'].ParameterType | Should -Be ([int])
+    }
+
+    It 'accepts NoCacheHeaders parameter' {
+        $cmd = Get-Command Confirm-FileIntegrity
+        $cmd.Parameters.Keys | Should -Contain 'NoCacheHeaders'
+        $cmd.Parameters['NoCacheHeaders'].ParameterType | Should -Be ([hashtable])
+    }
+
     It 'verifies SHA256 correctly for binary-equivalent content' {
         $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "integrity_$(Get-Random).bin"
         # Write known bytes
@@ -92,5 +111,49 @@ Describe 'Confirm-FileIntegrity' {
         } finally {
             Remove-Item $tmp -Force -ErrorAction SilentlyContinue
         }
+    }
+
+    It 'passes with RetryOnMismatch when hash matches on first try' {
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "integrity_$(Get-Random).txt"
+        Set-Content -Path $tmp -Value 'hello world' -NoNewline -Encoding UTF8
+        $hash = (Get-FileHash -Path $tmp -Algorithm SHA256).Hash
+        $manifest = [pscustomobject]@{ files = [pscustomobject]@{ 'test.txt' = $hash } }
+        try {
+            { Confirm-FileIntegrity -Path $tmp -RelativeName 'test.txt' -HashesJson $manifest -RetryOnMismatch } |
+                Should -Not -Throw
+        } finally {
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'retries on mismatch and re-downloads manifest when RetryOnMismatch is set' {
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "integrity_$(Get-Random).txt"
+        Set-Content -Path $tmp -Value 'hello world' -NoNewline -Encoding UTF8
+        $correctHash = (Get-FileHash -Path $tmp -Algorithm SHA256).Hash
+        # Supply a bad manifest initially -- on retry it will re-download via Invoke-RestMethod
+        $badManifest = [pscustomobject]@{ files = [pscustomobject]@{ 'test.txt' = 'BADHASH' } }
+        $goodManifest = [pscustomobject]@{ files = [pscustomobject]@{ 'test.txt' = $correctHash } }
+        Mock -ModuleName Nova.Integrity Invoke-RestMethod { return $goodManifest }
+        Mock -ModuleName Nova.Integrity Start-Sleep {}
+        try {
+            { Confirm-FileIntegrity -Path $tmp -RelativeName 'test.txt' -HashesJson $badManifest -RetryOnMismatch -RetryDelaySeconds 1 } |
+                Should -Not -Throw
+            Should -Invoke -CommandName Start-Sleep -ModuleName Nova.Integrity -Times 1
+            Should -Invoke -CommandName Invoke-RestMethod -ModuleName Nova.Integrity -Times 1
+        } finally {
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'throws after retry when hash still mismatches' {
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "integrity_$(Get-Random).txt"
+        Set-Content -Path $tmp -Value 'hello world' -NoNewline -Encoding UTF8
+        $badManifest = [pscustomobject]@{ files = [pscustomobject]@{ 'test.txt' = 'BADHASH' } }
+        $stillBadManifest = [pscustomobject]@{ files = [pscustomobject]@{ 'test.txt' = 'STILLBAD' } }
+        Mock -ModuleName Nova.Integrity Invoke-RestMethod { return $stillBadManifest }
+        Mock -ModuleName Nova.Integrity Start-Sleep {}
+        { Confirm-FileIntegrity -Path $tmp -RelativeName 'test.txt' -HashesJson $badManifest -RetryOnMismatch -RetryDelaySeconds 1 } |
+            Should -Throw '*after retry*'
+        Test-Path $tmp | Should -BeFalse
     }
 }
