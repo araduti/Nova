@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: ["main"]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -13,6 +17,7 @@ jobs:
   lint-and-test-proxy:
     name: OAuth Proxy — Lint & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: oauth-proxy
@@ -37,6 +42,7 @@ jobs:
   lint-powershell:
     name: PowerShell — PSScriptAnalyzer
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -59,6 +65,7 @@ jobs:
   test-powershell:
     name: PowerShell — Pester Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
@@ -80,6 +87,7 @@ jobs:
   validate-modules:
     name: PowerShell — Module Quality
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -159,7 +167,13 @@ jobs:
 
   regenerate-hashes:
     name: Integrity — Regenerate Hashes
+    # Only run on PRs or on main when signing is NOT available.
+    # When signing IS available on main, the sign-scripts job handles
+    # hash regeneration post-signing to avoid committing stale unsigned hashes.
+    needs: [check-signing]
+    if: always() && !cancelled() && (github.event_name == 'pull_request' || needs.check-signing.outputs.available != 'true')
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: write
     steps:
@@ -169,43 +183,7 @@ jobs:
 
       - name: Regenerate config/hashes.json
         shell: pwsh
-        run: |
-          # Dynamically discover all tracked files instead of relying on a fixed list
-          $trackedFiles = @(
-            (Get-ChildItem -Path 'src/scripts'          -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
-            (Get-ChildItem -Path 'resources/autopilot'   -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
-            (Get-ChildItem -Path 'src/modules'           -Filter '*.psm1' -Recurse -File | ForEach-Object { $_.FullName })
-          )
-          # Normalize to forward slashes so the prefix strip works on Windows and Linux
-          $repoRoot = ((Get-Location).Path -replace '\\', '/').TrimEnd('/') + '/'
-          $newFiles = [ordered]@{}
-          foreach ($fullPath in ($trackedFiles | Sort-Object)) {
-            $relative = ($fullPath -replace '\\', '/').Replace($repoRoot, '')
-            $hash = (Get-FileHash -Path $fullPath -Algorithm SHA256).Hash
-            $newFiles[$relative] = $hash
-            Write-Host "Hashed: $relative"
-          }
-          $manifest = Get-Content 'config/hashes.json' -Raw | ConvertFrom-Json
-          $oldFiles = @{}
-          foreach ($prop in $manifest.files.PSObject.Properties) { $oldFiles[$prop.Name] = $prop.Value }
-          $changed = $false
-          if ($oldFiles.Count -ne $newFiles.Count) { $changed = $true }
-          if (-not $changed) {
-            foreach ($key in $newFiles.Keys) {
-              if (-not $oldFiles.ContainsKey($key) -or $oldFiles[$key] -ne $newFiles[$key]) {
-                $changed = $true
-                break
-              }
-            }
-          }
-          if ($changed) {
-            $manifest.files = [PSCustomObject]$newFiles
-            $manifest.generated = (Get-Date -Format 'yyyy-MM-dd')
-            $manifest | ConvertTo-Json -Depth 5 | Set-Content 'config/hashes.json' -NoNewline
-            Write-Host "`nHashes updated in config/hashes.json."
-          } else {
-            Write-Host "`nAll hashes already up to date."
-          }
+        run: .github/scripts/Regenerate-Hashes.ps1
 
       - name: Commit updated hashes
         run: |
@@ -222,6 +200,7 @@ jobs:
   build-web:
     name: Web UI — Build & Test
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -242,6 +221,7 @@ jobs:
   test-e2e:
     name: Editor — Playwright E2E
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
 
@@ -271,6 +251,7 @@ jobs:
     name: Check Signing Availability
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       available: ${{ steps.check.outputs.available }}
     steps:
@@ -287,13 +268,16 @@ jobs:
   sign-scripts:
     name: Code Signing — Azure Trusted Signing
     if: needs.check-signing.outputs.available == 'true'
-    needs: [check-signing, lint-powershell, test-powershell, validate-modules, regenerate-hashes]
+    needs: [check-signing, lint-powershell, test-powershell, validate-modules]
     runs-on: windows-latest
+    timeout-minutes: 15
     permissions:
       id-token: write
       contents: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: main
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -340,27 +324,7 @@ jobs:
 
       - name: Regenerate hashes for signed files
         shell: pwsh
-        run: |
-          # Dynamically discover all tracked files instead of relying on a fixed list
-          $trackedFiles = @(
-            (Get-ChildItem -Path 'src/scripts'          -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
-            (Get-ChildItem -Path 'resources/autopilot'   -Filter '*.ps1' -File | ForEach-Object { $_.FullName })
-            (Get-ChildItem -Path 'src/modules'           -Filter '*.psm1' -Recurse -File | ForEach-Object { $_.FullName })
-          )
-          # Normalize to forward slashes so the prefix strip works on Windows and Linux
-          $repoRoot = ((Get-Location).Path -replace '\\', '/').TrimEnd('/') + '/'
-          $newFiles = [ordered]@{}
-          foreach ($fullPath in ($trackedFiles | Sort-Object)) {
-            $relative = ($fullPath -replace '\\', '/').Replace($repoRoot, '')
-            $hash = (Get-FileHash -Path $fullPath -Algorithm SHA256).Hash
-            $newFiles[$relative] = $hash
-            Write-Host "Hashed: $relative"
-          }
-          $manifest = Get-Content 'config/hashes.json' -Raw | ConvertFrom-Json
-          $manifest.files = [PSCustomObject]$newFiles
-          $manifest.generated = (Get-Date -Format 'yyyy-MM-dd')
-          $manifest | ConvertTo-Json -Depth 5 | Set-Content 'config/hashes.json' -NoNewline
-          Write-Host "Hashes regenerated for signed files."
+        run: .github/scripts/Regenerate-Hashes.ps1 -Force
 
       - name: Upload signed artifacts
         uses: actions/upload-artifact@v4
