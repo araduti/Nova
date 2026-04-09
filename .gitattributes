@@ -1,3 +1,12 @@
+# ── Line ending normalisation for PowerShell files ──────────────────
+# Force LF everywhere so that hashes computed on Windows (signing runner)
+# match the bytes git stores and raw.githubusercontent.com serves.
+# Without this, core.autocrlf=true on Windows causes CRLF working copies,
+# leading to hash mismatches in config/hashes.json integrity checks.
+*.ps1  text eol=lf
+*.psm1 text eol=lf
+*.psd1 text eol=lf
+
 # ── Git LFS tracking for large binary files ─────────────────────────
 # Driver binaries should be stored in Git LFS to reduce clone size.
 # To migrate existing files, run:
