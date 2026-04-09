@@ -342,7 +342,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add src/scripts/ src/modules/ resources/autopilot/ config/hashes.json
+          git add src/scripts/ src/modules/ resources/autopilot/ .github/scripts/ config/hashes.json
           if git diff --cached --quiet; then
             echo "No signing changes to commit."
           else
@@ -350,7 +350,7 @@ jobs:
             git fetch origin main
             git rebase -X theirs origin/main || {
               echo "::warning::Rebase failed — signed scripts must be committed manually."
-              git rebase --abort
+              git rebase --abort 2>/dev/null || true
               exit 0
             }
             push_output=$(git push origin HEAD:refs/heads/main 2>&1) || echo "::warning::Push failed — signed scripts must be committed manually. Error: $push_output"
