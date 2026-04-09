@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="rok-image-7cdbf1dc-7de8-4200-865e-3785d9bc2187.png" alt="Nova Logo" width="200" />
+<img src="grok-image-7cdbf1dc-7de8-4200-865e-3785d9bc2187.png" alt="Nova Logo" width="200" />
 
 # **Nova** — Cloud-Native Windows OS Deployment Platform
 
