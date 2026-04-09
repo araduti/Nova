@@ -127,6 +127,10 @@ jobs:
         shell: pwsh
         run: .github/scripts/Regenerate-Hashes.ps1 -Force
 
+      - name: Validate hashes after signing
+        shell: pwsh
+        run: .github/scripts/Validate-Hashes.ps1
+
       - name: Upload signed artifacts
         uses: actions/upload-artifact@v4
         with:
