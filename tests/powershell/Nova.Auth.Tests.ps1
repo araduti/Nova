@@ -91,13 +91,13 @@ Describe 'Module Exports - Kiosk Auth' {
 }
 
 Describe 'Invoke-KioskEdgeAuth' {
-    It 'returns failure when HtmlUiActive is false' {
+    It 'returns failure when Edge binary does not exist' {
         $logMessages = @()
         $writeLog = { param([string]$m) $logMessages += $m }.GetNewClosure()
 
         $result = Invoke-KioskEdgeAuth `
             -ClientId 'test-client-id' `
-            -HtmlUiActive $false `
+            -EdgeExePath 'C:\nonexistent\msedge.exe' `
             -WriteLog $writeLog
 
         $result.Success | Should -BeFalse
@@ -107,7 +107,7 @@ Describe 'Invoke-KioskEdgeAuth' {
     It 'returns expected hashtable keys' {
         $result = Invoke-KioskEdgeAuth `
             -ClientId 'test-client-id' `
-            -HtmlUiActive $false
+            -EdgeExePath 'C:\nonexistent\msedge.exe'
 
         $result | Should -BeOfType [hashtable]
         $result.ContainsKey('Success') | Should -BeTrue
@@ -194,7 +194,7 @@ Describe 'Invoke-KioskM365Auth' {
             -GitHubUser 'nonexistent-user-test' `
             -GitHubRepo 'nonexistent-repo-test' `
             -GitHubBranch 'nonexistent-branch' `
-            -HtmlUiActive $false `
+            -EdgeExePath 'C:\nonexistent\msedge.exe' `
             -WriteLog { param($m) } `
             -WriteStatus { param($m, $c) } `
             -UpdateUi { param($p) } `

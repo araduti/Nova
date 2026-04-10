@@ -622,7 +622,6 @@ $script:EdgeArgs = @(
     '--guest',
     '--disable-save-password-bubble',
     '--allow-file-access-from-files',
-    '--disable-popup-blocking',
     '--disable-web-security',
     '--disable-renderer-backgrounding',
     '--disable-background-timer-throttling',
@@ -963,8 +962,8 @@ function Invoke-M365Auth {
     # accessing a non-existent key via dot-notation on a hashtable.
     $updateUi = {
         param([hashtable]$Params)
-        if ($Params['AuthUrl']) {
-            Update-HtmlUi -Message $script:S.AuthSigning -Step 3 -AuthUrl $Params['AuthUrl']
+        if ($Params['AuthInProgress']) {
+            Update-HtmlUi -Message $script:S.AuthSigning -Step 3
         } elseif ($Params['ShowDeviceCode']) {
             Update-HtmlUi -Message $script:S.AuthDeviceCodePrompt -Step 3 `
                           -ShowDeviceCode -DeviceCode $Params['DeviceCode'] -DeviceCodeUrl $script:S.AuthUrl
@@ -985,7 +984,7 @@ function Invoke-M365Auth {
 
     $result = Invoke-KioskM365Auth `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch `
-        -HtmlUiActive ([bool]$script:HtmlUiActive) `
+        -EdgeExePath $script:EdgeExe `
         -WriteLog $writeLog -WriteStatus $writeStatus -UpdateUi $updateUi `
         -CheckCancelled $checkCancelled -DoEvents $doEvents -PlaySound $playSound
 
@@ -1016,9 +1015,9 @@ function ProceedToEngine {
     # When config/auth.json has requireAuth = true, the operator must sign in
     # with a Microsoft 365 account from an allowed Entra ID tenant.
     # Tenant restrictions are enforced at the app registration level.
-    # Navigates the kiosk Edge to Azure AD (Auth Code + PKCE) as
-    # the primary method; falls back to Device Code Flow shown in
-    # an HTML modal overlay if the kiosk auth is unavailable.
+    # Launches Edge in --app mode for a clean login popup (Auth Code + PKCE)
+    # as the primary method; falls back to Device Code Flow shown in
+    # an HTML modal overlay if Edge is not available.
     $authPassed = Invoke-M365Auth
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect
