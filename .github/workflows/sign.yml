@@ -64,9 +64,18 @@ jobs:
           $scripts = Get-ChildItem -Path . -Include '*.ps1','*.psm1','*.psd1' -Recurse |
             Where-Object { $_.FullName -notmatch '[/\\]tests[/\\]' }
 
-          Write-Host "Signing all $($scripts.Count) production script(s)..."
+          Write-Host "Found $($scripts.Count) production script(s). Checking signatures..."
+          $signed = 0
+          $skipped = 0
           foreach ($file in $scripts) {
-            Write-Host "Signing: $($file.FullName)"
+            $sig = Get-AuthenticodeSignature -FilePath $file.FullName
+            if ($sig.Status -eq 'Valid') {
+              Write-Host "Skipping (already signed): $($file.FullName)"
+              $skipped++
+              continue
+            }
+
+            Write-Host "Signing: $($file.FullName) (status: $($sig.Status))"
             Invoke-TrustedSigning `
               -Endpoint $env:TRUSTED_SIGNING_ENDPOINT `
               -CodeSigningAccountName $env:TRUSTED_SIGNING_ACCOUNT `
@@ -82,8 +91,9 @@ jobs:
               exit 1
             }
             Write-Host "  Signature valid ($($sig.SignerCertificate.Subject))"
+            $signed++
           }
-          Write-Host "`nAll $($scripts.Count) script(s) signed and verified successfully."
+          Write-Host "`nDone. Signed: $signed, Skipped (already valid): $skipped, Total: $($scripts.Count)"
 
       - name: Regenerate hashes for signed files
         shell: pwsh
