@@ -995,32 +995,10 @@
         function updateUI(data) {
             if (!data) return;
 
-            /* Auth URL — open the login page in a popup window.
-             * Edge kiosk mode blocks popups by default; the
-             * --disable-popup-blocking flag added to the Edge
-             * launch command enables window.open() to work.
-             * authNavigating prevents duplicate popups; it resets
-             * when the popup closes (detected by a polling interval).
-             * Bootstrap.ps1 clears AuthUrl from the status JSON before
-             * the popup closes, so the next poll won't re-trigger. */
-            if (data.AuthUrl && !authNavigating) {
-                authNavigating = true;
-                var authPopup = window.open(data.AuthUrl, 'NovaAuth',
-                    'width=520,height=700,menubar=no,toolbar=no,location=yes,status=no');
-                if (!authPopup) {
-                    /* Popup blocked — reset flag so the next poll can retry. */
-                    authNavigating = false;
-                } else {
-                    /* Poll to detect when the popup is closed (by user or
-                       by the redirect page's window.close() call). */
-                    var popupPoll = setInterval(function () {
-                        if (authPopup.closed) {
-                            clearInterval(popupPoll);
-                            authNavigating = false;
-                        }
-                    }, 500);
-                }
-            }
+            /* Auth popup is now handled by Edge --app mode launched
+             * directly from PowerShell.  The AuthUrl field in the status
+             * JSON is no longer populated; this block is kept only as a
+             * no-op guard in case a stale status file contains the field. */
 
             /* Device Code modal */
             var authOverlay = document.getElementById('authOverlay');

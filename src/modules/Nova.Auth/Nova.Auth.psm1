@@ -517,21 +517,26 @@ function Update-M365Token {
 
 function Invoke-KioskEdgeAuth {
     <#
-    .SYNOPSIS  Authenticate the operator via the kiosk Edge browser (Auth Code + PKCE).
+    .SYNOPSIS  Authenticate the operator via Edge --app popup (Auth Code + PKCE).
     .DESCRIPTION
-        Navigates the existing Edge kiosk browser to the Azure AD authorization
-        endpoint.  The user signs in directly in the kiosk browser window.
+        Launches Microsoft Edge in --app mode as a separate process, pointing at
+        the Azure AD authorization endpoint.  This opens a clean, chromeless
+        browser window dedicated to the login flow -- independent of the kiosk
+        UI running in Edge --kiosk mode.
+
         A temporary localhost HTTP listener captures the redirect carrying the
         authorization code, then exchanges it for tokens using PKCE.
-        After authentication completes (or fails), the listener redirects the
-        browser back to the Nova-UI page.
-        WinPE-safe -- no separate Edge process or WinForms dialog is created.
+        After authentication completes (or fails), the Edge --app process is
+        terminated automatically.
+
+        WinPE-safe -- uses the same msedge.exe binary already staged in the
+        boot image.
     .PARAMETER ClientId
         Azure AD application (client) ID.
     .PARAMETER Scope
         OAuth 2.0 scopes to request (space-separated).
-    .PARAMETER HtmlUiActive
-        Whether the kiosk HTML UI is currently running.
+    .PARAMETER EdgeExePath
+        Full path to msedge.exe.  Defaults to the WinPE staging path.
     .PARAMETER WriteLog
         Scriptblock for writing auth log entries.  Called with a single string argument.
     .PARAMETER UpdateUi
@@ -551,7 +556,7 @@ function Invoke-KioskEdgeAuth {
         [Parameter(Mandatory)]
         [string]$ClientId,
         [string]$Scope = 'openid profile',
-        [bool]$HtmlUiActive = $false,
+        [string]$EdgeExePath = 'X:\WebView2\Edge\msedge.exe',
         [scriptblock]$WriteLog,
         [scriptblock]$UpdateUi,
         [scriptblock]$CheckCancelled,
@@ -560,14 +565,14 @@ function Invoke-KioskEdgeAuth {
 
     $fail = @{ Success = $false; GraphAccessToken = $null }
 
-    # ── Verify the HTML UI is active (kiosk Edge must be running) ───────────
-    if (-not $HtmlUiActive) {
-        if ($WriteLog) { & $WriteLog "HTML UI not active -- cannot use in-kiosk auth." }
+    # ── Verify Edge binary exists ───────────────────────────────────────────
+    if (-not (Test-Path $EdgeExePath)) {
+        if ($WriteLog) { & $WriteLog "Edge not found at $EdgeExePath -- cannot open auth window." }
         return $fail
     }
 
     # ── Log environment diagnostics ─────────────────────────────────────────
-    if ($WriteLog) { & $WriteLog "Kiosk auth starting" }
+    if ($WriteLog) { & $WriteLog "Edge app auth starting" }
 
     # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────
     $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -602,6 +607,7 @@ function Invoke-KioskEdgeAuth {
 
     $authCode  = $null
     $authError = $null
+    $edgeProc  = $null
 
     try {
 
@@ -615,9 +621,34 @@ function Invoke-KioskEdgeAuth {
         '&code_challenge_method=S256' +
         '&prompt=select_account'
 
-    # ── Signal the HTML UI to open the login page in a popup ───────────────
-    if ($WriteLog) { & $WriteLog "Opening auth popup via kiosk UI" }
-    if ($UpdateUi) { & $UpdateUi @{ AuthUrl = $authorizeUrl } }
+    # ── Launch Edge in --app mode for the login window ──────────────────────
+    # --app opens a chromeless window (no tabs, no address bar) ideal for
+    # a sign-in form.  A separate user-data-dir avoids conflicts with
+    # the kiosk Edge instance.
+    if ($WriteLog) { & $WriteLog "Launching Edge --app for auth popup" }
+    $edgeAuthDataDir = 'X:\Temp\EdgeAuth'
+    $edgeAuthArgs = @(
+        "--app=$authorizeUrl",
+        '--allow-run-as-system',
+        "--user-data-dir=$edgeAuthDataDir",
+        '--window-size=520,700',
+        '--disable-gpu',
+        '--disable-gpu-compositing',
+        '--disable-direct-composition',
+        '--use-angle=swiftshader',
+        '--enable-unsafe-swiftshader',
+        '--in-process-gpu',
+        '--no-first-run',
+        '--disable-fre',
+        '--disable-features=msWebOOBE,PasswordManager',
+        '--password-store=basic',
+        '--disable-save-password-bubble'
+    )
+    $edgeProc = Start-Process -FilePath $EdgeExePath -ArgumentList $edgeAuthArgs -PassThru
+
+    # Notify the UI that auth is in progress (but no URL -- the Edge
+    # --app window handles the login page directly).
+    if ($UpdateUi) { & $UpdateUi @{ AuthInProgress = $true } }
 
     # ── Wait for the redirect callback ──────────────────────────────────────
     $asyncResult = $listener.BeginGetContext($null, $null)
@@ -632,6 +663,13 @@ function Invoke-KioskEdgeAuth {
 
         if ($CheckCancelled) { $cancelled = (& $CheckCancelled) -eq $true }
 
+        # If the user closed the Edge window, treat as cancellation.
+        if ($edgeProc -and $edgeProc.HasExited) {
+            if ($WriteLog) { & $WriteLog "Edge auth window was closed by user." }
+            $cancelled = $true
+            break
+        }
+
         if ($asyncResult.IsCompleted -or $asyncResult.AsyncWaitHandle.WaitOne(0)) {
             try {
                 $context = $listener.EndGetContext($asyncResult)
@@ -645,10 +683,7 @@ function Invoke-KioskEdgeAuth {
                     }
                 }
 
-                # Clear the auth signal before the popup closes.
-                if ($UpdateUi) { & $UpdateUi @{ ClearAuth = $true } }
-
-                # Send a response page that closes the auth popup window.
+                # Send a response page that shows result and closes.
                 $html = if ($authCode) {
                     '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
                     'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
@@ -676,16 +711,25 @@ function Invoke-KioskEdgeAuth {
         Start-Sleep -Milliseconds 200
     }
 
-    # ── Always clear auth signal ────────────────────────────────────────────
-    if ($UpdateUi) { & $UpdateUi @{ ClearAuth = $true } }
-
     } finally {
+        # ── Clean up: stop listener and kill the Edge --app process ──────────
         try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
+
+        if ($edgeProc -and -not $edgeProc.HasExited) {
+            if ($WriteLog) { & $WriteLog "Closing Edge auth window (PID $($edgeProc.Id))" }
+            try { $edgeProc.Kill() } catch { $null = $_ }
+        }
+        # Remove stale lock files so the auth data dir can be reused
+        Remove-Item (Join-Path $edgeAuthDataDir 'lockfile')     -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $edgeAuthDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue
+
+        # Clear auth-in-progress signal
+        if ($UpdateUi) { & $UpdateUi @{ ClearAuth = $true } }
     }
 
     if ($cancelled -or -not $authCode) {
         $codeStatus = if ($authCode) { 'present' } else { 'missing' }
-        if ($WriteLog) { & $WriteLog "Kiosk auth ended without auth code. Cancelled=$cancelled, AuthCode=$codeStatus" }
+        if ($WriteLog) { & $WriteLog "Edge app auth ended without auth code. Cancelled=$cancelled, AuthCode=$codeStatus" }
         if ($authError -and $WriteLog) {
             & $WriteLog "Auth error: $authError"
         }
@@ -707,7 +751,7 @@ function Invoke-KioskEdgeAuth {
         $tokenResponse = $raw | ConvertFrom-Json
         if ((_HasProp $tokenResponse 'id_token') -and $tokenResponse.id_token) {
             $graphToken = if ((_HasProp $tokenResponse 'access_token') -and $tokenResponse.access_token) { $tokenResponse.access_token } else { $null }
-            if ($WriteLog) { & $WriteLog "Kiosk auth succeeded -- token obtained." }
+            if ($WriteLog) { & $WriteLog "Edge app auth succeeded -- token obtained." }
             return @{ Success = $true; GraphAccessToken = $graphToken }
         }
     } catch {
@@ -828,21 +872,21 @@ function Invoke-KioskDeviceCodeAuth {
 
 function Invoke-KioskM365Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via M365 (kiosk browser, Device Code fallback).
+    .SYNOPSIS  Authenticate the operator via M365 (Edge --app popup, Device Code fallback).
     .DESCRIPTION
         Downloads config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
-        first attempts interactive sign-in by navigating the existing
-        kiosk Edge browser to Azure AD (Authorization Code Flow with
-        PKCE).  If the kiosk UI is not active or fails, it falls back
-        to Device Code Flow, showing the code in an HTML modal.
+        first attempts interactive sign-in by launching Edge in --app
+        mode (Authorization Code Flow with PKCE).  If Edge is not
+        available or the sign-in fails, it falls back to Device Code
+        Flow, showing the code in an HTML modal.
         Tenant restrictions are enforced at the Entra ID app registration
         level -- only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
     .PARAMETER GitHubUser   GitHub account that hosts the Nova repository.
     .PARAMETER GitHubRepo   Repository name.
     .PARAMETER GitHubBranch Branch to fetch auth config from.
-    .PARAMETER HtmlUiActive Whether the kiosk HTML UI is currently running.
+    .PARAMETER EdgeExePath  Full path to msedge.exe for the --app auth window.
     .PARAMETER WriteLog     Scriptblock for writing auth log entries.
     .PARAMETER WriteStatus  Scriptblock for writing status messages. Called with (message, color).
     .PARAMETER UpdateUi     Scriptblock for updating the HTML UI.
@@ -861,7 +905,7 @@ function Invoke-KioskM365Auth {
         [string]$GitHubUser   = 'araduti',
         [string]$GitHubRepo   = 'Nova',
         [string]$GitHubBranch = 'main',
-        [bool]$HtmlUiActive   = $false,
+        [string]$EdgeExePath  = 'X:\WebView2\Edge\msedge.exe',
         [scriptblock]$WriteLog,
         [scriptblock]$WriteStatus,
         [scriptblock]$UpdateUi,
@@ -908,16 +952,16 @@ function Invoke-KioskM365Auth {
     if ($WriteStatus) { & $WriteStatus 'Signing in with Microsoft 365...' 'Cyan' }
     if ($DoEvents) { & $DoEvents }
 
-    # ── Try kiosk Edge browser auth first ──────────────────────────────────
+    # ── Try Edge --app popup auth first ────────────────────────────────────
     $edgeResult = @{ Success = $false; GraphAccessToken = $null }
     try {
         $edgeResult = Invoke-KioskEdgeAuth `
             -ClientId $clientId -Scope $scope `
-            -HtmlUiActive $HtmlUiActive `
+            -EdgeExePath $EdgeExePath `
             -WriteLog $WriteLog -UpdateUi $UpdateUi `
             -CheckCancelled $CheckCancelled -DoEvents $DoEvents
     } catch {
-        if ($WriteLog) { & $WriteLog "Kiosk auth failed, will fall back to Device Code Flow: $_" }
+        if ($WriteLog) { & $WriteLog "Edge app auth failed, will fall back to Device Code Flow: $_" }
     }
 
     if ($edgeResult.Success) {
