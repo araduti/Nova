@@ -76,6 +76,11 @@ Describe 'Module Exports - Kiosk Auth' {
         $mod.ExportedFunctions.Keys | Should -Not -Contain 'Invoke-KioskDeviceCodeAuth'
     }
 
+    It 'does not export private _EdgeAppAuth helper' {
+        $mod = Get-Module Nova.Auth
+        $mod.ExportedFunctions.Keys | Should -Not -Contain '_EdgeAppAuth'
+    }
+
     It 'does not export removed WebView2 functions' {
         $mod = Get-Module Nova.Auth
         $mod.ExportedFunctions.Keys | Should -Not -Contain 'Install-WebView2SDK'

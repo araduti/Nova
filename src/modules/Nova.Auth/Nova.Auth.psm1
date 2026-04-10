@@ -5,7 +5,7 @@
 .DESCRIPTION
     Provides OAuth2 Authorization Code Flow with PKCE for authenticating
     OSD operators.  Both environments use Edge --app mode:
-      1. Trigger.ps1 (full Windows): Edge --app with system browser fallback
+      1. Trigger.ps1 (full Windows): Edge --app mode
       2. Bootstrap.ps1 (WinPE kiosk): Edge --app mode (always available in boot image)
     Also includes token refresh.
 #>
@@ -19,17 +19,307 @@ function _HasProp {
 }
 
 
+#region ── Shared Edge --app Auth Helper ────────────────────────────────────────────
+# Both Invoke-M365DeviceCodeAuth (full Windows) and Invoke-KioskM365Auth
+# (WinPE kiosk) delegate to this private function for the interactive
+# Edge --app OAuth2 Authorization Code + PKCE flow.
+
+function _EdgeAppAuth {
+    <#
+    .SYNOPSIS  Authenticate via Edge --app popup (Auth Code + PKCE).
+    .DESCRIPTION
+        Generates PKCE codes, starts a localhost HTTP listener, launches Edge
+        in --app mode pointing at the Azure AD authorization endpoint, waits
+        for the redirect callback, and exchanges the authorization code for
+        tokens.
+
+        Used by both Invoke-M365DeviceCodeAuth (full Windows) and
+        Invoke-KioskM365Auth (WinPE kiosk).  Environment differences are
+        handled through parameters:
+          - ExtraEdgeArgs: WinPE passes GPU-related flags.
+          - EdgeExitGracePeriod: full Windows allows a grace period because
+            Edge may hand off window creation to an existing process.
+          - WaitForDns: WinPE waits for DNS readiness after WiFi connects.
+    .PARAMETER ClientId
+        Azure AD application (client) ID.
+    .PARAMETER Scope
+        OAuth 2.0 scopes to request (space-separated).
+    .PARAMETER EdgeExePath
+        Full path to msedge.exe.
+    .PARAMETER EdgeDataDir
+        Temporary directory for Edge user-data-dir (avoids conflicts).
+    .PARAMETER ExtraEdgeArgs
+        Additional command-line arguments for Edge (e.g. WinPE GPU flags).
+    .PARAMETER TimeoutMinutes
+        How long to wait for the user to complete sign-in.
+    .PARAMETER EdgeExitGracePeriod
+        Seconds to wait before treating an exited Edge process as user
+        cancellation.  On full Windows, Edge may hand off window creation
+        to an already-running browser process, causing the initial process
+        to exit immediately.  Set to 0 in WinPE where Edge is the sole instance.
+    .PARAMETER WaitForDns
+        When set, waits for DNS resolution of login.microsoftonline.com
+        before launching Edge.  Useful in WinPE where the network stack
+        may not be fully ready.
+    .PARAMETER WriteLog
+        Scriptblock for writing auth log entries.
+    .PARAMETER UpdateUi
+        Scriptblock for updating the HTML UI.
+    .PARAMETER CheckCancelled
+        Scriptblock that returns $true when auth has been cancelled.
+    .PARAMETER DoEvents
+        Scriptblock that pumps the WinForms message loop.
+    .OUTPUTS
+        [hashtable] with keys:
+          Success          [bool]   $true if auth succeeded.
+          GraphAccessToken [string] Microsoft Graph access token, or $null.
+          RefreshToken     [string] Refresh token, or $null.
+          ExpiresAt        [datetime] Token expiration time, or $null.
+    #>
+    [OutputType([hashtable])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ClientId,
+        [string]$Scope = 'openid profile',
+        [Parameter(Mandatory)]
+        [string]$EdgeExePath,
+        [Parameter(Mandatory)]
+        [string]$EdgeDataDir,
+        [string[]]$ExtraEdgeArgs = @(),
+        [int]$TimeoutMinutes = 2,
+        [int]$EdgeExitGracePeriod = 0,
+        [switch]$WaitForDns,
+        [scriptblock]$WriteLog,
+        [scriptblock]$UpdateUi,
+        [scriptblock]$CheckCancelled,
+        [scriptblock]$DoEvents
+    )
+
+    $fail = @{ Success = $false; GraphAccessToken = $null; RefreshToken = $null; ExpiresAt = $null }
+
+    # ── Verify Edge binary exists ───────────────────────────────────────────
+    if (-not (Test-Path $EdgeExePath)) {
+        if ($WriteLog) { & $WriteLog "Edge not found at $EdgeExePath -- cannot open auth window." }
+        return $fail
+    }
+
+    if ($WriteLog) { & $WriteLog "Edge app auth starting" }
+
+    # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────────
+    $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $bytes = New-Object byte[] 32
+    $rng.GetBytes($bytes)
+    $codeVerifier  = [Convert]::ToBase64String($bytes) -replace '\+','-' -replace '/','_' -replace '='
+
+    $sha256        = [System.Security.Cryptography.SHA256]::Create()
+    $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
+    $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
+
+    # ── Start a temporary localhost HTTP listener ───────────────────────────────
+    $listener    = New-Object System.Net.HttpListener
+    $redirectUri = $null
+    foreach ($attempt in 1..5) {
+        $port        = Get-Random -Minimum 49152 -Maximum 65535
+        $redirectUri = "http://localhost:$port/"
+        $listener.Prefixes.Clear()
+        $listener.Prefixes.Add($redirectUri)
+        try {
+            $listener.Start()
+            if ($WriteLog) { & $WriteLog "HTTP listener started on port $port" }
+            break
+        } catch {
+            if ($WriteLog) { & $WriteLog "Listener port $port failed (attempt $attempt of 5): $_" }
+            if ($attempt -eq 5) {
+                if ($WriteLog) { & $WriteLog "Could not start HTTP listener after $attempt attempts." }
+                return $fail
+            }
+        }
+    }
+
+    $authCode  = $null
+    $authError = $null
+    $edgeProc  = $null
+
+    try {
+
+    # ── Build the authorize URL ───────────────────────────────────────────
+    $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
+        "client_id=$([uri]::EscapeDataString($ClientId))" +
+        '&response_type=code' +
+        "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
+        "&scope=$([uri]::EscapeDataString($Scope))" +
+        "&code_challenge=$codeChallenge" +
+        '&code_challenge_method=S256' +
+        '&prompt=select_account'
+
+    # ── Optionally wait for DNS readiness ──────────────────────────────────────
+    if ($WaitForDns) {
+        $loginHost = 'login.microsoftonline.com'
+        $dnsReady  = $false
+        for ($dnsAttempt = 1; $dnsAttempt -le 10; $dnsAttempt++) {
+            try {
+                $null = [System.Net.Dns]::GetHostAddresses($loginHost)
+                $dnsReady = $true
+                break
+            } catch {
+                if ($WriteLog) { & $WriteLog "DNS lookup for $loginHost failed (attempt $dnsAttempt of 10)" }
+                Start-Sleep -Milliseconds 500
+            }
+        }
+        if (-not $dnsReady) {
+            if ($WriteLog) { & $WriteLog "Cannot resolve $loginHost -- proceeding anyway" }
+        }
+    }
+
+    # ── Launch Edge in --app mode ──────────────────────────────────────────
+    if ($WriteLog) { & $WriteLog "Launching Edge --app for auth popup" }
+    $edgeArgs = @(
+        "--app=$authorizeUrl",
+        "--user-data-dir=$EdgeDataDir",
+        '--window-size=520,700',
+        '--no-first-run',
+        '--disable-fre',
+        '--disable-features=msWebOOBE,PasswordManager',
+        '--password-store=basic',
+        '--disable-save-password-bubble'
+    ) + $ExtraEdgeArgs
+    $edgeProc = Start-Process -FilePath $EdgeExePath -ArgumentList $edgeArgs -PassThru
+    $edgeLaunchTime = [datetime]::UtcNow
+
+    if ($UpdateUi) { & $UpdateUi @{ AuthInProgress = $true } }
+
+    # ── Wait for the redirect callback ──────────────────────────────────────
+    $asyncResult = $listener.BeginGetContext($null, $null)
+    $timeout   = [datetime]::UtcNow.AddMinutes($TimeoutMinutes)
+    $cancelled = $false
+
+    while (-not $authCode -and -not $authError `
+           -and -not $cancelled -and [datetime]::UtcNow -lt $timeout) {
+
+        if ($CheckCancelled) { $cancelled = (& $CheckCancelled) -eq $true }
+
+        if ($edgeProc -and $edgeProc.HasExited) {
+            if ($EdgeExitGracePeriod -gt 0) {
+                # Full Windows: Edge may hand off to an existing browser
+                # process, causing the initial process to exit immediately.
+                # Only treat as cancellation after the grace period.
+                if (([datetime]::UtcNow - $edgeLaunchTime).TotalSeconds -gt $EdgeExitGracePeriod) {
+                    if ($WriteLog) { & $WriteLog "Edge auth window was closed by user (after grace period)." }
+                    $cancelled = $true
+                    break
+                }
+            } else {
+                if ($WriteLog) { & $WriteLog "Edge auth window was closed by user." }
+                $cancelled = $true
+                break
+            }
+        }
+
+        if ($asyncResult.IsCompleted -or $asyncResult.AsyncWaitHandle.WaitOne(0)) {
+            try {
+                $context = $listener.EndGetContext($asyncResult)
+
+                foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
+                    $kv = $pair.Split('=', 2)
+                    if ($kv.Count -eq 2) {
+                        if ($kv[0] -eq 'code')  { $authCode  = [uri]::UnescapeDataString($kv[1]) }
+                        if ($kv[0] -eq 'error') { $authError = [uri]::UnescapeDataString($kv[1]) }
+                    }
+                }
+
+                # Send a response page that shows result and closes.
+                $html = if ($authCode) {
+                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
+                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
+                    '<div style="text-align:center"><h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
+                    '<p>This window will close automatically...</p></div>' +
+                    '<script>setTimeout(function(){window.close()},1500)</script></body></html>'
+                } else {
+                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
+                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
+                    '<div style="text-align:center"><h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
+                    '<p>This window will close automatically...</p></div>' +
+                    '<script>setTimeout(function(){window.close()},2500)</script></body></html>'
+                }
+                $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
+                $context.Response.ContentType     = 'text/html; charset=utf-8'
+                $context.Response.ContentLength64 = $buf.Length
+                $context.Response.OutputStream.Write($buf, 0, $buf.Length)
+                $context.Response.OutputStream.Close()
+            } catch {
+                if ($WriteLog) { & $WriteLog "Listener callback error: $_" }
+            }
+        }
+
+        if ($DoEvents) { & $DoEvents }
+        Start-Sleep -Milliseconds 200
+    }
+
+    } finally {
+        # ── Clean up: stop listener and kill the Edge --app process ──────────────
+        try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
+
+        if ($edgeProc -and -not $edgeProc.HasExited) {
+            if ($WriteLog) { & $WriteLog "Closing Edge auth window (PID $($edgeProc.Id))" }
+            try { $edgeProc.Kill() } catch { $null = $_ }
+        }
+        # Remove stale lock files so the auth data dir can be reused.
+        try { Remove-Item (Join-Path $EdgeDataDir 'lockfile')      -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+        try { Remove-Item (Join-Path $EdgeDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+
+        if ($UpdateUi) { & $UpdateUi @{ ClearAuth = $true } }
+    }
+
+    if ($cancelled -or -not $authCode) {
+        $codeStatus = if ($authCode) { 'present' } else { 'missing' }
+        if ($WriteLog) { & $WriteLog "Edge app auth ended without auth code. Cancelled=$cancelled, AuthCode=$codeStatus" }
+        if ($authError -and $WriteLog) {
+            & $WriteLog "Auth error: $authError"
+        }
+        return $fail
+    }
+
+    # ── Exchange authorization code for tokens ────────────────────────────────
+    $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
+    try {
+        $body = "client_id=$([uri]::EscapeDataString($ClientId))" +
+                "&scope=$([uri]::EscapeDataString($Scope))" +
+                "&code=$([uri]::EscapeDataString($authCode))" +
+                "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
+                '&grant_type=authorization_code' +
+                "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+        $raw = $wc.UploadString($tokenUrl, 'POST', $body)
+        $tokenResponse = $raw | ConvertFrom-Json
+        if ((_HasProp $tokenResponse 'id_token') -and $tokenResponse.id_token) {
+            $graphToken   = if ((_HasProp $tokenResponse 'access_token')  -and $tokenResponse.access_token)  { $tokenResponse.access_token }  else { $null }
+            $refreshToken = if ((_HasProp $tokenResponse 'refresh_token') -and $tokenResponse.refresh_token) { $tokenResponse.refresh_token } else { $null }
+            $expiresIn    = if ((_HasProp $tokenResponse 'expires_in')    -and $tokenResponse.expires_in)    { [int]$tokenResponse.expires_in } else { 3600 }
+            $expiresAt    = (Get-Date).AddSeconds($expiresIn)
+            if ($WriteLog) { & $WriteLog "Edge app auth succeeded -- token obtained." }
+            return @{ Success = $true; GraphAccessToken = $graphToken; RefreshToken = $refreshToken; ExpiresAt = $expiresAt }
+        }
+    } catch {
+        if ($WriteLog) { & $WriteLog "Token exchange failed: $_" }
+    }
+
+    return $fail
+}
+
+#endregion
+
+
 function Invoke-M365DeviceCodeAuth {
     <#
-    .SYNOPSIS  Authenticate the operator via Edge --app or system browser sign-in.
+    .SYNOPSIS  Authenticate the operator via Edge --app sign-in.
     .DESCRIPTION
         Downloads config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
         launches Edge in --app mode for an interactive Azure AD sign-in
         using the Authorization Code Flow with PKCE.  A temporary
         localhost HTTP listener captures the redirect.
-        If Edge is not available, the function falls back to opening the
-        default system browser with the same localhost listener.
         Tenant restrictions are enforced at the Entra ID app registration
         level -- only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
@@ -53,7 +343,7 @@ function Invoke-M365DeviceCodeAuth {
         [string] $GitHubBranch = 'main'
     )
 
-    # ── Fetch auth configuration from the repository ────────────────────────
+    # ── Fetch auth configuration from the repository ────────────────────────────
     $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/auth.json"
     $authConfig    = $null
     try {
@@ -77,62 +367,16 @@ function Invoke-M365DeviceCodeAuth {
 
     $clientId = $authConfig.clientId
 
-    # ── Build scope string ──────────────────────────────────────────────────
+    # ── Build scope string ────────────────────────────────────────────────
     $scope = 'openid profile'
     if ((_HasProp $authConfig 'graphScopes') -and $authConfig.graphScopes) {
         $trimmed = ($authConfig.graphScopes).Trim()
         if ($trimmed) { $scope = "openid profile $trimmed" }
     }
 
-    # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────
     Write-Step 'Signing in with Microsoft 365...'
 
-    $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $bytes = New-Object byte[] 32
-    $rng.GetBytes($bytes)
-    $codeVerifier  = [Convert]::ToBase64String($bytes) -replace '\+','-' -replace '/','_' -replace '='
-
-    $sha256        = [System.Security.Cryptography.SHA256]::Create()
-    $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
-    $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
-
-    # ── Start a temporary localhost HTTP listener ───────────────────────────
-    $listener    = New-Object System.Net.HttpListener
-    $redirectUri = $null
-    foreach ($attempt in 1..5) {
-        $port        = Get-Random -Minimum 49152 -Maximum 65535
-        $redirectUri = "http://localhost:$port/"
-        $listener.Prefixes.Clear()
-        $listener.Prefixes.Add($redirectUri)
-        try {
-            $listener.Start()
-            break
-        } catch {
-            if ($attempt -eq 5) {
-                Write-Fail "Could not start local HTTP listener after $attempt attempts: $_"
-                return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
-            }
-        }
-    }
-
-    $code      = $null
-    $authError = $null
-    $edgeProc  = $null
-    $edgeAuthDataDir = Join-Path $env:TEMP 'Nova-EdgeAuth'
-
-    try {
-
-    # ── Build the authorize URL ─────────────────────────────────────────────
-    $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
-        "client_id=$([uri]::EscapeDataString($clientId))" +
-        '&response_type=code' +
-        "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-        "&scope=$([uri]::EscapeDataString($scope))" +
-        "&code_challenge=$codeChallenge" +
-        '&code_challenge_method=S256' +
-        '&prompt=select_account'
-
-    # ── Find Edge and launch in --app mode ──────────────────────────────────
+    # ── Find Edge ──────────────────────────────────────────────────────────
     $edgePath = $null
     foreach ($candidate in @(
         "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
@@ -144,125 +388,35 @@ function Invoke-M365DeviceCodeAuth {
         }
     }
 
-    if ($edgePath) {
-        $edgeAuthArgs = @(
-            "--app=$authorizeUrl",
-            "--user-data-dir=$edgeAuthDataDir",
-            '--window-size=520,700',
-            '--no-first-run',
-            '--disable-fre',
-            '--disable-features=msWebOOBE,PasswordManager',
-            '--password-store=basic',
-            '--disable-save-password-bubble'
-        )
-        $edgeProc = Start-Process -FilePath $edgePath -ArgumentList $edgeAuthArgs -PassThru
-        $edgeLaunchTime = [datetime]::UtcNow
-    } else {
-        # Fallback: open default system browser.
-        Write-Host ''
-        Write-Host '  A browser window will open for sign-in.' -ForegroundColor White
-        Write-Host '  Complete the sign-in in your browser.'    -ForegroundColor Gray
-        Write-Host ''
-        Start-Process $authorizeUrl
-    }
-
-    # ── Wait for the redirect callback ──────────────────────────────────────
-    $asyncResult = $listener.BeginGetContext($null, $null)
-    $timeout = [datetime]::UtcNow.AddMinutes(2)
-
-    while (-not $code -and -not $authError -and [datetime]::UtcNow -lt $timeout) {
-        # On full Windows, Edge may hand off window creation to an already-running
-        # browser process, causing the initial $edgeProc to exit immediately.
-        # Only treat HasExited as user cancellation after a grace period.
-        if ($edgeProc -and $edgeProc.HasExited `
-            -and ([datetime]::UtcNow - $edgeLaunchTime).TotalSeconds -gt 15) {
-            break
-        }
-
-        if ($asyncResult.IsCompleted -or $asyncResult.AsyncWaitHandle.WaitOne(0)) {
-            try {
-                $context = $listener.EndGetContext($asyncResult)
-
-                foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
-                    $kv = $pair.Split('=', 2)
-                    if ($kv.Count -eq 2) {
-                        if ($kv[0] -eq 'code')  { $code      = [uri]::UnescapeDataString($kv[1]) }
-                        if ($kv[0] -eq 'error') { $authError = [uri]::UnescapeDataString($kv[1]) }
-                    }
-                }
-
-                # Send a response page.
-                $html = if ($code) {
-                    '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
-                    '<h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
-                    '<p>You can close this window and return to Nova.</p>' +
-                    '<script>setTimeout(function(){window.close()},2000)</script></body></html>'
-                } else {
-                    '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
-                    '<h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
-                    '<p>Please close this window and try again.</p></body></html>'
-                }
-                $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
-                $context.Response.ContentType     = 'text/html; charset=utf-8'
-                $context.Response.ContentLength64 = $buf.Length
-                $context.Response.OutputStream.Write($buf, 0, $buf.Length)
-                $context.Response.OutputStream.Close()
-            } catch { $null = $_ }
-        }
-
-        Start-Sleep -Milliseconds 200
-    }
-
-    } finally {
-        # ── Clean up: stop listener and kill Edge --app process ──────────────
-        try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
-
-        if ($edgeProc -and -not $edgeProc.HasExited) {
-            try { $edgeProc.Kill() } catch { $null = $_ }
-        }
-        # Remove stale lock files so the auth data dir can be reused.
-        try { Remove-Item (Join-Path $edgeAuthDataDir 'lockfile')      -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
-        try { Remove-Item (Join-Path $edgeAuthDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
-    }
-
-    if (-not $code) {
-        $msg = if ($authError) { "Sign-in was not completed: $authError" } else { 'Sign-in was not completed.' }
-        Write-Fail $msg
+    if (-not $edgePath) {
+        Write-Fail 'Microsoft Edge is required but was not found.'
         return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
     }
 
-    # ── Exchange authorization code for tokens ──────────────────────────────
-    $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
-    try {
-        $body = "client_id=$([uri]::EscapeDataString($clientId))" +
-                "&scope=$([uri]::EscapeDataString($scope))" +
-                "&code=$([uri]::EscapeDataString($code))" +
-                "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-                '&grant_type=authorization_code' +
-                "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-        $raw = $wc.UploadString($tokenUrl, 'POST', $body)
-        $tokenResponse = $raw | ConvertFrom-Json
-        if ((_HasProp $tokenResponse 'id_token') -and $tokenResponse.id_token) {
-            $graphToken   = if ((_HasProp $tokenResponse 'access_token')  -and $tokenResponse.access_token)  { $tokenResponse.access_token }  else { $null }
-            $refreshToken = if ((_HasProp $tokenResponse 'refresh_token') -and $tokenResponse.refresh_token) { $tokenResponse.refresh_token } else { $null }
-            $expiresIn    = if ((_HasProp $tokenResponse 'expires_in')    -and $tokenResponse.expires_in)    { [int]$tokenResponse.expires_in } else { 3600 }
-            $expiresAt    = (Get-Date).AddSeconds($expiresIn)
-            Write-Success 'Identity verified.'
-            return @{
-                Authenticated    = $true
-                GraphAccessToken = $graphToken
-                RefreshToken     = $refreshToken
-                ExpiresAt        = $expiresAt
-                AuthConfig       = $authConfig
-            }
+    # ── Delegate to shared Edge --app auth helper ──────────────────────────────
+    $edgeAuthDataDir = Join-Path $env:TEMP 'Nova-EdgeAuth'
+    $writeLog = { param([string]$m) Write-Verbose $m }
+
+    $edgeResult = _EdgeAppAuth `
+        -ClientId $clientId -Scope $scope `
+        -EdgeExePath $edgePath `
+        -EdgeDataDir $edgeAuthDataDir `
+        -TimeoutMinutes 2 `
+        -EdgeExitGracePeriod 15 `
+        -WriteLog $writeLog
+
+    if ($edgeResult.Success) {
+        Write-Success 'Identity verified.'
+        return @{
+            Authenticated    = $true
+            GraphAccessToken = $edgeResult.GraphAccessToken
+            RefreshToken     = $edgeResult.RefreshToken
+            ExpiresAt        = $edgeResult.ExpiresAt
+            AuthConfig       = $authConfig
         }
-    } catch {
-        Write-Verbose "Token exchange failed: $_"
     }
 
-    Write-Fail 'Token exchange failed.'
+    Write-Fail 'Sign-in was not completed.'
     return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
 }
 
@@ -325,279 +479,6 @@ function Update-M365Token {
     return $null
 }
 
-#region ── WinPE Kiosk Auth ────────────────────────────────────────────────────
-# Used by Bootstrap.ps1 inside the WinPE kiosk environment.
-# Edge is always present in the WinPE boot image, so the only interactive
-# auth method is Edge --app mode (Auth Code + PKCE).
-# _KioskEdgeAuth is a private helper; Invoke-KioskM365Auth is the public
-# orchestrator that accepts scriptblock callbacks for UI decoupling.
-
-function _KioskEdgeAuth {
-    <#
-    .SYNOPSIS  Authenticate the operator via Edge --app popup (Auth Code + PKCE).
-    .DESCRIPTION
-        Launches Microsoft Edge in --app mode as a separate process, pointing at
-        the Azure AD authorization endpoint.  This opens a clean, chromeless
-        browser window dedicated to the login flow -- independent of the kiosk
-        UI running in Edge --kiosk mode.
-
-        A temporary localhost HTTP listener captures the redirect carrying the
-        authorization code, then exchanges it for tokens using PKCE.
-        After authentication completes (or fails), the Edge --app process is
-        terminated automatically.
-
-        WinPE-safe -- uses the same msedge.exe binary already staged in the
-        boot image.
-    .PARAMETER ClientId
-        Azure AD application (client) ID.
-    .PARAMETER Scope
-        OAuth 2.0 scopes to request (space-separated).
-    .PARAMETER EdgeExePath
-        Full path to msedge.exe.  Defaults to the WinPE staging path.
-    .PARAMETER WriteLog
-        Scriptblock for writing auth log entries.  Called with a single string argument.
-    .PARAMETER UpdateUi
-        Scriptblock for updating the HTML UI.  Called with a hashtable of parameters.
-    .PARAMETER CheckCancelled
-        Scriptblock that returns $true when auth has been cancelled (e.g. via /cancelauth HTTP API).
-    .PARAMETER DoEvents
-        Scriptblock that pumps the WinForms message loop.
-    .OUTPUTS
-        [hashtable] with keys:
-          Success          [bool]   $true if auth succeeded.
-          GraphAccessToken [string] Microsoft Graph access token, or $null.
-    #>
-    [OutputType([hashtable])]
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$ClientId,
-        [string]$Scope = 'openid profile',
-        [string]$EdgeExePath = 'X:\WebView2\Edge\msedge.exe',
-        [scriptblock]$WriteLog,
-        [scriptblock]$UpdateUi,
-        [scriptblock]$CheckCancelled,
-        [scriptblock]$DoEvents
-    )
-
-    $fail = @{ Success = $false; GraphAccessToken = $null }
-
-    # ── Verify Edge binary exists ───────────────────────────────────────────
-    if (-not (Test-Path $EdgeExePath)) {
-        if ($WriteLog) { & $WriteLog "Edge not found at $EdgeExePath -- cannot open auth window." }
-        return $fail
-    }
-
-    # ── Log environment diagnostics ─────────────────────────────────────────
-    if ($WriteLog) { & $WriteLog "Edge app auth starting" }
-
-    # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────
-    $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $bytes = New-Object byte[] 32
-    $rng.GetBytes($bytes)
-    $codeVerifier  = [Convert]::ToBase64String($bytes) -replace '\+','-' -replace '/','_' -replace '='
-
-    $sha256        = [System.Security.Cryptography.SHA256]::Create()
-    $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
-    $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
-
-    # ── Start a temporary localhost HTTP listener ───────────────────────────
-    $listener    = New-Object System.Net.HttpListener
-    $redirectUri = $null
-    foreach ($attempt in 1..5) {
-        $port        = Get-Random -Minimum 49152 -Maximum 65535
-        $redirectUri = "http://localhost:$port/"
-        $listener.Prefixes.Clear()
-        $listener.Prefixes.Add($redirectUri)
-        try {
-            $listener.Start()
-            if ($WriteLog) { & $WriteLog "HTTP listener started on port $port" }
-            break
-        } catch {
-            if ($WriteLog) { & $WriteLog "Listener port $port failed (attempt $attempt of 5): $_" }
-            if ($attempt -eq 5) {
-                if ($WriteLog) { & $WriteLog "Could not start HTTP listener after $attempt attempts." }
-                return $fail
-            }
-        }
-    }
-
-    $authCode  = $null
-    $authError = $null
-    $edgeProc  = $null
-
-    try {
-
-    # ── Build the authorize URL ─────────────────────────────────────────────
-    $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
-        "client_id=$([uri]::EscapeDataString($ClientId))" +
-        '&response_type=code' +
-        "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-        "&scope=$([uri]::EscapeDataString($Scope))" +
-        "&code_challenge=$codeChallenge" +
-        '&code_challenge_method=S256' +
-        '&prompt=select_account'
-
-    # ── Wait for the login endpoint to be reachable ────────────────────────
-    # In WinPE the DNS/network stack may not be fully ready immediately
-    # after WiFi connects.  Navigating too early causes a brief "page
-    # cannot be displayed" error before the real login page loads.
-    $loginHost = 'login.microsoftonline.com'
-    $dnsReady  = $false
-    for ($dnsAttempt = 1; $dnsAttempt -le 10; $dnsAttempt++) {
-        try {
-            $null = [System.Net.Dns]::GetHostAddresses($loginHost)
-            $dnsReady = $true
-            break
-        } catch {
-            if ($WriteLog) { & $WriteLog "DNS lookup for $loginHost failed (attempt $dnsAttempt of 10)" }
-            Start-Sleep -Milliseconds 500
-        }
-    }
-    if (-not $dnsReady) {
-        if ($WriteLog) { & $WriteLog "Cannot resolve $loginHost -- proceeding anyway" }
-    }
-
-    # ── Launch Edge in --app mode for the login window ──────────────────────
-    # --app opens a chromeless window (no tabs, no address bar) ideal for
-    # a sign-in form.  A separate user-data-dir avoids conflicts with
-    # the kiosk Edge instance.
-    if ($WriteLog) { & $WriteLog "Launching Edge --app for auth popup" }
-    $edgeAuthDataDir = 'X:\Temp\EdgeAuth'
-    $edgeAuthArgs = @(
-        "--app=$authorizeUrl",
-        '--allow-run-as-system',
-        "--user-data-dir=$edgeAuthDataDir",
-        '--window-size=520,700',
-        '--disable-gpu',
-        '--disable-gpu-compositing',
-        '--disable-direct-composition',
-        '--use-angle=swiftshader',
-        '--enable-unsafe-swiftshader',
-        '--in-process-gpu',
-        '--no-first-run',
-        '--disable-fre',
-        '--disable-features=msWebOOBE,PasswordManager',
-        '--password-store=basic',
-        '--disable-save-password-bubble'
-    )
-    $edgeProc = Start-Process -FilePath $EdgeExePath -ArgumentList $edgeAuthArgs -PassThru
-
-    # Notify the UI that auth is in progress (but no URL -- the Edge
-    # --app window handles the login page directly).
-    if ($UpdateUi) { & $UpdateUi @{ AuthInProgress = $true } }
-
-    # ── Wait for the redirect callback ──────────────────────────────────────
-    $asyncResult = $listener.BeginGetContext($null, $null)
-
-    # 5-minute timeout -- Azure AD sessions are valid for 10 minutes,
-    # 5 minutes gives enough time without leaving the kiosk unattended.
-    $timeout = [datetime]::UtcNow.AddMinutes(5)
-    $cancelled = $false
-
-    while (-not $authCode -and -not $authError `
-           -and -not $cancelled -and [datetime]::UtcNow -lt $timeout) {
-
-        if ($CheckCancelled) { $cancelled = (& $CheckCancelled) -eq $true }
-
-        # If the user closed the Edge window, treat as cancellation.
-        if ($edgeProc -and $edgeProc.HasExited) {
-            if ($WriteLog) { & $WriteLog "Edge auth window was closed by user." }
-            $cancelled = $true
-            break
-        }
-
-        if ($asyncResult.IsCompleted -or $asyncResult.AsyncWaitHandle.WaitOne(0)) {
-            try {
-                $context = $listener.EndGetContext($asyncResult)
-
-                # Parse authorization code (or error) from the query string.
-                foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
-                    $kv = $pair.Split('=', 2)
-                    if ($kv.Count -eq 2) {
-                        if ($kv[0] -eq 'code')  { $authCode  = [uri]::UnescapeDataString($kv[1]) }
-                        if ($kv[0] -eq 'error') { $authError = [uri]::UnescapeDataString($kv[1]) }
-                    }
-                }
-
-                # Send a response page that shows result and closes.
-                $html = if ($authCode) {
-                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
-                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
-                    '<div style="text-align:center"><h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
-                    '<p>This window will close automatically...</p></div>' +
-                    '<script>setTimeout(function(){window.close()},1500)</script></body></html>'
-                } else {
-                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
-                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
-                    '<div style="text-align:center"><h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
-                    '<p>This window will close automatically...</p></div>' +
-                    '<script>setTimeout(function(){window.close()},2500)</script></body></html>'
-                }
-                $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
-                $context.Response.ContentType     = 'text/html; charset=utf-8'
-                $context.Response.ContentLength64 = $buf.Length
-                $context.Response.OutputStream.Write($buf, 0, $buf.Length)
-                $context.Response.OutputStream.Close()
-            } catch {
-                if ($WriteLog) { & $WriteLog "Listener callback error: $_" }
-            }
-        }
-
-        if ($DoEvents) { & $DoEvents }
-        Start-Sleep -Milliseconds 200
-    }
-
-    } finally {
-        # ── Clean up: stop listener and kill the Edge --app process ──────────
-        try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
-
-        if ($edgeProc -and -not $edgeProc.HasExited) {
-            if ($WriteLog) { & $WriteLog "Closing Edge auth window (PID $($edgeProc.Id))" }
-            try { $edgeProc.Kill() } catch { $null = $_ }
-        }
-        # Remove stale lock files so the auth data dir can be reused
-        try { Remove-Item (Join-Path $edgeAuthDataDir 'lockfile')     -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
-        try { Remove-Item (Join-Path $edgeAuthDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
-
-        # Clear auth-in-progress signal
-        if ($UpdateUi) { & $UpdateUi @{ ClearAuth = $true } }
-    }
-
-    if ($cancelled -or -not $authCode) {
-        $codeStatus = if ($authCode) { 'present' } else { 'missing' }
-        if ($WriteLog) { & $WriteLog "Edge app auth ended without auth code. Cancelled=$cancelled, AuthCode=$codeStatus" }
-        if ($authError -and $WriteLog) {
-            & $WriteLog "Auth error: $authError"
-        }
-        return $fail
-    }
-
-    # ── Exchange authorization code for tokens ──────────────────────────────
-    $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
-    try {
-        $body = "client_id=$([uri]::EscapeDataString($ClientId))" +
-                "&scope=$([uri]::EscapeDataString($Scope))" +
-                "&code=$([uri]::EscapeDataString($authCode))" +
-                "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-                '&grant_type=authorization_code' +
-                "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-        $raw = $wc.UploadString($tokenUrl, 'POST', $body)
-        $tokenResponse = $raw | ConvertFrom-Json
-        if ((_HasProp $tokenResponse 'id_token') -and $tokenResponse.id_token) {
-            $graphToken = if ((_HasProp $tokenResponse 'access_token') -and $tokenResponse.access_token) { $tokenResponse.access_token } else { $null }
-            if ($WriteLog) { & $WriteLog "Edge app auth succeeded -- token obtained." }
-            return @{ Success = $true; GraphAccessToken = $graphToken }
-        }
-    } catch {
-        if ($WriteLog) { & $WriteLog "Token exchange failed: $_" }
-    }
-
-    return $fail
-}
-
 function Invoke-KioskM365Auth {
     <#
     .SYNOPSIS  Authenticate the operator via M365 (Edge --app popup with Auth Code + PKCE).
@@ -643,7 +524,7 @@ function Invoke-KioskM365Auth {
 
     $skip = @{ Authenticated = $true; GraphAccessToken = $null; AuthConfig = $null }
 
-    # ── Fetch auth configuration from the repository ────────────────────────
+    # ── Fetch auth configuration from the repository ────────────────────────────
     $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/auth.json"
     $authConfig    = $null
     try {
@@ -669,7 +550,7 @@ function Invoke-KioskM365Auth {
 
     $clientId = $authConfig.clientId
 
-    # ── Build scope string ──────────────────────────────────────────────────
+    # ── Build scope string ────────────────────────────────────────────────
     $scope = 'openid profile'
     if ((_HasProp $authConfig 'graphScopes') -and $authConfig.graphScopes) {
         $trimmed = ($authConfig.graphScopes).Trim()
@@ -679,12 +560,27 @@ function Invoke-KioskM365Auth {
     if ($WriteStatus) { & $WriteStatus 'Signing in with Microsoft 365...' 'Cyan' }
     if ($DoEvents) { & $DoEvents }
 
-    # ── Authenticate via Edge --app popup ──────────────────────────────────
+    # ── Delegate to shared Edge --app auth helper ──────────────────────────────
+    $winPeEdgeArgs = @(
+        '--allow-run-as-system',
+        '--disable-gpu',
+        '--disable-gpu-compositing',
+        '--disable-direct-composition',
+        '--use-angle=swiftshader',
+        '--enable-unsafe-swiftshader',
+        '--in-process-gpu'
+    )
+
     $edgeResult = @{ Success = $false; GraphAccessToken = $null }
     try {
-        $edgeResult = _KioskEdgeAuth `
+        $edgeResult = _EdgeAppAuth `
             -ClientId $clientId -Scope $scope `
             -EdgeExePath $EdgeExePath `
+            -EdgeDataDir 'X:\Temp\EdgeAuth' `
+            -ExtraEdgeArgs $winPeEdgeArgs `
+            -TimeoutMinutes 5 `
+            -EdgeExitGracePeriod 0 `
+            -WaitForDns `
             -WriteLog $WriteLog -UpdateUi $UpdateUi `
             -CheckCancelled $CheckCancelled -DoEvents $DoEvents
     } catch {
@@ -702,8 +598,6 @@ function Invoke-KioskM365Auth {
     Start-Sleep -Seconds 3
     return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
 }
-
-#endregion
 
 Export-ModuleMember -Function @(
     'Invoke-M365DeviceCodeAuth'
