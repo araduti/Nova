@@ -237,8 +237,9 @@ function Invoke-M365DeviceCodeAuth {
         redirect URI under the "Mobile and desktop applications" platform.
     .OUTPUTS
         [hashtable] with keys:
-          Authenticated  [bool]  $true if auth succeeded or was not required.
+          Authenticated    [bool]   $true if auth succeeded or was not required.
           GraphAccessToken [string] Microsoft Graph access token, or $null.
+          AuthConfig       [object] The parsed auth.json config, or $null.
     #>
     [OutputType([hashtable])]
     [CmdletBinding()]
@@ -261,13 +262,13 @@ function Invoke-M365DeviceCodeAuth {
 
     # If auth is not configured or not required, skip silently.
     if (-not $authConfig -or -not ((_HasProp $authConfig 'requireAuth') -and $authConfig.requireAuth)) {
-        return @{ Authenticated = $true; GraphAccessToken = $null }
+        return @{ Authenticated = $true; GraphAccessToken = $null; AuthConfig = $null }
     }
 
     # Validate that the config has the minimum required fields.
     if (-not ((_HasProp $authConfig 'clientId') -and $authConfig.clientId)) {
         Write-Verbose "Auth config incomplete -- skipping authentication."
-        return @{ Authenticated = $true; GraphAccessToken = $null }
+        return @{ Authenticated = $true; GraphAccessToken = $null; AuthConfig = $null }
     }
 
     $clientId = $authConfig.clientId
@@ -348,7 +349,7 @@ function Invoke-M365DeviceCodeAuth {
             } catch {
                 if ($attempt -eq 5) {
                     Write-Fail "Could not start local HTTP listener after $attempt attempts: $_"
-                    return @{ Authenticated = $false; GraphAccessToken = $null }
+                    return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
                 }
             }
         }
@@ -375,7 +376,7 @@ function Invoke-M365DeviceCodeAuth {
         $asyncResult = $listener.BeginGetContext($null, $null)
         if (-not $asyncResult.AsyncWaitHandle.WaitOne($timeoutMs)) {
             Write-Fail 'Sign-in timed out.'
-            return @{ Authenticated = $false; GraphAccessToken = $null }
+            return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
         }
 
         $context = $listener.EndGetContext($asyncResult)
@@ -412,7 +413,7 @@ function Invoke-M365DeviceCodeAuth {
     if (-not $code) {
         $msg = if ($authError) { "Sign-in was not completed: $authError" } else { 'Sign-in was not completed.' }
         Write-Fail $msg
-        return @{ Authenticated = $false; GraphAccessToken = $null }
+        return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
     }
 
     # ── Step 5: Exchange authorization code for tokens ──────────────────────
@@ -439,6 +440,7 @@ function Invoke-M365DeviceCodeAuth {
                 GraphAccessToken = $graphToken
                 RefreshToken     = $refreshToken
                 ExpiresAt        = $expiresAt
+                AuthConfig       = $authConfig
             }
         }
     } catch {
@@ -446,7 +448,7 @@ function Invoke-M365DeviceCodeAuth {
     }
 
     Write-Fail 'Token exchange failed.'
-    return @{ Authenticated = $false; GraphAccessToken = $null }
+    return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
 }
 
 function Update-M365Token {
