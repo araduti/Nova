@@ -4,10 +4,10 @@
 
 .DESCRIPTION
     Provides OAuth2 Authorization Code Flow with PKCE for authenticating
-    OSD operators.  Supports two modes:
-      1. Embedded WebView2 popup (preferred -- no external browser needed)
-      2. Default system browser + localhost HTTP listener (fallback)
-    Also includes WebView2 SDK download/caching.
+    OSD operators.  Supports two runtime environments:
+      1. Trigger.ps1 (full Windows): WebView2 popup or system browser fallback
+      2. Bootstrap.ps1 (WinPE kiosk): Edge --app mode (always available in boot image)
+    Also includes WebView2 SDK download/caching and token refresh.
 #>
 
 Set-StrictMode -Version Latest
@@ -514,8 +514,10 @@ function Update-M365Token {
 # These functions are used by Bootstrap.ps1 inside the WinPE kiosk environment.
 # They accept scriptblock parameters for UI callbacks so the module stays
 # decoupled from the Bootstrap UI layer.
+# Edge is always present in the WinPE boot image, so the only interactive
+# auth method is Edge --app mode (Auth Code + PKCE).
 
-function Invoke-KioskEdgeAuth {
+function _KioskEdgeAuth {
     <#
     .SYNOPSIS  Authenticate the operator via Edge --app popup (Auth Code + PKCE).
     .DESCRIPTION
@@ -761,125 +763,15 @@ function Invoke-KioskEdgeAuth {
     return $fail
 }
 
-function Invoke-KioskDeviceCodeAuth {
-    <#
-    .SYNOPSIS  Authenticate the operator via Device Code Flow (WinPE kiosk fallback).
-    .DESCRIPTION
-        Fallback authentication path used when the kiosk Edge auth is not
-        available.  Initiates the Device Code Flow and shows the one-time
-        code and verification URL in the HTML UI as a modal overlay.
-    .PARAMETER ClientId
-        Azure AD application (client) ID.
-    .PARAMETER Scope
-        OAuth 2.0 scopes to request (space-separated).
-    .PARAMETER WriteLog
-        Scriptblock for writing auth log entries.  Called with a single string argument.
-    .PARAMETER UpdateUi
-        Scriptblock for updating the HTML UI.  Called with a hashtable of parameters.
-    .PARAMETER CheckCancelled
-        Scriptblock that returns $true when auth has been cancelled.
-    .PARAMETER DoEvents
-        Scriptblock that pumps the WinForms message loop.
-    .OUTPUTS
-        [hashtable] with keys:
-          Success          [bool]   $true if auth succeeded.
-          GraphAccessToken [string] Microsoft Graph access token, or $null.
-    #>
-    [OutputType([hashtable])]
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$ClientId,
-        [string]$Scope = 'openid profile',
-        [scriptblock]$WriteLog,
-        [scriptblock]$UpdateUi,
-        [scriptblock]$CheckCancelled,
-        [scriptblock]$DoEvents
-    )
-
-    $fail = @{ Success = $false; GraphAccessToken = $null }
-
-    $deviceCodeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/devicecode'
-    $tokenUrl      = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
-    $grantType     = 'urn:ietf:params:oauth:grant-type:device_code'
-
-    $deviceResponse = $null
-    try {
-        $body = "client_id=$([uri]::EscapeDataString($ClientId))&scope=$([uri]::EscapeDataString($Scope))"
-        $wc   = New-Object System.Net.WebClient
-        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-        $raw  = $wc.UploadString($deviceCodeUrl, 'POST', $body)
-        $deviceResponse = $raw | ConvertFrom-Json
-    } catch {
-        if ($WriteLog) { & $WriteLog "Device code request failed: $_" }
-        return $fail
-    }
-
-    $userCode   = $deviceResponse.user_code
-    $deviceCode = $deviceResponse.device_code
-    $expiresIn  = if ((_HasProp $deviceResponse 'expires_in') -and $deviceResponse.expires_in) { [int]$deviceResponse.expires_in } else { 900 }
-    $interval   = if ((_HasProp $deviceResponse 'interval')   -and $deviceResponse.interval)   { [int]$deviceResponse.interval   } else { 5   }
-
-    # ── Show device code in the HTML UI modal ───────────────────────────────
-    if ($UpdateUi) { & $UpdateUi @{ ShowDeviceCode = $true; DeviceCode = $userCode } }
-
-    # ── Poll for token ──────────────────────────────────────────────────────
-    $expiry   = [datetime]::UtcNow.AddSeconds($expiresIn)
-    $nextPoll = [datetime]::UtcNow.AddSeconds($interval)
-    $tokenResponse = $null
-    $cancelled = $false
-
-    while (-not $cancelled -and [datetime]::UtcNow -lt $expiry) {
-        if ($CheckCancelled) { $cancelled = (& $CheckCancelled) -eq $true }
-        if ($cancelled) { break }
-
-        if ([datetime]::UtcNow -ge $nextPoll) {
-            try {
-                $body = "grant_type=$([uri]::EscapeDataString($grantType))" +
-                        "&client_id=$([uri]::EscapeDataString($ClientId))" +
-                        "&device_code=$([uri]::EscapeDataString($deviceCode))"
-                $wc = New-Object System.Net.WebClient
-                $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-                $raw = $wc.UploadString($tokenUrl, 'POST', $body)
-                $tr = $raw | ConvertFrom-Json
-                if ((_HasProp $tr 'id_token') -and $tr.id_token) {
-                    $tokenResponse = $tr
-                    break
-                }
-            } catch {
-                $msg = $_.ToString()
-                if ($msg -notmatch 'authorization_pending' -and $msg -notmatch 'slow_down') {
-                    if ($WriteLog) { & $WriteLog "Token poll error: $msg" }
-                }
-            }
-            $nextPoll = [datetime]::UtcNow.AddSeconds($interval)
-        }
-
-        if ($DoEvents) { & $DoEvents }
-        Start-Sleep -Milliseconds 200
-    }
-
-    # ── Clear the device code modal ─────────────────────────────────────────
-    if ($UpdateUi) { & $UpdateUi @{ ClearAuth = $true } }
-
-    if (-not $tokenResponse) {
-        return $fail
-    }
-
-    $graphToken = if ((_HasProp $tokenResponse 'access_token') -and $tokenResponse.access_token) { $tokenResponse.access_token } else { $null }    if ($WriteLog) { & $WriteLog "Device code auth succeeded -- token obtained." }
-    return @{ Success = $true; GraphAccessToken = $graphToken }
-}
-
 function Invoke-KioskM365Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via M365 (Edge --app popup, Device Code fallback).
+    .SYNOPSIS  Authenticate the operator via M365 (Edge --app popup with Auth Code + PKCE).
     .DESCRIPTION
         Downloads config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
-        first attempts interactive sign-in by launching Edge in --app
-        mode (Authorization Code Flow with PKCE).  If Edge is not
-        available or the sign-in fails, it falls back to Device Code
-        Flow, showing the code in an HTML modal.
+        launches Edge in --app mode for interactive sign-in using the
+        Authorization Code Flow with PKCE.  Edge is always present in
+        the WinPE boot image.
         Tenant restrictions are enforced at the Entra ID app registration
         level -- only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
@@ -952,16 +844,16 @@ function Invoke-KioskM365Auth {
     if ($WriteStatus) { & $WriteStatus 'Signing in with Microsoft 365...' 'Cyan' }
     if ($DoEvents) { & $DoEvents }
 
-    # ── Try Edge --app popup auth first ────────────────────────────────────
+    # ── Authenticate via Edge --app popup ──────────────────────────────────
     $edgeResult = @{ Success = $false; GraphAccessToken = $null }
     try {
-        $edgeResult = Invoke-KioskEdgeAuth `
+        $edgeResult = _KioskEdgeAuth `
             -ClientId $clientId -Scope $scope `
             -EdgeExePath $EdgeExePath `
             -WriteLog $WriteLog -UpdateUi $UpdateUi `
             -CheckCancelled $CheckCancelled -DoEvents $DoEvents
     } catch {
-        if ($WriteLog) { & $WriteLog "Edge app auth failed, will fall back to Device Code Flow: $_" }
+        if ($WriteLog) { & $WriteLog "Edge app auth failed: $_" }
     }
 
     if ($edgeResult.Success) {
@@ -969,25 +861,6 @@ function Invoke-KioskM365Auth {
         if ($PlaySound)   { & $PlaySound 1000 200 }
         Start-Sleep -Seconds 1
         return @{ Authenticated = $true; GraphAccessToken = $edgeResult.GraphAccessToken; AuthConfig = $authConfig }
-    }
-
-    # ── Fallback: Device Code Flow ──────────────────────────────────────────
-    if ($WriteLog) { & $WriteLog "Falling back to Device Code Flow..." }
-    $dcResult = @{ Success = $false; GraphAccessToken = $null }
-    try {
-        $dcResult = Invoke-KioskDeviceCodeAuth `
-            -ClientId $clientId -Scope $scope `
-            -WriteLog $WriteLog -UpdateUi $UpdateUi `
-            -CheckCancelled $CheckCancelled -DoEvents $DoEvents
-    } catch {
-        if ($WriteLog) { & $WriteLog "Device Code Flow failed: $_" }
-    }
-
-    if ($dcResult.Success) {
-        if ($WriteStatus) { & $WriteStatus 'Identity verified' 'Green' }
-        if ($PlaySound)   { & $PlaySound 1000 200 }
-        Start-Sleep -Seconds 1
-        return @{ Authenticated = $true; GraphAccessToken = $dcResult.GraphAccessToken; AuthConfig = $authConfig }
     }
 
     if ($WriteStatus) { & $WriteStatus 'Authentication failed. Please try again.' 'Red' }
@@ -1002,8 +875,6 @@ Export-ModuleMember -Function @(
     'Show-WebView2AuthPopup'
     'Invoke-M365DeviceCodeAuth'
     'Update-M365Token'
-    'Invoke-KioskEdgeAuth'
-    'Invoke-KioskDeviceCodeAuth'
     'Invoke-KioskM365Auth'
 )
 

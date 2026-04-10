@@ -928,9 +928,9 @@ function Show-ConfigurationMenu {
 }
 
 #region ── M365 Authentication ────────────────────────────────────────────────
-# The core kiosk auth functions (Invoke-KioskEdgeAuth, Invoke-KioskDeviceCodeAuth,
-# Invoke-KioskM365Auth) are now in the Nova.Auth module.  This wrapper bridges
-# the module's callback parameters to Bootstrap.ps1's UI layer.
+# The kiosk auth orchestrator (Invoke-KioskM365Auth) is in the Nova.Auth
+# module.  This wrapper bridges the module's callback parameters to
+# Bootstrap.ps1's UI layer.
 
 function Invoke-M365Auth {
     <#
