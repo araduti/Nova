@@ -626,10 +626,11 @@ function Invoke-KioskEdgeAuth {
     # a sign-in form.  A separate user-data-dir avoids conflicts with
     # the kiosk Edge instance.
     if ($WriteLog) { & $WriteLog "Launching Edge --app for auth popup" }
+    $edgeAuthDataDir = 'X:\Temp\EdgeAuth'
     $edgeAuthArgs = @(
         "--app=$authorizeUrl",
         '--allow-run-as-system',
-        '--user-data-dir=X:\Temp\EdgeAuth',
+        "--user-data-dir=$edgeAuthDataDir",
         '--window-size=520,700',
         '--disable-gpu',
         '--disable-gpu-compositing',
@@ -719,8 +720,8 @@ function Invoke-KioskEdgeAuth {
             try { $edgeProc.Kill() } catch { $null = $_ }
         }
         # Remove stale lock files so the auth data dir can be reused
-        Remove-Item 'X:\Temp\EdgeAuth\lockfile'     -Force -ErrorAction SilentlyContinue
-        Remove-Item 'X:\Temp\EdgeAuth\SingletonLock' -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $edgeAuthDataDir 'lockfile')     -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $edgeAuthDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue
 
         # Clear auth-in-progress signal
         if ($UpdateUi) { & $UpdateUi @{ ClearAuth = $true } }
