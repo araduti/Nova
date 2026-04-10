@@ -510,12 +510,12 @@ function Update-M365Token {
     return $null
 }
 
-#region ── WinPE Kiosk Auth Functions ──────────────────────────────────────────
-# These functions are used by Bootstrap.ps1 inside the WinPE kiosk environment.
-# They accept scriptblock parameters for UI callbacks so the module stays
-# decoupled from the Bootstrap UI layer.
+#region ── WinPE Kiosk Auth ────────────────────────────────────────────────────
+# Used by Bootstrap.ps1 inside the WinPE kiosk environment.
 # Edge is always present in the WinPE boot image, so the only interactive
 # auth method is Edge --app mode (Auth Code + PKCE).
+# _KioskEdgeAuth is a private helper; Invoke-KioskM365Auth is the public
+# orchestrator that accepts scriptblock callbacks for UI decoupling.
 
 function _KioskEdgeAuth {
     <#
