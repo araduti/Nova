@@ -35,6 +35,7 @@
     "AuthWaiting": "等待登录...",
     "AuthSuccess": "身份已验证",
     "AuthFailed": "身份验证失败，请重试。",
+    "AuthRetryBtn": "重试身份验证",
     "AuthSkipped": "无需身份验证",
     "AuthEdgePrompt": "已打开 Microsoft Edge 进行登录。\n请在浏览器窗口中完成登录，此对话框将自动关闭。",
     "AuthDeviceCodePrompt": "若要登录，请在其他设备上使用浏览器\n并输入以下代码:"

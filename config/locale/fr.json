@@ -35,6 +35,7 @@
     "AuthWaiting": "En attente de connexion...",
     "AuthSuccess": "Identité vérifiée",
     "AuthFailed": "Échec de l'authentification. Veuillez réessayer.",
+    "AuthRetryBtn": "Réessayer l'authentification",
     "AuthSkipped": "Authentification non requise",
     "AuthEdgePrompt": "Microsoft Edge s'est ouvert pour la connexion.\nTerminez la connexion dans la fenêtre du navigateur, cette boîte se fermera automatiquement.",
     "AuthDeviceCodePrompt": "Pour vous connecter, utilisez un navigateur web sur un autre appareil\net entrez ce code :"

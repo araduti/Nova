@@ -35,6 +35,7 @@
     "AuthWaiting": "Waiting for sign-in...",
     "AuthSuccess": "Identity verified",
     "AuthFailed": "Authentication failed. Please try again.",
+    "AuthRetryBtn": "Retry authentication",
     "AuthSkipped": "Authentication not required",
     "AuthEdgePrompt": "Microsoft Edge has opened for sign-in.\nComplete the sign-in in the browser window, then this dialog will close automatically.",
     "AuthDeviceCodePrompt": "To sign in, use a web browser on another device\nand enter this code:"

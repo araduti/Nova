@@ -130,6 +130,7 @@ function Update-HtmlUi {
         [switch]$Done,
         [switch]$ShowWiFi,
         [switch]$ShowRetry,
+        [switch]$ShowRetryAuth,
         [string]$AuthUrl  = '',
         [switch]$ShowDeviceCode,
         [string]$DeviceCode = '',
@@ -147,6 +148,7 @@ function Update-HtmlUi {
             Done           = [bool]$Done
             ShowWiFi       = [bool]$ShowWiFi
             ShowRetry      = [bool]$ShowRetry
+            ShowRetryAuth  = [bool]$ShowRetryAuth
             AuthUrl        = $AuthUrl
             ShowDeviceCode = [bool]$ShowDeviceCode
             DeviceCode     = $DeviceCode
@@ -225,6 +227,7 @@ $Strings['EN'] = @{
         AuthWaiting="Waiting for sign-in...";
         AuthSuccess="Identity verified";
         AuthFailed="Authentication failed. Please try again.";
+        AuthRetryBtn="Retry authentication";
         AuthSkipped="Authentication not required";
         AuthEdgePrompt="Microsoft Edge has opened for sign-in.`nComplete the sign-in in the browser window, then this dialog will close automatically.";
         AuthDeviceCodePrompt="To sign in, use a web browser on another device`nand enter this code:"
@@ -378,6 +381,7 @@ $script:actionTimer.Add_Tick({
             switch ($path) {
                 '/wifi'       { $script:PendingAction = 'SHOW_WIFI'; $msg = 'ok' }
                 '/retry'      { $script:PendingAction = 'RETRY'; $msg = 'ok' }
+                '/retryauth'  { $script:PendingAction = 'RETRY_AUTH'; $msg = 'ok' }
                 '/cancelauth' { $script:_authCancelled = $true; $msg = 'ok' }
                 '/ping' {
                     # Returns a 1x1 transparent GIF so the HTML UI can detect
@@ -467,6 +471,10 @@ $script:actionTimer.Add_Tick({
             }
             'RETRY' {
                 if (Test-InternetConnectivity) { ProceedToEngine } else { Show-Failure }
+            }
+            'RETRY_AUTH' {
+                $script:_authCancelled = $false
+                ProceedToEngine
             }
         }
     }
@@ -1005,6 +1013,7 @@ function ProceedToEngine {
     $authPassed = Invoke-M365Auth
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect
+        Update-HtmlUi -Message $S.AuthFailed -Step 2 -ShowRetryAuth
         return
     }
 
