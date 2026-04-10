@@ -21,7 +21,7 @@ function _HasProp {
 
 function Invoke-M365DeviceCodeAuth {
     <#
-    .SYNOPSIS  Authenticate the operator via Edge --app sign-in popup.
+    .SYNOPSIS  Authenticate the operator via Edge --app or system browser sign-in.
     .DESCRIPTION
         Downloads config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
@@ -118,6 +118,7 @@ function Invoke-M365DeviceCodeAuth {
     $code      = $null
     $authError = $null
     $edgeProc  = $null
+    $edgeAuthDataDir = Join-Path $env:TEMP 'Nova-EdgeAuth'
 
     try {
 
@@ -144,7 +145,6 @@ function Invoke-M365DeviceCodeAuth {
     }
 
     if ($edgePath) {
-        $edgeAuthDataDir = Join-Path $env:TEMP 'Nova-EdgeAuth'
         $edgeAuthArgs = @(
             "--app=$authorizeUrl",
             "--user-data-dir=$edgeAuthDataDir",
@@ -217,7 +217,6 @@ function Invoke-M365DeviceCodeAuth {
             try { $edgeProc.Kill() } catch { $null = $_ }
         }
         # Remove stale lock files so the auth data dir can be reused.
-        $edgeAuthDataDir = Join-Path $env:TEMP 'Nova-EdgeAuth'
         try { Remove-Item (Join-Path $edgeAuthDataDir 'lockfile')      -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
         try { Remove-Item (Join-Path $edgeAuthDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
     }
