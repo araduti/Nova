@@ -114,6 +114,23 @@ jobs:
             }
 
             Write-Host "Signing: $($file.FullName) (status: $($sig.Status))"
+
+            # Strip existing signature block before re-signing to prevent
+            # Invoke-TrustedSigning bug that corrupts the last byte of file content
+            $lines = Get-Content -LiteralPath $file.FullName
+            $sigLine = $lines | Select-String -Pattern '^# SIG # Begin signature block$' | Select-Object -First 1
+            if ($sigLine) {
+              $contentLines = $lines[0..($sigLine.LineNumber - 2)]
+              while ($contentLines.Count -gt 0 -and $contentLines[-1].Trim() -eq '') {
+                $contentLines = $contentLines[0..($contentLines.Count - 2)]
+              }
+              $rawBytes = [System.IO.File]::ReadAllBytes($file.FullName)
+              $hasBom = $rawBytes.Length -ge 3 -and $rawBytes[0] -eq 0xEF -and $rawBytes[1] -eq 0xBB -and $rawBytes[2] -eq 0xBF
+              $enc = if ($hasBom) { [System.Text.UTF8Encoding]::new($true) } else { [System.Text.UTF8Encoding]::new($false) }
+              [System.IO.File]::WriteAllText($file.FullName, (($contentLines -join "`n") + "`n"), $enc)
+              Write-Host "  Stripped old signature from: $($file.Name)"
+            }
+
             Invoke-TrustedSigning `
               -Endpoint $env:TRUSTED_SIGNING_ENDPOINT `
               -CodeSigningAccountName $env:TRUSTED_SIGNING_ACCOUNT `
