@@ -244,6 +244,11 @@ if (-not $PSScriptRoot) {
     Write-Host '  [+] All modules passed integrity verification.' -ForegroundColor Green
 }
 
+# When invoked via iex (irm ...), the downloaded module files may not be
+# Authenticode-signed yet (signing happens asynchronously after merge).
+# Set Bypass for this process so Import-Module does not reject unsigned .psm1/.psd1 files.
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+
 Import-Module "$script:ModulesRoot\Nova.Logging"     -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Platform"    -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Integrity"   -Force -ErrorAction Stop

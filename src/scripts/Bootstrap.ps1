@@ -48,6 +48,11 @@ $script:ModulesRoot = if (Test-Path "$PSScriptRoot\..\modules") {
 } else {
     "$PSScriptRoot\..\modules"   # Best-effort fallback
 }
+# Import dependency-free modules first -- Nova.TaskSequence and Nova.Auth
+# declare RequiredModules in their manifests, so Nova.Logging and Nova.Platform
+# must be loaded before them.
+Import-Module "$script:ModulesRoot\Nova.Logging"      -Force -ErrorAction Stop
+Import-Module "$script:ModulesRoot\Nova.Platform"     -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Network"      -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.TaskSequence" -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Auth"         -Force -ErrorAction Stop
