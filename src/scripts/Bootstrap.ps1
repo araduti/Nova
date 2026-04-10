@@ -944,6 +944,12 @@ function Invoke-M365Auth {
     #>
 
     # ── Callback scriptblocks bridge the module to Bootstrap.ps1's UI ──────
+    # Ensure the cancellation flag exists before the callbacks reference it.
+    # Without this, Set-StrictMode -Version Latest throws on first read.
+    if (-not (Test-Path variable:script:_authCancelled)) {
+        $script:_authCancelled = $false
+    }
+
     $writeLog = {
         param([string]$Message)
         Write-AuthLog $Message
@@ -952,15 +958,18 @@ function Invoke-M365Auth {
         param([string]$Message, [string]$Color)
         Write-Status $Message $Color
     }
+    # NOTE: Use hashtable indexer ($Params['Key']) instead of dot-notation
+    # ($Params.Key) because Set-StrictMode -Version Latest throws when
+    # accessing a non-existent key via dot-notation on a hashtable.
     $updateUi = {
         param([hashtable]$Params)
-        if ($Params.AuthUrl) {
-            Update-HtmlUi -Message $S.AuthSigning -Step 3 -AuthUrl $Params.AuthUrl
-        } elseif ($Params.ShowDeviceCode) {
-            Update-HtmlUi -Message $S.AuthDeviceCodePrompt -Step 3 `
-                          -ShowDeviceCode -DeviceCode $Params.DeviceCode -DeviceCodeUrl $S.AuthUrl
-        } elseif ($Params.ClearAuth) {
-            Update-HtmlUi -Message $S.AuthSigning -Step 3
+        if ($Params['AuthUrl']) {
+            Update-HtmlUi -Message $script:S.AuthSigning -Step 3 -AuthUrl $Params['AuthUrl']
+        } elseif ($Params['ShowDeviceCode']) {
+            Update-HtmlUi -Message $script:S.AuthDeviceCodePrompt -Step 3 `
+                          -ShowDeviceCode -DeviceCode $Params['DeviceCode'] -DeviceCodeUrl $script:S.AuthUrl
+        } elseif ($Params['ClearAuth']) {
+            Update-HtmlUi -Message $script:S.AuthSigning -Step 3
         }
     }
     $checkCancelled = {
