@@ -722,8 +722,8 @@ function _KioskEdgeAuth {
             try { $edgeProc.Kill() } catch { $null = $_ }
         }
         # Remove stale lock files so the auth data dir can be reused
-        Remove-Item (Join-Path $edgeAuthDataDir 'lockfile')     -Force -ErrorAction SilentlyContinue
-        Remove-Item (Join-Path $edgeAuthDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue
+        try { Remove-Item (Join-Path $edgeAuthDataDir 'lockfile')     -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+        try { Remove-Item (Join-Path $edgeAuthDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
 
         # Clear auth-in-progress signal
         if ($UpdateUi) { & $UpdateUi @{ ClearAuth = $true } }
