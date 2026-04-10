@@ -623,6 +623,26 @@ function _KioskEdgeAuth {
         '&code_challenge_method=S256' +
         '&prompt=select_account'
 
+    # ── Wait for the login endpoint to be reachable ────────────────────────
+    # In WinPE the DNS/network stack may not be fully ready immediately
+    # after WiFi connects.  Navigating too early causes a brief "page
+    # cannot be displayed" error before the real login page loads.
+    $loginHost = 'login.microsoftonline.com'
+    $dnsReady  = $false
+    for ($dnsAttempt = 1; $dnsAttempt -le 10; $dnsAttempt++) {
+        try {
+            $null = [System.Net.Dns]::GetHostAddresses($loginHost)
+            $dnsReady = $true
+            break
+        } catch {
+            if ($WriteLog) { & $WriteLog "DNS lookup for $loginHost failed (attempt $dnsAttempt of 10)" }
+            Start-Sleep -Milliseconds 500
+        }
+    }
+    if (-not $dnsReady) {
+        if ($WriteLog) { & $WriteLog "Cannot resolve $loginHost -- proceeding anyway" }
+    }
+
     # ── Launch Edge in --app mode for the login window ──────────────────────
     # --app opens a chromeless window (no tabs, no address bar) ideal for
     # a sign-in form.  A separate user-data-dir avoids conflicts with
