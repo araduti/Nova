@@ -300,7 +300,7 @@ function Invoke-TaskSequenceStep {
             $recoverySize = if ($p -and $p.PSObject.Properties['recoveryPartitionSize'] -and $p.recoveryPartitionSize -gt 0) { [long]$p.recoveryPartitionSize } else { 990MB }
             Update-BootstrapStatus -Message "Partitioning disk..." -Detail "Creating layout on disk $disk" -Step $uiStep -Progress $pct
             Initialize-TargetDisk -DiskNumber $disk -FirmwareType $CurrentFirmwareType -OSDriveLetter $drv `
-                -CreateRecoveryPartition:$createRecovery -RecoveryPartitionSize $recoverySize
+                -CreateRecoveryPartition:$createRecovery -RecoveryPartitionSize $recoverySize -Confirm:$false
         }
         'ImportAutopilot' {
             $tag   = if ($p -and $p.PSObject.Properties['groupTag']  -and $p.groupTag)  { $p.groupTag }  else { '' }
