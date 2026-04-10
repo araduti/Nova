@@ -85,6 +85,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# When invoked via  iex (irm ...)  the script itself runs in-memory (bypassing
+# execution policy), but Import-Module still loads .psm1 files from disk.
+# On systems with AllSigned policy the unsigned modules we just downloaded would
+# be blocked.  Scope = Process only affects the current session and does NOT
+# weaken the machine/user-level policy.
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
+
 # Derived paths ─ kept out of params to avoid user confusion
 $script:WinPEWorkDir = Join-Path $WorkDir 'WinPE'
 $script:RamdiskDir   = Join-Path $WorkDir 'Boot'
