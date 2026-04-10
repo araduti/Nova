@@ -606,6 +606,7 @@
             <!-- Action buttons (shown contextually) -->
             <div class="actions hidden" id="actions">
                 <button class="btn btn-primary hidden" id="btnWiFi" onclick="sendAction('wifi')">Connect via WiFi</button>
+                <button class="btn btn-primary hidden" id="btnRetryAuth" onclick="sendAction('retryauth')">Retry authentication</button>
                 <button class="btn btn-secondary hidden" id="btnRetry" onclick="sendAction('retry')">Retry</button>
             </div>
         </div>
@@ -728,6 +729,7 @@
         var elActions   = document.getElementById('actions');
         var elBtnWiFi   = document.getElementById('btnWiFi');
         var elBtnRetry  = document.getElementById('btnRetry');
+        var elBtnRetryAuth = document.getElementById('btnRetryAuth');
         var elFooter    = document.getElementById('footerActions');
         var elDarkToggle= document.getElementById('darkToggle');
         var steps       = document.querySelectorAll('#steps .step');
@@ -1096,8 +1098,18 @@
                 elBtnRetry.classList.add('hidden');
             }
 
+            if (data.ShowRetryAuth) {
+                elActions.classList.remove('hidden');
+                elBtnRetryAuth.classList.remove('hidden');
+                elFooter.classList.remove('hidden');
+                elSpinner.classList.add('error');
+                elStatus.classList.add('error');
+            } else {
+                elBtnRetryAuth.classList.add('hidden');
+            }
+
             /* Hide actions container when no buttons are visible */
-            if (!data.ShowWiFi && !data.ShowRetry) {
+            if (!data.ShowWiFi && !data.ShowRetry && !data.ShowRetryAuth) {
                 elActions.classList.add('hidden');
                 elSpinner.classList.remove('error');
             }

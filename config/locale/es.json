@@ -35,6 +35,7 @@
     "AuthWaiting": "Esperando inicio de sesión...",
     "AuthSuccess": "Identidad verificada",
     "AuthFailed": "Error de autenticación. Por favor, inténtelo de nuevo.",
+    "AuthRetryBtn": "Reintentar autenticación",
     "AuthSkipped": "Autenticación no requerida",
     "AuthEdgePrompt": "Microsoft Edge se ha abierto para iniciar sesión.\nComplete el inicio de sesión en la ventana del navegador, este cuadro se cerrará automáticamente.",
     "AuthDeviceCodePrompt": "Para iniciar sesión, use un navegador web en otro dispositivo\ne ingrese este código:"

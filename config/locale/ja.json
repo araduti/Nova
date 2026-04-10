@@ -35,6 +35,7 @@
     "AuthWaiting": "サインインを待っています...",
     "AuthSuccess": "ID が確認されました",
     "AuthFailed": "認証に失敗しました。もう一度お試しください。",
+    "AuthRetryBtn": "認証を再試行",
     "AuthSkipped": "認証は不要です",
     "AuthEdgePrompt": "サインイン用に Microsoft Edge が開きました。\nブラウザーウィンドウでサインインを完了すると、このダイアログは自動的に閉じます。",
     "AuthDeviceCodePrompt": "サインインするには、別のデバイスで Web ブラウザーを使用し\nこのコードを入力してください:"

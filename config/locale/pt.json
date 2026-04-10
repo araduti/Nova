@@ -35,6 +35,7 @@
     "AuthWaiting": "Aguardando entrada...",
     "AuthSuccess": "Identidade verificada",
     "AuthFailed": "Falha na autenticação. Tente novamente.",
+    "AuthRetryBtn": "Tentar autenticação novamente",
     "AuthSkipped": "Autenticação não necessária",
     "AuthEdgePrompt": "O Microsoft Edge foi aberto para entrada.\nConclua a entrada na janela do navegador e esta caixa será fechada automaticamente.",
     "AuthDeviceCodePrompt": "Para entrar, use um navegador em outro dispositivo\ne insira este código:"

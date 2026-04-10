@@ -35,6 +35,7 @@
     "AuthWaiting": "Warten auf Anmeldung...",
     "AuthSuccess": "Identität bestätigt",
     "AuthFailed": "Authentifizierung fehlgeschlagen. Bitte versuchen Sie es erneut.",
+    "AuthRetryBtn": "Authentifizierung wiederholen",
     "AuthSkipped": "Authentifizierung nicht erforderlich",
     "AuthEdgePrompt": "Microsoft Edge wurde zur Anmeldung geöffnet.\nSchliessen Sie die Anmeldung im Browserfenster ab. Dieser Dialog wird automatisch geschlossen.",
     "AuthDeviceCodePrompt": "Verwenden Sie zum Anmelden einen Webbrowser auf einem anderen Gerät\nund geben Sie diesen Code ein:"
