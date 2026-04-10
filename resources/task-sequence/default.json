@@ -15,7 +15,7 @@
       "parameters": {
         "computerName": "",
         "namingSource": "serialNumber",
-        "prefix": "AMP-",
+        "prefix": "NOVA-",
         "suffix": "",
         "randomDigitCount": 4,
         "maxLength": 15

@@ -81,83 +81,15 @@ Describe 'Update-M365Token' {
 }
 
 Describe 'Module Exports - Kiosk Auth' {
-    It 'exports kiosk auth functions' {
+    It 'exports Invoke-KioskM365Auth' {
         $mod = Get-Module Nova.Auth
-        $expected = @('Invoke-KioskEdgeAuth', 'Invoke-KioskDeviceCodeAuth', 'Invoke-KioskM365Auth')
-        foreach ($fn in $expected) {
-            $mod.ExportedFunctions.Keys | Should -Contain $fn
-        }
-    }
-}
-
-Describe 'Invoke-KioskEdgeAuth' {
-    It 'returns failure when Edge binary does not exist' {
-        $logMessages = @()
-        $writeLog = { param([string]$m) $logMessages += $m }.GetNewClosure()
-
-        $result = Invoke-KioskEdgeAuth `
-            -ClientId 'test-client-id' `
-            -EdgeExePath 'C:\nonexistent\msedge.exe' `
-            -WriteLog $writeLog
-
-        $result.Success | Should -BeFalse
-        $result.GraphAccessToken | Should -BeNullOrEmpty
+        $mod.ExportedFunctions.Keys | Should -Contain 'Invoke-KioskM365Auth'
     }
 
-    It 'returns expected hashtable keys' {
-        $result = Invoke-KioskEdgeAuth `
-            -ClientId 'test-client-id' `
-            -EdgeExePath 'C:\nonexistent\msedge.exe'
-
-        $result | Should -BeOfType [hashtable]
-        $result.ContainsKey('Success') | Should -BeTrue
-        $result.ContainsKey('GraphAccessToken') | Should -BeTrue
-    }
-}
-
-Describe 'Invoke-KioskDeviceCodeAuth' {
-    It 'returns failure when device code endpoint is unreachable' {
-        $logMessages = @()
-        $writeLog = { param([string]$m) $logMessages += $m }.GetNewClosure()
-
-        # Mock the WebClient to simulate a failure
-        Mock -ModuleName Nova.Auth -CommandName 'New-Object' -ParameterFilter {
-            $TypeName -eq 'System.Net.WebClient'
-        } -MockWith {
-            $mock = [PSCustomObject]@{}
-            $mock | Add-Member -MemberType ScriptMethod -Name 'UploadString' -Value {
-                throw 'Connection refused'
-            }
-            $mock | Add-Member -MemberType NoteProperty -Name 'Headers' -Value @{}
-            $mock.Headers | Add-Member -MemberType ScriptMethod -Name 'Add' -Value { param($k,$v) } -Force
-            return $mock
-        }
-
-        $result = Invoke-KioskDeviceCodeAuth `
-            -ClientId 'test-client-id' `
-            -WriteLog $writeLog
-
-        $result.Success | Should -BeFalse
-        $result.GraphAccessToken | Should -BeNullOrEmpty
-    }
-
-    It 'returns expected hashtable keys' {
-        Mock -ModuleName Nova.Auth -CommandName 'New-Object' -ParameterFilter {
-            $TypeName -eq 'System.Net.WebClient'
-        } -MockWith {
-            $mock = [PSCustomObject]@{}
-            $mock | Add-Member -MemberType ScriptMethod -Name 'UploadString' -Value {
-                throw 'Connection refused'
-            }
-            $mock | Add-Member -MemberType NoteProperty -Name 'Headers' -Value @{}
-            $mock.Headers | Add-Member -MemberType ScriptMethod -Name 'Add' -Value { param($k,$v) } -Force
-            return $mock
-        }
-
-        $result = Invoke-KioskDeviceCodeAuth -ClientId 'test-client-id'
-        $result | Should -BeOfType [hashtable]
-        $result.ContainsKey('Success') | Should -BeTrue
-        $result.ContainsKey('GraphAccessToken') | Should -BeTrue
+    It 'does not export removed kiosk primitives' {
+        $mod = Get-Module Nova.Auth
+        $mod.ExportedFunctions.Keys | Should -Not -Contain 'Invoke-KioskEdgeAuth'
+        $mod.ExportedFunctions.Keys | Should -Not -Contain 'Invoke-KioskDeviceCodeAuth'
     }
 }
 

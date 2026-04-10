@@ -13,8 +13,6 @@
         'Show-WebView2AuthPopup'
         'Invoke-M365DeviceCodeAuth'
         'Update-M365Token'
-        'Invoke-KioskEdgeAuth'
-        'Invoke-KioskDeviceCodeAuth'
         'Invoke-KioskM365Auth'
     )
     CmdletsToExport   = @()
