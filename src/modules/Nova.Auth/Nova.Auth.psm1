@@ -156,6 +156,7 @@ function Invoke-M365DeviceCodeAuth {
             '--disable-save-password-bubble'
         )
         $edgeProc = Start-Process -FilePath $edgePath -ArgumentList $edgeAuthArgs -PassThru
+        $edgeLaunchTime = [datetime]::UtcNow
     } else {
         # Fallback: open default system browser.
         Write-Host ''
@@ -170,8 +171,11 @@ function Invoke-M365DeviceCodeAuth {
     $timeout = [datetime]::UtcNow.AddMinutes(2)
 
     while (-not $code -and -not $authError -and [datetime]::UtcNow -lt $timeout) {
-        # If the user closed the Edge window, treat as cancellation.
-        if ($edgeProc -and $edgeProc.HasExited) {
+        # On full Windows, Edge may hand off window creation to an already-running
+        # browser process, causing the initial $edgeProc to exit immediately.
+        # Only treat HasExited as user cancellation after a grace period.
+        if ($edgeProc -and $edgeProc.HasExited `
+            -and ([datetime]::UtcNow - $edgeLaunchTime).TotalSeconds -gt 15) {
             break
         }
 
