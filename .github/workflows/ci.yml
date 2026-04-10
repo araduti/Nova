@@ -167,6 +167,12 @@ jobs:
 
   validate-hashes:
     name: Integrity — Validate Hashes
+    # Skip on main when signing is available — the sign-scripts job
+    # regenerates and validates hashes post-signing. Running here would
+    # false-fail because the merge commit mixes signed files from main
+    # with unsigned hashes from the PR branch.
+    needs: [check-signing]
+    if: always() && !cancelled() && (github.event_name == 'pull_request' || needs.check-signing.outputs.available != 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -391,7 +397,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add src/scripts/ src/modules/ resources/autopilot/ .github/scripts/ config/hashes.json
+          git add src/scripts/ src/modules/ resources/autopilot/ config/hashes.json
           if git diff --cached --quiet; then
             echo "No signing changes to commit."
           else
