@@ -112,7 +112,9 @@ $script:BulletChar             = [char]0x2022  # '•' used in progress text
 # before PowerShell), Bootstrap.ps1 writes status to the same JSON file that
 # Nova.ps1 uses.  This flag is cleared once Nova.ps1 starts so that
 # Bootstrap.ps1 stops writing and only reads (avoiding write conflicts).
-$script:HtmlUiActive = $true
+$script:HtmlUiActive     = $true
+$script:GraphAccessToken = $null
+$script:AuthConfig       = $null
 
 function Update-HtmlUi {
     <#
@@ -714,7 +716,7 @@ function Show-ConfigurationMenu {
     $productsXml = Join-Path $scratchPath 'products.xml'
 
     try {
-        $productsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/products.xml"
+        $productsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/products.xml"
         $wc   = New-Object System.Net.WebClient
         $task = $wc.DownloadFileTaskAsync($productsUrl, $productsXml)
         while (-not $task.IsCompleted) {
