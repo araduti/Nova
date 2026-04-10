@@ -401,7 +401,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No signing changes to commit."
           else
-            git commit -m "chore: commit signed scripts and updated hashes"
+            git commit -m "chore: commit signed scripts and updated hashes [skip ci]"
             # Save the signing commit SHA before any rebase attempts
             signing_sha=$(git rev-parse HEAD)
             max_attempts=3
@@ -419,7 +419,7 @@ jobs:
                 git checkout "$signing_sha" 2>/dev/null || true
                 continue
               }
-              if git push origin HEAD:refs/heads/main 2>&1; then
+              if git push origin HEAD:refs/heads/main; then
                 echo "Push succeeded on attempt $attempt."
                 break
               else
