@@ -1024,8 +1024,7 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\nova-start.cmd
 
 #endregion
 
-# Install-WebView2SDK, Show-WebView2AuthPopup, and Invoke-M365DeviceCodeAuth
-# are now provided by the Nova.Auth module.
+# Invoke-M365DeviceCodeAuth is now provided by the Nova.Auth module.
 
 #region ── Main ─────────────────────────────────────────────────────────────────
 

@@ -4,10 +4,10 @@
 
 .DESCRIPTION
     Provides OAuth2 Authorization Code Flow with PKCE for authenticating
-    OSD operators.  Supports two runtime environments:
-      1. Trigger.ps1 (full Windows): WebView2 popup or system browser fallback
+    OSD operators.  Both environments use Edge --app mode:
+      1. Trigger.ps1 (full Windows): Edge --app with system browser fallback
       2. Bootstrap.ps1 (WinPE kiosk): Edge --app mode (always available in boot image)
-    Also includes WebView2 SDK download/caching and token refresh.
+    Also includes token refresh.
 #>
 
 Set-StrictMode -Version Latest
@@ -18,214 +18,18 @@ function _HasProp {
     return ($null -ne $Obj -and $null -ne $Obj.PSObject.Properties[$Name])
 }
 
-function Install-WebView2SDK {
-    <#
-    .SYNOPSIS  Download the WebView2 SDK NuGet package (cached).
-    .DESCRIPTION
-        Downloads the Microsoft.Web.WebView2 NuGet package to a temporary
-        directory and extracts the managed DLLs needed for PowerShell.
-        A cached copy is reused on subsequent calls.
-    .OUTPUTS
-        Path to the directory containing the WebView2 DLLs, or $null on failure.
-    #>
-    [OutputType([void])]
-    [CmdletBinding()]
-    param()
-    $sdkDir  = Join-Path $env:TEMP 'Nova-WebView2SDK'
-    $coreDll = Join-Path $sdkDir 'Microsoft.Web.WebView2.Core.dll'
-
-    # Reuse cached copy.
-    if (Test-Path $coreDll) { return $sdkDir }
-
-    $null = New-Item -Path $sdkDir -ItemType Directory -Force
-
-    # Download the NuGet package (latest stable).
-    $zipPath = Join-Path $sdkDir 'Microsoft.Web.WebView2.nupkg'
-    try {
-        $prevPref = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'
-        try     { Invoke-WebRequest -Uri 'https://www.nuget.org/api/v2/package/Microsoft.Web.WebView2' -OutFile $zipPath -UseBasicParsing }
-        finally { $ProgressPreference = $prevPref }
-    } catch {
-        Write-Verbose "WebView2 NuGet download failed: $_"
-        return $null
-    }
-
-    # Extract the required DLLs from the package.
-    try {
-        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction Stop
-        $arch = if ([System.IntPtr]::Size -eq 8) { 'win-x64' } else { 'win-x86' }
-        $zip  = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
-        try {
-            foreach ($entry in $zip.Entries) {
-                $extract = $false
-                if ($entry.FullName -like 'lib/net45/*.dll') { $extract = $true }
-                if ($entry.FullName -eq "runtimes/$arch/native/WebView2Loader.dll") { $extract = $true }
-                if ($extract -and $entry.Name) {
-                    $dest = Join-Path $sdkDir $entry.Name
-                    $s = $entry.Open()
-                    try {
-                        $fs = [System.IO.File]::Create($dest)
-                        try   { $s.CopyTo($fs) }
-                        finally { $fs.Close() }
-                    } finally { $s.Close() }
-                }
-            }
-        } finally { $zip.Dispose() }
-    } catch {
-        Write-Verbose "WebView2 NuGet extraction failed: $_"
-        return $null
-    }
-
-    if (Test-Path $coreDll) { return $sdkDir }
-    return $null
-}
-
-function Show-WebView2AuthPopup {
-    <#
-    .SYNOPSIS  Show an embedded WebView2 popup for Azure AD sign-in.
-    .DESCRIPTION
-        Creates a WinForms dialog with an embedded WebView2 control that
-        navigates to the Azure AD authorization endpoint.  The redirect is
-        intercepted via the NavigationStarting event -- no HTTP listener is
-        needed.  Returns the authorization code on success, or $null if
-        the user closed the window or an error occurred.
-        Throws if the WebView2 Runtime is not installed or initialisation
-        fails, allowing the caller to fall back to a browser-based flow.
-    .PARAMETER AuthorizeUrl
-        Full Azure AD /authorize URL including all query parameters.
-    .PARAMETER RedirectUriBase
-        The redirect URI registered with Azure AD (e.g. http://localhost:PORT/).
-        The NavigationStarting handler matches URLs starting with this value.
-    .PARAMETER WebView2SDKPath
-        Path to the directory containing the WebView2 managed DLLs.
-    .OUTPUTS
-        Authorization code string, or $null.
-    #>
-    [OutputType([string])]
-    [CmdletBinding()]
-    param(
-        [string] $AuthorizeUrl,
-        [string] $RedirectUriBase,
-        [string] $WebView2SDKPath
-    )
-
-    # ── Load assemblies ────────────────────────────────────────────────────
-    Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
-    Add-Type -AssemblyName System.Drawing       -ErrorAction Stop
-    Add-Type -Path (Join-Path $WebView2SDKPath 'Microsoft.Web.WebView2.Core.dll')     -ErrorAction Stop
-    Add-Type -Path (Join-Path $WebView2SDKPath 'Microsoft.Web.WebView2.WinForms.dll') -ErrorAction Stop
-
-    # ── Create the WebView2 environment ────────────────────────────────────
-    # Use a temporary user-data directory to isolate cookies and cache.
-    $userDataDir = Join-Path $env:TEMP 'Nova-WebView2Auth'
-    if (-not (Test-Path $userDataDir)) {
-        $null = New-Item -Path $userDataDir -ItemType Directory -Force
-    }
-
-    $envOptions = [Microsoft.Web.WebView2.Core.CoreWebView2EnvironmentOptions]::new()
-    $envTask    = [Microsoft.Web.WebView2.Core.CoreWebView2Environment]::CreateAsync(
-                      $null, $userDataDir, $envOptions)
-
-    # Poll for completion -- do NOT use .GetAwaiter().GetResult() as it
-    # deadlocks the WinForms message pump.
-    $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    while (-not $envTask.IsCompleted -and $sw.ElapsedMilliseconds -lt 30000) {
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 100
-    }
-    if (-not $envTask.IsCompleted -or $envTask.IsFaulted) {
-        $ex = if ($envTask.Exception) { $envTask.Exception.InnerException } else { $null }
-        throw "WebView2 environment creation failed: $ex"
-    }
-    $wv2Env = $envTask.Result
-
-    # ── Build the form ─────────────────────────────────────────────────────
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text            = 'Nova - Sign In'
-    $form.Size            = New-Object System.Drawing.Size(520, 680)
-    $form.StartPosition   = 'CenterScreen'
-    $form.FormBorderStyle = 'FixedDialog'
-    $form.MaximizeBox     = $false
-    $form.BackColor       = [System.Drawing.Color]::White
-    $form.Font            = New-Object System.Drawing.Font('Segoe UI', 10)
-
-    $wv2 = [Microsoft.Web.WebView2.WinForms.WebView2]::new()
-    $wv2.Dock = [System.Windows.Forms.DockStyle]::Fill
-    $form.Controls.Add($wv2)
-
-    # ── Initialize the WebView2 control ────────────────────────────────────
-    $initTask = $wv2.EnsureCoreWebView2Async($wv2Env)
-    $sw.Restart()
-    while (-not $initTask.IsCompleted -and $sw.ElapsedMilliseconds -lt 30000) {
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 100
-    }
-    if (-not $initTask.IsCompleted -or $initTask.IsFaulted) {
-        try { $wv2.Dispose() } catch { $null = $_ }
-        try { $form.Dispose() } catch { $null = $_ }
-        $ex = if ($initTask.Exception) { $initTask.Exception.InnerException } else { $null }
-        throw "WebView2 control initialisation failed: $ex"
-    }
-
-    # ── Intercept the redirect to capture the authorization code ───────────
-    $script:_wv2PopupCode     = $null
-    $script:_wv2PopupError    = $null
-    $script:_wv2PopupForm     = $form
-    $script:_wv2RedirectBase  = $RedirectUriBase
-
-    $wv2.CoreWebView2.add_NavigationStarting({
-        param($eventSender, $e)
-        $null = $eventSender
-        if ($e.Uri.StartsWith($script:_wv2RedirectBase, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $e.Cancel = $true
-            try {
-                $parsed = [System.Uri]::new($e.Uri)
-                foreach ($pair in $parsed.Query.TrimStart('?').Split('&')) {
-                    $kv = $pair.Split('=', 2)
-                    if ($kv.Count -eq 2) {
-                        if ($kv[0] -eq 'code')  { $script:_wv2PopupCode  = [uri]::UnescapeDataString($kv[1]) }
-                        if ($kv[0] -eq 'error') { $script:_wv2PopupError = [uri]::UnescapeDataString($kv[1]) }
-                    }
-                }
-            } catch { $null = $_ }
-            $script:_wv2PopupForm.DialogResult = if ($script:_wv2PopupCode) { 'OK' } else { 'Abort' }
-            $script:_wv2PopupForm.Close()
-        }
-    })
-
-    # ── Navigate and show the form ─────────────────────────────────────────
-    $wv2.CoreWebView2.Navigate($AuthorizeUrl)
-    $dialogResult = $form.ShowDialog()
-
-    # ── Clean up ───────────────────────────────────────────────────────────
-    try { $wv2.Dispose() } catch { $null = $_ }
-    try { $form.Dispose() } catch { $null = $_ }
-
-    # Remove cached cookies/data to prevent credential leakage.
-    if (Test-Path $userDataDir) {
-        try { Remove-Item $userDataDir -Recurse -Force }
-        catch { Write-Verbose "WebView2 user-data cleanup failed (credentials may persist): $_" }
-    }
-
-    if ($dialogResult -eq 'OK' -and $script:_wv2PopupCode) {
-        return $script:_wv2PopupCode
-    }
-
-    return $null
-}
 
 function Invoke-M365DeviceCodeAuth {
     <#
-    .SYNOPSIS  Authenticate the operator via an embedded WebView2 sign-in popup.
+    .SYNOPSIS  Authenticate the operator via Edge --app sign-in popup.
     .DESCRIPTION
         Downloads config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
-        shows an embedded WebView2 popup with the Azure AD login page
-        using the Authorization Code Flow with PKCE.  The redirect is
-        intercepted inside the popup -- no external browser is needed.
-        If the WebView2 Runtime is not installed, the function falls
-        back to opening the default system browser with a temporary
-        localhost HTTP listener to capture the redirect.
+        launches Edge in --app mode for an interactive Azure AD sign-in
+        using the Authorization Code Flow with PKCE.  A temporary
+        localhost HTTP listener captures the redirect.
+        If Edge is not available, the function falls back to opening the
+        default system browser with the same localhost listener.
         Tenant restrictions are enforced at the Entra ID app registration
         level -- only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
@@ -274,16 +78,13 @@ function Invoke-M365DeviceCodeAuth {
     $clientId = $authConfig.clientId
 
     # ── Build scope string ──────────────────────────────────────────────────
-    # Always include openid profile; append Graph API scopes when configured
-    # (e.g. DeviceManagementServiceConfig.ReadWrite.All for Autopilot import).
-    # Delegated permissions -- no client secret required.
     $scope = 'openid profile'
     if ((_HasProp $authConfig 'graphScopes') -and $authConfig.graphScopes) {
         $trimmed = ($authConfig.graphScopes).Trim()
         if ($trimmed) { $scope = "openid profile $trimmed" }
     }
 
-    # ── Step 1: Generate PKCE code verifier and challenge (RFC 7636) ────────
+    # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────
     Write-Step 'Signing in with Microsoft 365...'
 
     $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -295,119 +96,130 @@ function Invoke-M365DeviceCodeAuth {
     $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
     $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
 
-    # ── Step 2: Try WebView2 embedded sign-in popup ────────────────────────
-    # WebView2 displays the Azure AD login page directly inside a WinForms
-    # popup -- no external browser window needed.  The redirect is intercepted
-    # by a NavigationStarting handler so no HTTP listener is required either.
-    # If the WebView2 Runtime is not installed or the SDK cannot be obtained,
-    # the function falls back to opening the default system browser.
-    $code        = $null
-    $authError   = $null
+    # ── Start a temporary localhost HTTP listener ───────────────────────────
+    $listener    = New-Object System.Net.HttpListener
     $redirectUri = $null
-    $tryBrowserFallback = $true
-
-    try {
-        $wv2SdkPath = Install-WebView2SDK
-        if ($wv2SdkPath) {
-            $port        = Get-Random -Minimum 49152 -Maximum 65535
-            $redirectUri = "http://localhost:$port/"
-            $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
-                "client_id=$([uri]::EscapeDataString($clientId))" +
-                '&response_type=code' +
-                "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-                "&scope=$([uri]::EscapeDataString($scope))" +
-                "&code_challenge=$codeChallenge" +
-                '&code_challenge_method=S256' +
-                '&prompt=select_account'
-
-            $code = Show-WebView2AuthPopup `
-                        -AuthorizeUrl    $authorizeUrl `
-                        -RedirectUriBase $redirectUri `
-                        -WebView2SDKPath $wv2SdkPath
-
-            # If we reach here the popup was displayed.  Don't fall back to
-            # the system browser -- the user deliberately closed the popup or
-            # an Azure AD error occurred.
-            $tryBrowserFallback = $false
-        }
-    } catch {
-        Write-Verbose "WebView2 sign-in unavailable: $_"
-    }
-
-    # ── Step 2b: Fallback -- open default browser + localhost listener ──────
-    if (-not $code -and $tryBrowserFallback) {
-        $listener = New-Object System.Net.HttpListener
-        $redirectUri = $null
-        foreach ($attempt in 1..5) {
-            $port        = Get-Random -Minimum 49152 -Maximum 65535
-            $redirectUri = "http://localhost:$port/"
-            $listener.Prefixes.Clear()
-            $listener.Prefixes.Add($redirectUri)
-            try {
-                $listener.Start()
-                break
-            } catch {
-                if ($attempt -eq 5) {
-                    Write-Fail "Could not start local HTTP listener after $attempt attempts: $_"
-                    return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
-                }
+    foreach ($attempt in 1..5) {
+        $port        = Get-Random -Minimum 49152 -Maximum 65535
+        $redirectUri = "http://localhost:$port/"
+        $listener.Prefixes.Clear()
+        $listener.Prefixes.Add($redirectUri)
+        try {
+            $listener.Start()
+            break
+        } catch {
+            if ($attempt -eq 5) {
+                Write-Fail "Could not start local HTTP listener after $attempt attempts: $_"
+                return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
             }
         }
+    }
 
-        try {
+    $code      = $null
+    $authError = $null
+    $edgeProc  = $null
 
-        $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
-            "client_id=$([uri]::EscapeDataString($clientId))" +
-            '&response_type=code' +
-            "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-            "&scope=$([uri]::EscapeDataString($scope))" +
-            "&code_challenge=$codeChallenge" +
-            '&code_challenge_method=S256' +
-            '&prompt=select_account'
+    try {
 
+    # ── Build the authorize URL ─────────────────────────────────────────────
+    $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
+        "client_id=$([uri]::EscapeDataString($clientId))" +
+        '&response_type=code' +
+        "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
+        "&scope=$([uri]::EscapeDataString($scope))" +
+        "&code_challenge=$codeChallenge" +
+        '&code_challenge_method=S256' +
+        '&prompt=select_account'
+
+    # ── Find Edge and launch in --app mode ──────────────────────────────────
+    $edgePath = $null
+    foreach ($candidate in @(
+        "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+        "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+    )) {
+        if ($candidate -and (Test-Path $candidate)) {
+            $edgePath = $candidate
+            break
+        }
+    }
+
+    if ($edgePath) {
+        $edgeAuthDataDir = Join-Path $env:TEMP 'Nova-EdgeAuth'
+        $edgeAuthArgs = @(
+            "--app=$authorizeUrl",
+            "--user-data-dir=$edgeAuthDataDir",
+            '--window-size=520,700',
+            '--no-first-run',
+            '--disable-fre',
+            '--disable-features=msWebOOBE,PasswordManager',
+            '--password-store=basic',
+            '--disable-save-password-bubble'
+        )
+        $edgeProc = Start-Process -FilePath $edgePath -ArgumentList $edgeAuthArgs -PassThru
+    } else {
+        # Fallback: open default system browser.
         Write-Host ''
         Write-Host '  A browser window will open for sign-in.' -ForegroundColor White
         Write-Host '  Complete the sign-in in your browser.'    -ForegroundColor Gray
         Write-Host ''
-
         Start-Process $authorizeUrl
+    }
 
-        $timeoutMs   = 120000   # 2 minutes
-        $asyncResult = $listener.BeginGetContext($null, $null)
-        if (-not $asyncResult.AsyncWaitHandle.WaitOne($timeoutMs)) {
-            Write-Fail 'Sign-in timed out.'
-            return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
+    # ── Wait for the redirect callback ──────────────────────────────────────
+    $asyncResult = $listener.BeginGetContext($null, $null)
+    $timeout = [datetime]::UtcNow.AddMinutes(2)
+
+    while (-not $code -and -not $authError -and [datetime]::UtcNow -lt $timeout) {
+        # If the user closed the Edge window, treat as cancellation.
+        if ($edgeProc -and $edgeProc.HasExited) {
+            break
         }
 
-        $context = $listener.EndGetContext($asyncResult)
+        if ($asyncResult.IsCompleted -or $asyncResult.AsyncWaitHandle.WaitOne(0)) {
+            try {
+                $context = $listener.EndGetContext($asyncResult)
 
-        foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
-            $kv = $pair.Split('=', 2)
-            if ($kv.Count -eq 2) {
-                if ($kv[0] -eq 'code')  { $code      = [uri]::UnescapeDataString($kv[1]) }
-                if ($kv[0] -eq 'error') { $authError  = [uri]::UnescapeDataString($kv[1]) }
-            }
+                foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
+                    $kv = $pair.Split('=', 2)
+                    if ($kv.Count -eq 2) {
+                        if ($kv[0] -eq 'code')  { $code      = [uri]::UnescapeDataString($kv[1]) }
+                        if ($kv[0] -eq 'error') { $authError = [uri]::UnescapeDataString($kv[1]) }
+                    }
+                }
+
+                # Send a response page.
+                $html = if ($code) {
+                    '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
+                    '<h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
+                    '<p>You can close this window and return to Nova.</p>' +
+                    '<script>setTimeout(function(){window.close()},2000)</script></body></html>'
+                } else {
+                    '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
+                    '<h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
+                    '<p>Please close this window and try again.</p></body></html>'
+                }
+                $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
+                $context.Response.ContentType     = 'text/html; charset=utf-8'
+                $context.Response.ContentLength64 = $buf.Length
+                $context.Response.OutputStream.Write($buf, 0, $buf.Length)
+                $context.Response.OutputStream.Close()
+            } catch { $null = $_ }
         }
 
-        $html = if ($code) {
-            '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
-            '<h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
-            '<p>You can close this window and return to Nova.</p>' +
-            '<script>setTimeout(function(){window.close()},2000)</script></body></html>'
-        } else {
-            '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
-            '<h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
-            '<p>Please close this window and try again.</p></body></html>'
-        }
-        $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
-        $context.Response.ContentType     = 'text/html; charset=utf-8'
-        $context.Response.ContentLength64 = $buf.Length
-        $context.Response.OutputStream.Write($buf, 0, $buf.Length)
-        $context.Response.OutputStream.Close()
+        Start-Sleep -Milliseconds 200
+    }
 
-        } finally {
-            $listener.Stop(); $listener.Close()
+    } finally {
+        # ── Clean up: stop listener and kill Edge --app process ──────────────
+        try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
+
+        if ($edgeProc -and -not $edgeProc.HasExited) {
+            try { $edgeProc.Kill() } catch { $null = $_ }
         }
+        # Remove stale lock files so the auth data dir can be reused.
+        $edgeAuthDataDir = Join-Path $env:TEMP 'Nova-EdgeAuth'
+        try { Remove-Item (Join-Path $edgeAuthDataDir 'lockfile')      -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+        try { Remove-Item (Join-Path $edgeAuthDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
     }
 
     if (-not $code) {
@@ -416,7 +228,7 @@ function Invoke-M365DeviceCodeAuth {
         return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
     }
 
-    # ── Step 5: Exchange authorization code for tokens ──────────────────────
+    # ── Exchange authorization code for tokens ──────────────────────────────
     $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
     try {
         $body = "client_id=$([uri]::EscapeDataString($clientId))" +
@@ -891,8 +703,6 @@ function Invoke-KioskM365Auth {
 #endregion
 
 Export-ModuleMember -Function @(
-    'Install-WebView2SDK'
-    'Show-WebView2AuthPopup'
     'Invoke-M365DeviceCodeAuth'
     'Update-M365Token'
     'Invoke-KioskM365Auth'

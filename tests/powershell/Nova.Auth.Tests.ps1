@@ -3,10 +3,10 @@
 .SYNOPSIS
     Pester v5 tests for the Nova.Auth module.
 .DESCRIPTION
-    Tests the authentication functions — primarily Install-WebView2SDK and
-    Invoke-M365DeviceCodeAuth.  Since these functions depend on external
-    services (NuGet, Azure AD) and GUI components (WebView2, WinForms),
-    tests focus on verifiable logic paths and mock external calls.
+    Tests the authentication functions -- primarily Invoke-M365DeviceCodeAuth
+    and Invoke-KioskM365Auth.  Since these functions depend on external
+    services (Azure AD) and Edge, tests focus on verifiable logic paths
+    and mock external calls.
 #>
 
 BeforeAll {
@@ -16,22 +16,6 @@ BeforeAll {
     # $env:TEMP may be null on Linux — set it for cross-platform testing
     if (-not $env:TEMP) {
         $env:TEMP = [System.IO.Path]::GetTempPath()
-    }
-}
-
-Describe 'Install-WebView2SDK' {
-    It 'returns cached path when core DLL already exists' {
-        $sdkDir  = Join-Path ([System.IO.Path]::GetTempPath()) 'Nova-WebView2SDK'
-        $coreDll = Join-Path $sdkDir 'Microsoft.Web.WebView2.Core.dll'
-        # Create a fake cached copy for the test
-        $null = New-Item -ItemType Directory -Path $sdkDir -Force
-        $null = New-Item -ItemType File -Path $coreDll -Force
-        try {
-            $result = Install-WebView2SDK
-            $result | Should -Be $sdkDir
-        } finally {
-            Remove-Item $coreDll -Force -ErrorAction SilentlyContinue
-        }
     }
 }
 
@@ -90,6 +74,12 @@ Describe 'Module Exports - Kiosk Auth' {
         $mod = Get-Module Nova.Auth
         $mod.ExportedFunctions.Keys | Should -Not -Contain 'Invoke-KioskEdgeAuth'
         $mod.ExportedFunctions.Keys | Should -Not -Contain 'Invoke-KioskDeviceCodeAuth'
+    }
+
+    It 'does not export removed WebView2 functions' {
+        $mod = Get-Module Nova.Auth
+        $mod.ExportedFunctions.Keys | Should -Not -Contain 'Install-WebView2SDK'
+        $mod.ExportedFunctions.Keys | Should -Not -Contain 'Show-WebView2AuthPopup'
     }
 }
 
