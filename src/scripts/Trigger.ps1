@@ -914,6 +914,7 @@ if exist "X:\WebView2\Edge\msedge.exe" if exist "X:\Nova-UI\index.html" (
         --disable-save-password-bubble ^
         --allow-file-access-from-files ^
         --disable-popup-blocking ^
+        --disable-web-security ^
         --disable-renderer-backgrounding ^
         --disable-background-timer-throttling ^
         --disable-backgrounding-occluded-windows ^

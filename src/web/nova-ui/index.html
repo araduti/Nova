@@ -1148,6 +1148,30 @@
             try { xhr.send(); } catch (e) { /* ignore */ }
         }, 10000);
 
+        /* ── Auto-upgrade from file:// to http:// ─────────────────
+         *  When loaded via file:// protocol, XHR to http://localhost
+         *  is blocked by the browser's same-origin policy.  This
+         *  prevents sendAction(), heartbeat, and all UI buttons from
+         *  working.  Once Bootstrap.ps1's HTTP server is ready, we
+         *  redirect to http://localhost:8080/ui where everything is
+         *  same-origin.
+         *
+         *  Detection uses an <img> tag pointing at the /ping endpoint
+         *  (which returns a 1x1 GIF).  Image requests bypass CORS so
+         *  they work even from file:// origins. ──────────────────── */
+        if (window.location.protocol === 'file:') {
+            (function tryUpgrade() {
+                var img = new Image();
+                img.onload = function () {
+                    window.location.replace(API_BASE + '/ui');
+                };
+                img.onerror = function () {
+                    setTimeout(tryUpgrade, 1500);
+                };
+                img.src = API_BASE + '/ping?t=' + Date.now();
+            })();
+        }
+
         /* ── Renderer keep-alive: force continuous paint cycles to
          *    prevent the SwiftShader renderer from being terminated
          *    (Edge Error code 39) during long operations. ────────── */

@@ -365,10 +365,26 @@ $script:actionTimer.Add_Tick({
             $msg  = 'unknown'
 
             $handled = $false
+            # ── CORS: allow the file:// page to call the HTTP API ────────
+            $context.Response.Headers.Add('Access-Control-Allow-Origin', '*')
+            $context.Response.Headers.Add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+            $context.Response.Headers.Add('Access-Control-Allow-Headers', 'Content-Type')
+
             switch ($path) {
                 '/wifi'       { $script:PendingAction = 'SHOW_WIFI'; $msg = 'ok' }
                 '/retry'      { $script:PendingAction = 'RETRY'; $msg = 'ok' }
                 '/cancelauth' { $script:_authCancelled = $true; $msg = 'ok' }
+                '/ping' {
+                    # Returns a 1x1 transparent GIF so the HTML UI can detect
+                    # server readiness from a file:// origin via an <img> tag
+                    # (img requests bypass CORS restrictions).
+                    $handled = $true
+                    $gifBytes = [Convert]::FromBase64String('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7')
+                    $context.Response.ContentType     = 'image/gif'
+                    $context.Response.ContentLength64 = $gifBytes.Length
+                    $context.Response.OutputStream.Write($gifBytes, 0, $gifBytes.Length)
+                    $context.Response.Close()
+                }
                 '/configsubmit' {
                     # Read the JSON body posted by the HTML config modal
                     try {
@@ -417,7 +433,7 @@ $script:actionTimer.Add_Tick({
                 }
                 '/reboot'     { Restart-Computer -Force; $msg = 'rebooting' }
                 '/shutdown'   { Stop-Computer -Force; $msg = 'shutting down' }
-                '/shell'      { Start-Process $script:PsBin -ArgumentList '-NoProfile','-NoExit'; $msg = 'shell opened' }
+                '/shell'      { Open-NovaShell; $msg = 'shell opened' }
                 '/heartbeat'  { $script:_lastHeartbeat = [DateTime]::UtcNow; $msg = 'ok' }
             }
 
@@ -495,16 +511,55 @@ public class NovaHotkeyWindow : NativeWindow, IDisposable {
         DestroyHandle();
     }
 }
+
+public static class NovaWindow {
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+    public const int SW_FORCEMINIMIZE = 11;
+    public const int SW_RESTORE       = 9;
+}
 '@ -ReferencedAssemblies System.Windows.Forms -ErrorAction Stop
 
     $script:hotkeyWindow = New-Object NovaHotkeyWindow
     $script:hotkeyWindow.add_HotkeyPressed({
         Write-Verbose 'F8 hotkey pressed -- opening PowerShell'
-        Start-Process $script:PsBin -ArgumentList '-NoProfile', '-NoExit'
+        Open-NovaShell
     })
     Write-Verbose 'Global F8 hotkey registered'
 } catch {
     Write-Verbose "Failed to register global F8 hotkey: $_"
+}
+
+function Open-NovaShell {
+    <#
+    .SYNOPSIS  Minimize Edge and open a PowerShell troubleshooting console.
+    .DESCRIPTION
+        In WinPE kiosk mode Edge occupies the full screen with no taskbar.
+        A plain Start-Process creates the PowerShell window behind Edge where
+        the user cannot see it.  This helper minimizes every Edge window first
+        so the new console is visible, then brings it to the foreground.
+    #>
+    [CmdletBinding()] param()
+    # Minimise every Edge window so the new console is visible
+    try {
+        Get-Process -Name 'msedge' -ErrorAction SilentlyContinue | ForEach-Object {
+            $h = $_.MainWindowHandle
+            if ($h -ne [IntPtr]::Zero) {
+                [NovaWindow]::ShowWindow($h, [NovaWindow]::SW_FORCEMINIMIZE) | Out-Null
+            }
+        }
+    } catch { Write-Verbose "Could not minimise Edge: $_" }
+
+    $p = Start-Process -FilePath $script:PsBin -ArgumentList '-NoProfile', '-NoExit' -PassThru
+    # Give the window time to appear, then bring it to the foreground
+    Start-Sleep -Milliseconds 500
+    try {
+        if ($p -and $p.MainWindowHandle -ne [IntPtr]::Zero) {
+            [NovaWindow]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
+        }
+    } catch { Write-Verbose "SetForegroundWindow failed: $_" }
 }
 #endregion
 
@@ -555,6 +610,7 @@ $script:EdgeArgs = @(
     '--disable-save-password-bubble',
     '--allow-file-access-from-files',
     '--disable-popup-blocking',
+    '--disable-web-security',
     '--disable-renderer-backgrounding',
     '--disable-background-timer-throttling',
     '--disable-backgrounding-occluded-windows',
