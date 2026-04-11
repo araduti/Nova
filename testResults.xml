@@ -1,33 +1,33 @@
 ﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
-<test-results xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="nunit_schema_2.5.xsd" name="Pester" total="12" errors="0" failures="0" not-run="0" inconclusive="0" ignored="0" skipped="0" invalid="0" date="2026-04-11" time="07:29:51">
-  <environment platform="Linux" clr-version="8.0.25" cwd="/home/runner/work/Nova/Nova" nunit-version="2.5.8.0" machine-name="runnervm35a4x" os-version="6.17.0-1010-azure" user="runner" user-domain="" />
+<test-results xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="nunit_schema_2.5.xsd" name="Pester" total="12" errors="0" failures="0" not-run="0" inconclusive="0" ignored="0" skipped="0" invalid="0" date="2026-04-11" time="07:50:34">
+  <environment os-version="6.17.0-1010-azure" platform="Linux" machine-name="runnervm35a4x" user-domain="" nunit-version="2.5.8.0" clr-version="8.0.25" user="runner" cwd="/home/runner/work/Nova/Nova" />
   <culture-info current-culture="" current-uiculture="" />
-  <test-suite type="TestFixture" name="Pester" executed="True" result="Success" success="True" time="1.7161" asserts="0" description="Pester">
+  <test-suite type="TestFixture" name="Pester" executed="True" result="Success" success="True" time="1.9809" asserts="0" description="Pester">
     <results>
-      <test-suite type="TestFixture" name="/home/runner/work/Nova/Nova/tests/powershell/Nova.Auth.Tests.ps1" executed="True" result="Success" success="True" time="1.7161" asserts="0" description="/home/runner/work/Nova/Nova/tests/powershell/Nova.Auth.Tests.ps1">
+      <test-suite type="TestFixture" name="/home/runner/work/Nova/Nova/tests/powershell/Nova.Auth.Tests.ps1" executed="True" result="Success" success="True" time="1.9809" asserts="0" description="/home/runner/work/Nova/Nova/tests/powershell/Nova.Auth.Tests.ps1">
         <results>
-          <test-suite type="TestFixture" name="Invoke-M365Auth" executed="True" result="Success" success="True" time="1.2111" asserts="0" description="Invoke-M365Auth">
+          <test-suite type="TestFixture" name="Invoke-M365Auth" executed="True" result="Success" success="True" time="1.3053" asserts="0" description="Invoke-M365Auth">
             <results>
-              <test-case description="returns Authenticated=$true when auth config is not available" name="Invoke-M365Auth.returns Authenticated=$true when auth config is not available" time="1.0728" asserts="0" success="True" result="Success" executed="True" />
-              <test-case description="returns Authenticated=$true with WriteStatus callback when auth config is not available" name="Invoke-M365Auth.returns Authenticated=$true with WriteStatus callback when auth config is not available" time="0.0307" asserts="0" success="True" result="Success" executed="True" />
-              <test-case description="returns expected hashtable keys" name="Invoke-M365Auth.returns expected hashtable keys" time="0.0591" asserts="0" success="True" result="Success" executed="True" />
-              <test-case description="accepts all callback parameters without error" name="Invoke-M365Auth.accepts all callback parameters without error" time="0.0191" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="returns Authenticated=$true when auth config is not available" name="Invoke-M365Auth.returns Authenticated=$true when auth config is not available" time="1.1156" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="returns Authenticated=$true with WriteStatus callback when auth config is not available" name="Invoke-M365Auth.returns Authenticated=$true with WriteStatus callback when auth config is not available" time="0.0413" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="returns expected hashtable keys" name="Invoke-M365Auth.returns expected hashtable keys" time="0.0839" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="accepts all callback parameters without error" name="Invoke-M365Auth.accepts all callback parameters without error" time="0.0295" asserts="0" success="True" result="Success" executed="True" />
             </results>
           </test-suite>
-          <test-suite type="TestFixture" name="Update-M365Token" executed="True" result="Success" success="True" time="1.2795" asserts="0" description="Update-M365Token">
+          <test-suite type="TestFixture" name="Update-M365Token" executed="True" result="Success" success="True" time="1.3805" asserts="0" description="Update-M365Token">
             <results>
-              <test-case description="returns null when called with empty refresh token" name="Update-M365Token.returns null when called with empty refresh token" time="0.0244" asserts="0" success="True" result="Success" executed="True" />
-              <test-case description="returns null when called with missing ClientId" name="Update-M365Token.returns null when called with missing ClientId" time="0.0184" asserts="0" success="True" result="Success" executed="True" />
-              <test-case description="returns null when called with null refresh token" name="Update-M365Token.returns null when called with null refresh token" time="0.0184" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="returns null when called with empty refresh token" name="Update-M365Token.returns null when called with empty refresh token" time="0.0336" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="returns null when called with missing ClientId" name="Update-M365Token.returns null when called with missing ClientId" time="0.018" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="returns null when called with null refresh token" name="Update-M365Token.returns null when called with null refresh token" time="0.0161" asserts="0" success="True" result="Success" executed="True" />
             </results>
           </test-suite>
-          <test-suite type="TestFixture" name="Module Exports" executed="True" result="Success" success="True" time="1.3641" asserts="0" description="Module Exports">
+          <test-suite type="TestFixture" name="Module Exports" executed="True" result="Success" success="True" time="1.5221" asserts="0" description="Module Exports">
             <results>
-              <test-case description="exports Invoke-M365Auth" name="Module Exports.exports Invoke-M365Auth" time="0.0186" asserts="0" success="True" result="Success" executed="True" />
-              <test-case description="exports Update-M365Token" name="Module Exports.exports Update-M365Token" time="0.0071" asserts="0" success="True" result="Success" executed="True" />
-              <test-case description="does not export removed legacy functions" name="Module Exports.does not export removed legacy functions" time="0.0124" asserts="0" success="True" result="Success" executed="True" />
-              <test-case description="does not export private helpers" name="Module Exports.does not export private helpers" time="0.0101" asserts="0" success="True" result="Success" executed="True" />
-              <test-case description="does not export removed WebView2 functions" name="Module Exports.does not export removed WebView2 functions" time="0.0086" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="exports Invoke-M365Auth" name="Module Exports.exports Invoke-M365Auth" time="0.0188" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="exports Update-M365Token" name="Module Exports.exports Update-M365Token" time="0.0081" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="does not export removed legacy functions" name="Module Exports.does not export removed legacy functions" time="0.0422" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="does not export private helpers" name="Module Exports.does not export private helpers" time="0.0236" asserts="0" success="True" result="Success" executed="True" />
+              <test-case description="does not export removed WebView2 functions" name="Module Exports.does not export removed WebView2 functions" time="0.0315" asserts="0" success="True" result="Success" executed="True" />
             </results>
           </test-suite>
         </results>

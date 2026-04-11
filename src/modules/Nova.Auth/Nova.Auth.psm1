@@ -209,6 +209,7 @@ function _EdgeAppAuth {
         '--disable-save-password-bubble'
     ) + $ExtraEdgeArgs
     $edgeProc = Start-Process -FilePath $EdgeExePath -ArgumentList $edgeArgs -PassThru
+    $edgeLaunchPid = if ($edgeProc) { $edgeProc.Id } else { $null }
 
     if ($UpdateUi) { & $UpdateUi @{ AuthInProgress = $true } }
 
@@ -285,28 +286,21 @@ function _EdgeAppAuth {
         # Brief pause so the user can see the sign-in result before the window disappears.
         if ($authCode -or $authError) { Start-Sleep -Milliseconds 600 }
 
-        $processKilled = $false
         if ($edgeProc -and -not $edgeProc.HasExited) {
             if ($WriteLog) { & $WriteLog "Closing Edge auth window (PID $($edgeProc.Id))" }
-            try { $edgeProc.Kill(); $processKilled = $true } catch { $null = $_ }
+            try { $edgeProc.Kill() } catch { $null = $_ }
         }
 
-        # When Edge handed off to an existing browser process (common on full
-        # Windows), $edgeProc is either null or already exited.  window.close()
-        # also fails because the OAuth redirects create multiple history entries.
-        # Find Edge processes whose command line references the auth-specific
-        # user-data-dir and terminate them so the auth window actually closes.
-        if (-not $processKilled) {
+        # When Edge handed off to an existing browser process, $edgeProc is
+        # null or already exited.  Use taskkill /T on the original launch PID
+        # to kill only that process tree -- this is safe because it targets
+        # the exact PID we started and its children, not other Edge instances.
+        # If the PID already exited, taskkill simply returns a non-zero exit
+        # code which we ignore.
+        if ($edgeLaunchPid) {
             try {
-                Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" -ErrorAction SilentlyContinue |
-                    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($EdgeDataDir) } |
-                    ForEach-Object {
-                        if ($WriteLog) { & $WriteLog "Closing handed-off Edge process (PID $($_.ProcessId))" }
-                        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-                    }
-            } catch {
-                if ($WriteLog) { & $WriteLog "CIM Edge cleanup: $_" }
-            }
+                $null = & taskkill /PID $edgeLaunchPid /T /F 2>&1
+            } catch { $null = $_ }
         }
 
         # Remove stale lock files so the auth data dir can be reused.
