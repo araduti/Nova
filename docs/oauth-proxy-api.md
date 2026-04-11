@@ -187,7 +187,7 @@ The `Retry-After` header indicates how many seconds to wait before retrying.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ALLOWED_ORIGIN` | No | Lock proxy to a single browser origin (e.g. `https://araduti.github.io`). If unset, origins are reflected. |
+| `ALLOWED_ORIGIN` | No | Lock proxy to a single browser origin (e.g. `https://nova.raduti.com`). If unset, origins are reflected. |
 | `GITHUB_APP_ID` | For `/api/token-exchange` | GitHub App numeric ID. |
 | `GITHUB_APP_PRIVATE_KEY` | For `/api/token-exchange` | PEM private key (PKCS#1 or PKCS#8). Literal `\n` is normalized. |
 | `GITHUB_APP_INSTALLATION_ID` | For `/api/token-exchange` | Installation ID for the target repository. |

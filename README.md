@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="grok-image-7cdbf1dc-7de8-4200-865e-3785d9bc2187.png" alt="Nova Logo" width="200" />
+<img src="resources/nova_logo.png" alt="Nova Logo" width="200" />
 
 # **Nova** — Cloud-Native Windows OS Deployment Platform
 
@@ -43,7 +43,7 @@ Nova is a **cloud-native Windows OS deployment platform** that replaces traditio
 Run this command on any Windows PC as **Administrator**:
 
 ```powershell
-irm https://araduti.github.io/Nova/Trigger.ps1 | iex
+irm https://nova.raduti.com/Trigger.ps1 | iex
 ```
 
 Or use the raw GitHub URL:
@@ -294,7 +294,7 @@ Nova supports an optional **Microsoft 365 authentication gate** using Entra ID. 
 
 Nova includes a browser-based **Task Sequence Editor** for visually creating deployment workflows — similar to SCCM/MECM task sequences.
 
-**Live editor:** [https://araduti.github.io/Nova/src/web/editor/](https://araduti.github.io/Nova/src/web/editor/)
+**Live editor:** [https://nova.raduti.com/src/web/editor/](https://nova.raduti.com/src/web/editor/)
 
 - Drag-and-drop step reordering
 - Configure each step with dedicated form fields

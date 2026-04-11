@@ -604,7 +604,7 @@ if (!success) return new Response('Rate limited', { status: 429 });
 Nova's entry point is a beloved one-liner:
 
 ```powershell
-irm https://araduti.github.io/Nova/Trigger.ps1 | iex
+irm https://nova.raduti.com/Trigger.ps1 | iex
 #  or
 irm https://raw.githubusercontent.com/araduti/Nova/main/src/scripts/Trigger.ps1 | iex
 ```
@@ -678,7 +678,7 @@ Here's exactly how the modularized `Trigger.ps1` launcher would work:
 .SYNOPSIS
     Nova one-liner entry point.
 .EXAMPLE
-    irm https://araduti.github.io/Nova/Trigger.ps1 | iex
+    irm https://nova.raduti.com/Trigger.ps1 | iex
 #>
 [CmdletBinding()]
 param(
@@ -740,14 +740,14 @@ Invoke-NovaTrigger @PSBoundParameters
 
 | Benefit | Detail |
 |---------|--------|
-| **Same one-liner** | `irm https://araduti.github.io/Nova/Trigger.ps1 \| iex` — identical user experience |
+| **Same one-liner** | `irm https://nova.raduti.com/Trigger.ps1 \| iex` — identical user experience |
 | **Unit testable** | Each module can be tested independently with Pester |
 | **Reviewable** | 200-line files instead of 2,248-line monolith |
 | **Integrity checking** | Launcher can verify SHA256 hashes of each module before dot-sourcing |
 | **Parallel downloads** | Launcher can download all modules concurrently via `Start-Job` or runspaces |
 | **Caching** | Downloaded modules persist in `$WorkDir/modules/` for the session |
 | **Selective updates** | Fix a bug in `Drivers.ps1` without touching `ADK.ps1` |
-| **Custom URL shortener** | GitHub Pages serves `Trigger.ps1` at `https://araduti.github.io/Nova/Trigger.ps1` — now it's just smaller and faster to download |
+| **Custom URL shortener** | GitHub Pages serves `Trigger.ps1` at `https://nova.raduti.com/Trigger.ps1` — now it's just smaller and faster to download |
 
 ### Adding Integrity Verification
 
@@ -977,7 +977,7 @@ jobs:
 - **User experience** — same pages, same URLs, same functionality
 - **Deployment trigger** — still automatic on push to `main`
 - **Free tier** — GitHub Pages free tier has no restrictions on build systems
-- **GitHub Pages** — `Trigger.ps1` is served at `https://araduti.github.io/Nova/Trigger.ps1`
+- **GitHub Pages** — `Trigger.ps1` is served at `https://nova.raduti.com/Trigger.ps1`
 
 ### Why Vite Is the Right Choice
 
@@ -1068,7 +1068,7 @@ A: No. GitHub Actions minutes for public repos are free. The build step adds ~30
 - Keep `Trigger.ps1` as a thin launcher (~150 lines) that downloads and dot-sources module files
 - Extract functions into focused modules (`Logging.ps1`, `ADK.ps1`, `WinPE.ps1`, etc.)
 - Each function becomes independently testable with Pester
-- The `irm https://araduti.github.io/Nova/Trigger.ps1 | iex` one-liner works identically — the launcher handles everything
+- The `irm https://nova.raduti.com/Trigger.ps1 | iex` one-liner works identically — the launcher handles everything
 - Add a `modules.json` manifest for SHA256 integrity verification of each module
 
 ### 2. Add Comprehensive Testing

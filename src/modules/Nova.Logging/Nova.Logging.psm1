@@ -3,15 +3,26 @@
     Shared logging module for Nova scripts.
 
 .DESCRIPTION
-    Provides colour-coded console output functions used by Nova.ps1, Bootstrap.ps1,
-    and Trigger.ps1.  Prefixes are configurable via Set-NovaLogPrefix so each
-    script can retain its own visual identity while sharing a single implementation.
+    Provides colour-coded, timestamped console and file logging functions used
+    by Nova.ps1, Bootstrap.ps1, and Trigger.ps1.  Prefixes are configurable
+    via Set-NovaLogPrefix so each script can retain its own visual identity
+    while sharing a single implementation.
+
+    Every log entry is prefixed with a timestamp ([yyyy-MM-dd HH:mm:ss]) and
+    optionally written to a log file when file logging is enabled via
+    Start-NovaLog.
 
     Default prefixes (Trigger style):
-        Write-Step    →  "  [>] …"   Cyan
-        Write-Success →  "  [+] …"   Green
-        Write-Warn    →  "  [!] …"   Yellow
-        Write-Fail    →  "  [X] …"   Red
+        Write-Step    --  "  [>] ..."   Cyan
+        Write-Success --  "  [+] ..."   Green
+        Write-Warn    --  "  [!] ..."   Yellow
+        Write-Fail    --  "  [X] ..."   Red
+
+    Additional log levels:
+        Write-Info    --  "  [i] ..."   White     (informational detail)
+        Write-Detail  --  "  [.] ..."   DarkGray  (verbose/debug data)
+        Write-Section --  "=== ... ===" Magenta   (phase/section headers)
+        Write-Data    --  key=value     Gray      (structured data logging)
 #>
 
 Set-StrictMode -Version Latest
@@ -21,14 +32,109 @@ $script:StepPrefix    = '  [>]'
 $script:SuccessPrefix = '  [+]'
 $script:WarnPrefix    = '  [!]'
 $script:FailPrefix    = '  [X]'
+$script:InfoPrefix    = '  [i]'
+$script:DetailPrefix  = '  [.]'
+
+# ── File logging state ─────────────────────────────────────────────────────
+$script:LogFilePath   = ''
+$script:LogFileActive = $false
+
+# ── Private helpers ────────────────────────────────────────────────────────
+
+function Get-NovaTimestamp {
+    <# Returns a formatted timestamp string for log entries. #>
+    return (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+}
+
+function Write-NovaLogFile {
+    <#
+    .SYNOPSIS  Appends a plain-text (no colour codes) line to the active log file.
+    .DESCRIPTION
+        Only writes when file logging has been enabled via Start-NovaLog.
+        Errors are silently suppressed so logging never breaks the caller.
+    #>
+    param([string]$Line)
+    if (-not $script:LogFileActive -or -not $script:LogFilePath) { return }
+    try {
+        $Line | Out-File -FilePath $script:LogFilePath -Append -Encoding utf8 -Force
+    } catch {
+        Write-Debug "Nova.Logging: failed to write log line: $_"
+    }
+}
+
+# ── Public Functions ───────────────────────────────────────────────────────
+
+function Start-NovaLog {
+    <#
+    .SYNOPSIS  Enables file logging to the specified path.
+    .DESCRIPTION
+        Once called, all Write-Step / Write-Success / Write-Warn / Write-Fail /
+        Write-Info / Write-Detail / Write-Section / Write-Data calls will also
+        append timestamped plain-text entries to the log file.  The file is
+        created if it does not exist.  Call Stop-NovaLog to finalize.
+    .PARAMETER Path
+        Full path to the log file.  Parent directory is created if missing.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Setting in-memory module state and creating a log file -- benign side-effect')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path
+    )
+    $parentDir = Split-Path $Path -Parent
+    if ($parentDir -and -not (Test-Path $parentDir)) {
+        $null = New-Item -ItemType Directory -Path $parentDir -Force -ErrorAction SilentlyContinue
+    }
+    $script:LogFilePath   = $Path
+    $script:LogFileActive = $true
+    $ts = Get-NovaTimestamp
+    Write-NovaLogFile "[$ts] ── Nova log started ──"
+    Write-NovaLogFile "[$ts] Log file: $Path"
+    Write-NovaLogFile "[$ts] Host: $($env:COMPUTERNAME)"
+    Write-NovaLogFile "[$ts] User: $($env:USERNAME)"
+    Write-NovaLogFile "[$ts] PS Version: $($PSVersionTable.PSVersion)"
+    Write-NovaLogFile "[$ts] OS: $([System.Environment]::OSVersion.VersionString)"
+}
+
+function Stop-NovaLog {
+    <#
+    .SYNOPSIS  Finalizes file logging and writes a closing entry.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Setting in-memory module state only -- no system side-effects')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param()
+    if ($script:LogFileActive) {
+        $ts = Get-NovaTimestamp
+        Write-NovaLogFile "[$ts] ── Nova log ended ──"
+    }
+    $script:LogFileActive = $false
+}
+
+function Get-NovaLogPath {
+    <#
+    .SYNOPSIS  Returns the path of the active log file, or empty string if logging is not active.
+    #>
+    [OutputType([string])]
+    [CmdletBinding()]
+    param()
+    if ($script:LogFileActive) { return $script:LogFilePath }
+    return ''
+}
 
 function Set-NovaLogPrefix {
     <#
-    .SYNOPSIS  Configures the message prefix used by Write-Step / Success / Warn / Fail.
+    .SYNOPSIS  Configures the message prefix used by Write-Step / Success / Warn / Fail / Info / Detail.
     .PARAMETER Step     Prefix for Write-Step (informational progress).
     .PARAMETER Success  Prefix for Write-Success (completion).
     .PARAMETER Warn     Prefix for Write-Warn (non-fatal warning).
     .PARAMETER Fail     Prefix for Write-Fail (error).
+    .PARAMETER Info     Prefix for Write-Info (informational detail).
+    .PARAMETER Detail   Prefix for Write-Detail (verbose/debug data).
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
         Justification = 'Setting in-memory module state only -- no system side-effects')]
@@ -38,69 +144,370 @@ function Set-NovaLogPrefix {
         [string]$Step,
         [string]$Success,
         [string]$Warn,
-        [string]$Fail
+        [string]$Fail,
+        [string]$Info,
+        [string]$Detail
     )
     if ($PSBoundParameters.ContainsKey('Step'))    { $script:StepPrefix    = $Step    }
     if ($PSBoundParameters.ContainsKey('Success')) { $script:SuccessPrefix = $Success }
     if ($PSBoundParameters.ContainsKey('Warn'))    { $script:WarnPrefix    = $Warn    }
     if ($PSBoundParameters.ContainsKey('Fail'))    { $script:FailPrefix    = $Fail    }
+    if ($PSBoundParameters.ContainsKey('Info'))    { $script:InfoPrefix    = $Info    }
+    if ($PSBoundParameters.ContainsKey('Detail'))  { $script:DetailPrefix  = $Detail  }
 }
 
 function Write-Step {
     <#
-    .SYNOPSIS  Writes a cyan progress message to the console.
+    .SYNOPSIS  Writes a timestamped cyan progress message to the console and log file.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
     [OutputType([void])]
     [CmdletBinding()]
     param([string]$Message)
-    Write-Host "`n$($script:StepPrefix) $Message" -ForegroundColor Cyan
+    $ts = Get-NovaTimestamp
+    Write-Host "`n[$ts] $($script:StepPrefix) $Message" -ForegroundColor Cyan
+    Write-NovaLogFile "[$ts] STEP    $($script:StepPrefix) $Message"
 }
 
 function Write-Success {
     <#
-    .SYNOPSIS  Writes a green success message to the console.
+    .SYNOPSIS  Writes a timestamped green success message to the console and log file.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
     [OutputType([void])]
     [CmdletBinding()]
     param([string]$Message)
-    Write-Host "$($script:SuccessPrefix) $Message" -ForegroundColor Green
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts] $($script:SuccessPrefix) $Message" -ForegroundColor Green
+    Write-NovaLogFile "[$ts] OK      $($script:SuccessPrefix) $Message"
 }
 
 function Write-Warn {
     <#
-    .SYNOPSIS  Writes a yellow warning message to the console.
+    .SYNOPSIS  Writes a timestamped yellow warning message to the console and log file.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
     [OutputType([void])]
     [CmdletBinding()]
     param([string]$Message)
-    Write-Host "$($script:WarnPrefix) $Message" -ForegroundColor Yellow
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts] $($script:WarnPrefix) $Message" -ForegroundColor Yellow
+    Write-NovaLogFile "[$ts] WARN    $($script:WarnPrefix) $Message"
 }
 
 function Write-Fail {
     <#
-    .SYNOPSIS  Writes a red error message to the console.
+    .SYNOPSIS  Writes a timestamped red error message to the console and log file.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
     [OutputType([void])]
     [CmdletBinding()]
     param([string]$Message)
-    Write-Host "$($script:FailPrefix) $Message" -ForegroundColor Red
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts] $($script:FailPrefix) $Message" -ForegroundColor Red
+    Write-NovaLogFile "[$ts] FAIL    $($script:FailPrefix) $Message"
 }
 
-Export-ModuleMember -Function Set-NovaLogPrefix, Write-Step, Write-Success, Write-Warn, Write-Fail
+function Write-Info {
+    <#
+    .SYNOPSIS  Writes a timestamped informational message to the console and log file.
+    .DESCRIPTION
+        Use for detailed informational output that supplements Write-Step.
+        Renders in white for readability without drawing attention like
+        success/warning/error messages.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Intentional coloured console output for operator visibility')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param([string]$Message)
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts] $($script:InfoPrefix) $Message" -ForegroundColor White
+    Write-NovaLogFile "[$ts] INFO    $($script:InfoPrefix) $Message"
+}
+
+function Write-Detail {
+    <#
+    .SYNOPSIS  Writes a timestamped verbose/debug message to the console and log file.
+    .DESCRIPTION
+        Use for low-level diagnostic data that is useful for troubleshooting
+        but not needed during normal operation.  Renders in DarkGray to be
+        visually subdued.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Intentional coloured console output for operator visibility')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param([string]$Message)
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts] $($script:DetailPrefix) $Message" -ForegroundColor DarkGray
+    Write-NovaLogFile "[$ts] DETAIL  $($script:DetailPrefix) $Message"
+}
+
+function Write-Section {
+    <#
+    .SYNOPSIS  Writes a prominent section header to the console and log file.
+    .DESCRIPTION
+        Use to visually separate major phases of a deployment (e.g., disk
+        partitioning, image download, driver injection).  Renders with a
+        separator line above and below for visibility.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Intentional coloured console output for operator visibility')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param([string]$Title)
+    $ts = Get-NovaTimestamp
+    $separator = '=' * 60
+    Write-Host ''
+    Write-Host "[$ts] $separator" -ForegroundColor Magenta
+    Write-Host "[$ts]   $Title" -ForegroundColor Magenta
+    Write-Host "[$ts] $separator" -ForegroundColor Magenta
+    Write-NovaLogFile ''
+    Write-NovaLogFile "[$ts] $separator"
+    Write-NovaLogFile "[$ts]   $Title"
+    Write-NovaLogFile "[$ts] $separator"
+}
+
+function Write-Data {
+    <#
+    .SYNOPSIS  Writes structured key-value data to the console and log file.
+    .DESCRIPTION
+        Use to log structured information such as configuration values,
+        system properties, or step parameters.  Accepts a hashtable of
+        key-value pairs and formats them as aligned lines.
+    .PARAMETER Label
+        A short label describing the data group (e.g., "Disk Info", "Network").
+    .PARAMETER Data
+        A hashtable (or ordered dictionary) of key-value pairs to log.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Intentional coloured console output for operator visibility')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Label,
+        [Parameter(Mandatory)]
+        [hashtable]$Data
+    )
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts]   --- $Label ---" -ForegroundColor Gray
+    Write-NovaLogFile "[$ts]   --- $Label ---"
+    foreach ($key in $Data.Keys) {
+        $val = $Data[$key]
+        Write-Host "[$ts]     $key = $val" -ForegroundColor Gray
+        Write-NovaLogFile "[$ts]     $key = $val"
+    }
+}
+
+function Show-NovaLogViewer {
+    <#
+    .SYNOPSIS  Opens a simple WinForms-based log viewer for WinPE.
+    .DESCRIPTION
+        Displays the contents of a Nova log file in a scrollable, resizable
+        window with auto-refresh (tail) capability.  Designed for use in
+        WinPE where GUI text editors are unavailable.
+
+        The viewer colour-codes lines by log level:
+          STEP/[>]  = Cyan     OK/[+]   = Green
+          WARN/[!]  = Yellow   FAIL/[X] = Red
+          INFO/[i]  = Black    DETAIL   = Gray
+
+        Press F5 or click Refresh to reload the file.  The viewer auto-refreshes
+        every 3 seconds when the Auto-Refresh checkbox is enabled.
+    .PARAMETER Path
+        Path to the log file to display.  Defaults to the active log file
+        from Start-NovaLog if not specified.
+    .PARAMETER NonBlocking
+        When set, the viewer is shown non-modally so the calling script
+        continues execution.  Default is modal (blocks until closed).
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Fallback message when WinForms is unavailable')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param(
+        [string]$Path = '',
+        [switch]$NonBlocking
+    )
+
+    if (-not $Path) {
+        $Path = Get-NovaLogPath
+    }
+    if (-not $Path -or -not (Test-Path $Path)) {
+        Write-Warn "Log file not found: $Path"
+        return
+    }
+
+    # Attempt to load WinForms -- available in WinPE with the .NET component
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+    } catch {
+        Write-Warn "WinForms not available -- cannot show log viewer. View the log file directly: $Path"
+        return
+    }
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Nova Log Viewer - $Path"
+    $form.Size = New-Object System.Drawing.Size(900, 600)
+    $form.StartPosition = 'CenterScreen'
+    $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
+
+    # Text box for log content
+    $textBox = New-Object System.Windows.Forms.RichTextBox
+    $textBox.Dock = 'Fill'
+    $textBox.ReadOnly = $true
+    $textBox.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
+    $textBox.ForeColor = [System.Drawing.Color]::White
+    $textBox.Font = New-Object System.Drawing.Font('Consolas', 9)
+    $textBox.WordWrap = $false
+    $textBox.ScrollBars = 'Both'
+
+    # Toolbar panel
+    $toolbar = New-Object System.Windows.Forms.Panel
+    $toolbar.Dock = 'Top'
+    $toolbar.Height = 35
+    $toolbar.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 45)
+
+    $btnRefresh = New-Object System.Windows.Forms.Button
+    $btnRefresh.Text = 'Refresh (F5)'
+    $btnRefresh.Location = New-Object System.Drawing.Point(5, 5)
+    $btnRefresh.Size = New-Object System.Drawing.Size(100, 25)
+    $btnRefresh.FlatStyle = 'Flat'
+    $btnRefresh.ForeColor = [System.Drawing.Color]::White
+    $btnRefresh.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+
+    $chkAutoRefresh = New-Object System.Windows.Forms.CheckBox
+    $chkAutoRefresh.Text = 'Auto-Refresh (3s)'
+    $chkAutoRefresh.Location = New-Object System.Drawing.Point(115, 8)
+    $chkAutoRefresh.ForeColor = [System.Drawing.Color]::White
+    $chkAutoRefresh.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 45)
+    $chkAutoRefresh.AutoSize = $true
+
+    $btnScrollEnd = New-Object System.Windows.Forms.Button
+    $btnScrollEnd.Text = 'Scroll to End'
+    $btnScrollEnd.Location = New-Object System.Drawing.Point(270, 5)
+    $btnScrollEnd.Size = New-Object System.Drawing.Size(100, 25)
+    $btnScrollEnd.FlatStyle = 'Flat'
+    $btnScrollEnd.ForeColor = [System.Drawing.Color]::White
+    $btnScrollEnd.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Location = New-Object System.Drawing.Point(380, 8)
+    $lblStatus.AutoSize = $true
+    $lblStatus.ForeColor = [System.Drawing.Color]::LightGray
+
+    $toolbar.Controls.Add($btnRefresh)
+    $toolbar.Controls.Add($chkAutoRefresh)
+    $toolbar.Controls.Add($btnScrollEnd)
+    $toolbar.Controls.Add($lblStatus)
+
+    # Load and colour-code content
+    $loadContent = {
+        param($tb, $filePath, $statusLabel)
+        if (-not (Test-Path $filePath)) { return }
+        $lines = Get-Content $filePath -ErrorAction SilentlyContinue
+        if (-not $lines) { return }
+        $tb.Clear()
+        $tb.SuspendLayout()
+        foreach ($line in $lines) {
+            $colour = [System.Drawing.Color]::White
+            if ($line -match 'STEP|(\[\>\])') {
+                $colour = [System.Drawing.Color]::Cyan
+            } elseif ($line -match 'OK\s|(\[\+\])') {
+                $colour = [System.Drawing.Color]::LightGreen
+            } elseif ($line -match 'WARN|(\[\!\])') {
+                $colour = [System.Drawing.Color]::Yellow
+            } elseif ($line -match 'FAIL|(\[\X\])') {
+                $colour = [System.Drawing.Color]::FromArgb(255, 100, 100)
+            } elseif ($line -match 'INFO|(\[i\])') {
+                $colour = [System.Drawing.Color]::White
+            } elseif ($line -match 'DETAIL|(\[\.\])') {
+                $colour = [System.Drawing.Color]::Gray
+            } elseif ($line -match '====') {
+                $colour = [System.Drawing.Color]::FromArgb(200, 150, 255)
+            }
+            $tb.SelectionStart = $tb.TextLength
+            $tb.SelectionColor = $colour
+            $tb.AppendText("$line`n")
+        }
+        $tb.ResumeLayout()
+        # Scroll to end
+        $tb.SelectionStart = $tb.TextLength
+        $tb.ScrollToCaret()
+        $lineCount = $lines.Count
+        if ($statusLabel) { $statusLabel.Text = "$lineCount lines | $(Get-Date -Format 'HH:mm:ss')" }
+    }
+
+    & $loadContent $textBox $Path $lblStatus
+
+    # Refresh button click
+    $btnRefresh.Add_Click({ & $loadContent $textBox $Path $lblStatus })
+
+    # Scroll-to-end button
+    $btnScrollEnd.Add_Click({
+        $textBox.SelectionStart = $textBox.TextLength
+        $textBox.ScrollToCaret()
+    })
+
+    # F5 key handler
+    $form.KeyPreview = $true
+    $form.Add_KeyDown({
+        if ($_.KeyCode -eq 'F5') {
+            & $loadContent $textBox $Path $lblStatus
+            $_.Handled = $true
+        }
+    })
+
+    # Auto-refresh timer
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 3000
+    $timer.Add_Tick({
+        if ($chkAutoRefresh.Checked) {
+            & $loadContent $textBox $Path $lblStatus
+        }
+    })
+    $timer.Start()
+
+    $form.Controls.Add($textBox)
+    $form.Controls.Add($toolbar)
+
+    $form.Add_FormClosed({ $timer.Stop(); $timer.Dispose() })
+
+    if ($NonBlocking) {
+        $form.Show()
+    } else {
+        [void]$form.ShowDialog()
+    }
+}
+
+Export-ModuleMember -Function @(
+    'Set-NovaLogPrefix'
+    'Write-Step'
+    'Write-Success'
+    'Write-Warn'
+    'Write-Fail'
+    'Write-Info'
+    'Write-Detail'
+    'Write-Section'
+    'Write-Data'
+    'Start-NovaLog'
+    'Stop-NovaLog'
+    'Get-NovaLogPath'
+    'Show-NovaLogViewer'
+)
 
 # SIG # Begin signature block
-# MII9cwYJKoZIhvcNAQcCoII9ZDCCPWACAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MII6FAYJKoZIhvcNAQcCoII6BTCCOgECAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCAgcXr0x5bRWDmv
-# 2Lok0Le6mvNUIVGdapet7RovQoM9nKCCIjgwggXMMIIDtKADAgECAhBUmNLR1FsZ
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDhkFW2NjA5gp6V
+# vRTB9ycelLgbYDReAkDwMLcKxGTvs6CCIjgwggXMMIIDtKADAgECAhBUmNLR1FsZ
 # lUgTecgRwIeZMA0GCSqGSIb3DQEBDAUAMHcxCzAJBgNVBAYTAlVTMR4wHAYDVQQK
 # ExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xSDBGBgNVBAMTP01pY3Jvc29mdCBJZGVu
 # dGl0eSBWZXJpZmljYXRpb24gUm9vdCBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkgMjAy
@@ -283,146 +690,128 @@ Export-ModuleMember -Function Set-NovaLogPrefix, Write-Step, Write-Success, Writ
 # UfMwxCCX3mccFgx6UsQeRSdVVVNSyALQe6PT12418xon2iDGE81OGCreLzDcMAZn
 # rUAx4XQLUz6ZTl65yPUiOh3k7Yww94lDf+8oG2oZmDh5O1Qe38E+M3vhKwmzIeoB
 # 1dVLlz4i3IpaDcR+iuGjH2TdaC1ZOmBXiCRKJLj4DT2uhJ04ji+tHD6n58vhavFI
-# rmcxghqRMIIajQIBATBxMFoxCzAJBgNVBAYTAlVTMR4wHAYDVQQKExVNaWNyb3Nv
+# rmcxghcyMIIXLgIBATBxMFoxCzAJBgNVBAYTAlVTMR4wHAYDVQQKExVNaWNyb3Nv
 # ZnQgQ29ycG9yYXRpb24xKzApBgNVBAMTIk1pY3Jvc29mdCBJRCBWZXJpZmllZCBD
 # UyBBT0MgQ0EgMDQCEzMAAAsliaF5N+X1X2YAAAAACyUwDQYJYIZIAWUDBAIBBQCg
 # XjAQBgorBgEEAYI3AgEMMQIwADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAv
-# BgkqhkiG9w0BCQQxIgQg3yPR+ce209fl3nMwD39FPTvj9eFlHLlwqJX0XPdozYMw
-# DQYJKoZIhvcNAQEBBQAEggGATwwtCp5B2ymLE3GgpoaSBlsCJvv+L4iGO/7WLjuH
-# EhFzc7kVmEF19Mjy+ojcvCbrX0T6abOahIAx1B3fTqrDaLxWHRFLcL+M6Q9hFtjj
-# cm+kRREkP9wWpZfMa7VYZRv5yywaeZtpTUj2xLsud+UHdbDyIp+3E6qN95Fq1C9V
-# appZX9M/gCMoeraNfIo9YZgsirSJrWh7+T2ZQ8yDeDFFzMoG2/+pZ2BurICIn1b3
-# JA+kO9HxyoAwkFTL4IO1WTCh1bXWkKkEtBY8KGVLyXKSC7l2rzGUGAMpZ+x7DYpL
-# b7n2PcTDr3bFYKe+TEu2QNxzflDWZxhihIkMTRKhY+UhZQrmDDrckZbZudJMYByI
-# JUa0Fn47myJjBexje7QqaehUA8uPOBx/FMkAVMEQ99HPI66J5bwou0n+IkutvJwv
-# 1SLTOGoZ24w/B0sA68vb003uFAee6pCwP37JozHXf98sPrzTdJTloFXZEc+hlZZy
-# GpuxuHd66nlP2vCAEt4KzWWLoYIYETCCGA0GCisGAQQBgjcDAwExghf9MIIX+QYJ
-# KoZIhvcNAQcCoIIX6jCCF+YCAQMxDzANBglghkgBZQMEAgEFADCCAWIGCyqGSIb3
-# DQEJEAEEoIIBUQSCAU0wggFJAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIB
-# BQAEIHsmK7BeZZlNITbhJVC/b1M1xkUb2R5Netb3dLXa/V1OAgZpwnLUSZsYEzIw
-# MjYwNDExMDMwMzE0LjYzMVowBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMw
+# BgkqhkiG9w0BCQQxIgQg34k2quRj1nNhj0/J9rc7XsNKB3PZnkXC/NeT6+yeg2gw
+# DQYJKoZIhvcNAQEBBQAEggGAfntgOBiw3lnZSWXpLr4iIvrYFrhh+u1MKBoGerRD
+# nWRcPCtHrThthsGaXjxLBpQvM/pcPFH1sRXrAYBfYCWuW9sTCRRw8ZgHTADrHkqH
+# MV7GTTpYcNBZfDnJTETmAam8SegycP7Mvg5oFU3Un0yNbJCxoJO8nY96RXjvXwke
+# sMyCrqcMGvoXTXYxOsH2h6NCpvxb84LDqetyShGRU8qxlJnwlZLf8FpsbAHuBelE
+# eyN/B5DSYGywymYbfpSX286zJP1WRiKHBP3i9OM5uLNhXoVhoPIsd364bP2ncyKn
+# BxtoMaQH51F1hQgwwVIZv/OX/RdWK+fr1Cioy4vqhdKDEMwftRJfpmIPBoRxj0vX
+# YebSKVJ7HSZK+sVVjdvyNcSkyTTNECLMqEfFRFr2cO9wuEQ+kcpF+k2aM3zzE4Vh
+# Avs7WcVGcTs/BcyQPvXRUBHjJ1AFwD5VfYx16M5fK5JWXM/9+HkSQStRB3NsUuky
+# BoOxFfoM3AXS0RvziyqpCMbCoYIUsjCCFK4GCisGAQQBgjcDAwExghSeMIIUmgYJ
+# KoZIhvcNAQcCoIIUizCCFIcCAQMxDzANBglghkgBZQMEAgEFADCCAWoGCyqGSIb3
+# DQEJEAEEoIIBWQSCAVUwggFRAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIB
+# BQAEICtbORys6IVhdaaVWkn7cDrKcbRrb+2ouzSRShZit7MlAgZpxmIyDrgYEzIw
+# MjYwNDExMTMzNDE0LjYyNVowBIACAfSggemkgeYwgeMxCzAJBgNVBAYTAlVTMRMw
 # EQYDVQQIEwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdSZWRtb25kMR4wHAYDVQQKExVN
-# aWNyb3NvZnQgQ29ycG9yYXRpb24xJTAjBgNVBAsTHE1pY3Jvc29mdCBBbWVyaWNh
-# IE9wZXJhdGlvbnMxJzAlBgNVBAsTHm5TaGllbGQgVFNTIEVTTjo3RDAwLTA1RTAt
-# RDk0NzE1MDMGA1UEAxMsTWljcm9zb2Z0IFB1YmxpYyBSU0EgVGltZSBTdGFtcGlu
-# ZyBBdXRob3JpdHmggg8hMIIHgjCCBWqgAwIBAgITMwAAAAXlzw//Zi7JhwAAAAAA
-# BTANBgkqhkiG9w0BAQwFADB3MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9z
-# b2Z0IENvcnBvcmF0aW9uMUgwRgYDVQQDEz9NaWNyb3NvZnQgSWRlbnRpdHkgVmVy
-# aWZpY2F0aW9uIFJvb3QgQ2VydGlmaWNhdGUgQXV0aG9yaXR5IDIwMjAwHhcNMjAx
-# MTE5MjAzMjMxWhcNMzUxMTE5MjA0MjMxWjBhMQswCQYDVQQGEwJVUzEeMBwGA1UE
+# aWNyb3NvZnQgQ29ycG9yYXRpb24xLTArBgNVBAsTJE1pY3Jvc29mdCBJcmVsYW5k
+# IE9wZXJhdGlvbnMgTGltaXRlZDEnMCUGA1UECxMeblNoaWVsZCBUU1MgRVNOOjQ5
+# MUEtMDVFMC1EOTQ3MTUwMwYDVQQDEyxNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1l
+# IFN0YW1waW5nIEF1dGhvcml0eaCCDykwggeCMIIFaqADAgECAhMzAAAABeXPD/9m
+# LsmHAAAAAAAFMA0GCSqGSIb3DQEBDAUAMHcxCzAJBgNVBAYTAlVTMR4wHAYDVQQK
+# ExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xSDBGBgNVBAMTP01pY3Jvc29mdCBJZGVu
+# dGl0eSBWZXJpZmljYXRpb24gUm9vdCBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkgMjAy
+# MDAeFw0yMDExMTkyMDMyMzFaFw0zNTExMTkyMDQyMzFaMGExCzAJBgNVBAYTAlVT
+# MR4wHAYDVQQKExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xMjAwBgNVBAMTKU1pY3Jv
+# c29mdCBQdWJsaWMgUlNBIFRpbWVzdGFtcGluZyBDQSAyMDIwMIICIjANBgkqhkiG
+# 9w0BAQEFAAOCAg8AMIICCgKCAgEAnnznUmP94MWfBX1jtQYioxwe1+eXM9ETBb1l
+# Rkd3kcFdcG9/sqtDlwxKoVIcaqDb+omFio5DHC4RBcbyQHjXCwMk/l3TOYtgoBjx
+# nG/eViS4sOx8y4gSq8Zg49REAf5huXhIkQRKe3Qxs8Sgp02KHAznEa/Ssah8nWo5
+# hJM1xznkRsFPu6rfDHeZeG1Wa1wISvlkpOQooTULFm809Z0ZYlQ8Lp7i5F9YciFl
+# yAKwn6yjN/kR4fkquUWfGmMopNq/B8U/pdoZkZZQbxNlqJOiBGgCWpx69uKqKhTP
+# Vi3gVErnc/qi+dR8A2MiAz0kN0nh7SqINGbmw5OIRC0EsZ31WF3Uxp3GgZwetEKx
+# Lms73KG/Z+MkeuaVDQQheangOEMGJ4pQZH55ngI0Tdy1bi69INBV5Kn2HVJo9XxR
+# YR/JPGAaM6xGl57Ei95HUw9NV/uC3yFjrhc087qLJQawSC3xzY/EXzsT4I7sDbxO
+# mM2rl4uKK6eEpurRduOQ2hTkmG1hSuWYBunFGNv21Kt4N20AKmbeuSnGnsBCd2cj
+# RKG79+TX+sTehawOoxfeOO/jR7wo3liwkGdzPJYHgnJ54UxbckF914AqHOiEV7xT
+# nD1a69w/UTxwjEugpIPMIIE67SFZ2PMo27xjlLAHWW3l1CEAFjLNHd3EQ79PUr8F
+# UXetXr0CAwEAAaOCAhswggIXMA4GA1UdDwEB/wQEAwIBhjAQBgkrBgEEAYI3FQEE
+# AwIBADAdBgNVHQ4EFgQUa2koOjUvSGNAz3vYr0npPtk92yEwVAYDVR0gBE0wSzBJ
+# BgRVHSAAMEEwPwYIKwYBBQUHAgEWM2h0dHA6Ly93d3cubWljcm9zb2Z0LmNvbS9w
+# a2lvcHMvRG9jcy9SZXBvc2l0b3J5Lmh0bTATBgNVHSUEDDAKBggrBgEFBQcDCDAZ
+# BgkrBgEEAYI3FAIEDB4KAFMAdQBiAEMAQTAPBgNVHRMBAf8EBTADAQH/MB8GA1Ud
+# IwQYMBaAFMh+0mqFKhvKGZgEByfPUBBPaKiiMIGEBgNVHR8EfTB7MHmgd6B1hnNo
+# dHRwOi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL2NybC9NaWNyb3NvZnQlMjBJ
+# ZGVudGl0eSUyMFZlcmlmaWNhdGlvbiUyMFJvb3QlMjBDZXJ0aWZpY2F0ZSUyMEF1
+# dGhvcml0eSUyMDIwMjAuY3JsMIGUBggrBgEFBQcBAQSBhzCBhDCBgQYIKwYBBQUH
+# MAKGdWh0dHA6Ly93d3cubWljcm9zb2Z0LmNvbS9wa2lvcHMvY2VydHMvTWljcm9z
+# b2Z0JTIwSWRlbnRpdHklMjBWZXJpZmljYXRpb24lMjBSb290JTIwQ2VydGlmaWNh
+# dGUlMjBBdXRob3JpdHklMjAyMDIwLmNydDANBgkqhkiG9w0BAQwFAAOCAgEAX4h2
+# x35ttVoVdedMeGj6TuHYRJklFaW4sTQ5r+k77iB79cSLNe+GzRjv4pVjJviceW6A
+# F6ycWoEYR0LYhaa0ozJLU5Yi+LCmcrdovkl53DNt4EXs87KDogYb9eGEndSpZ5ZM
+# 74LNvVzY0/nPISHz0Xva71QjD4h+8z2XMOZzY7YQ0Psw+etyNZ1CesufU211rLsl
+# LKsO8F2aBs2cIo1k+aHOhrw9xw6JCWONNboZ497mwYW5EfN0W3zL5s3ad4Xtm7yF
+# M7Ujrhc0aqy3xL7D5FR2J7x9cLWMq7eb0oYioXhqV2tgFqbKHeDick+P8tHYIFov
+# IP7YG4ZkJWag1H91KlELGWi3SLv10o4KGag42pswjybTi4toQcC/irAodDW8HNtX
+# +cbz0sMptFJK+KObAnDFHEsukxD+7jFfEV9Hh/+CSxKRsmnuiovCWIOb+H7DRon9
+# TlxydiFhvu88o0w35JkNbJxTk4MhF/KgaXn0GxdH8elEa2Imq45gaa8D+mTm8LWV
+# ydt4ytxYP/bqjN49D9NZ81coE6aQWm88TwIf4R4YZbOpMKN0CyejaPNN41LGXHeC
+# UMYmBx3PkP8ADHD1J2Cr/6tjuOOCztfp+o9Nc+ZoIAkpUcA/X2gSMkgHAPUvIdto
+# SAHEUKiBhI6JQivRepyvWcl+JYbYbBh7pmgAXVswggefMIIFh6ADAgECAhMzAAAA
+# WvYNZ4yF7d0IAAAAAABaMA0GCSqGSIb3DQEBDAUAMGExCzAJBgNVBAYTAlVTMR4w
+# HAYDVQQKExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xMjAwBgNVBAMTKU1pY3Jvc29m
+# dCBQdWJsaWMgUlNBIFRpbWVzdGFtcGluZyBDQSAyMDIwMB4XDTI2MDEwODE4NTkw
+# M1oXDTI3MDEwNzE4NTkwM1owgeMxCzAJBgNVBAYTAlVTMRMwEQYDVQQIEwpXYXNo
+# aW5ndG9uMRAwDgYDVQQHEwdSZWRtb25kMR4wHAYDVQQKExVNaWNyb3NvZnQgQ29y
+# cG9yYXRpb24xLTArBgNVBAsTJE1pY3Jvc29mdCBJcmVsYW5kIE9wZXJhdGlvbnMg
+# TGltaXRlZDEnMCUGA1UECxMeblNoaWVsZCBUU1MgRVNOOjQ5MUEtMDVFMC1EOTQ3
+# MTUwMwYDVQQDEyxNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lIFN0YW1waW5nIEF1
+# dGhvcml0eTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAO/0O0eWjgUb
+# 9rnHcQLRdfWPN4H+91a3YnlaP46E1m4uD+JKx6csWMStX79fxLJUAqHJqQWE19Ul
+# NMhS9jEB32dAJ4yuWsHyUuM+dphjDz4E5jl4gYGZEmaOrKvNt+KqlFayyg/oTg3B
+# lLRu4aBq8668A5qlHcfsuh6DdSqFID1ixJFZzHrZFG1iGBG7U1Bn2ONLDo7jbwX5
+# rMcPduTAUw/c7M3WhSxQBuZpQiz8RQGKIqCKfIxgQkKdzpCpU0SWQOE/DgTXbz3c
+# 15KMRCdkGlL2zb+lnuSV4sseQm3qflZiZckLyn2xJI8ZXDkq+Ig+b/rsPPIfI8di
+# 228WvK1j67JXpyeVCaSUO9ErzlLnTrnjQkeXVQIp73xuVBVrmvoTf/v4a7MnrmuK
+# SyIXc5vJUHEGB345+O8omFt1w8b+Xg9D9PKIRqDPEv7HRk0C+Yvxu8FvHJvSocSI
+# ZK+v/FmKFOipYnpP76yAmJNnyheucShOgk8QiU53USn/+AyMb7xW905gZnyNqb29
+# HeVdQ175pDHJGEz8Cx5wiHeVliGz5hABucFDylR9z3LSTmB6+3ZuIxeG9BZS46P6
+# ANPkuVuD5m8wgc7GLLzg73CsDF09ukt8Uf8dTcMBX3ro+7/k9M6Xt8WPG7IL9v/4
+# DvyMY03tkb9Y9Ri6HWavXRPYRCUePspPAgMBAAGjggHLMIIBxzAdBgNVHQ4EFgQU
+# jmOyQ6twMcP1ZbRytJxI4fnXmcIwHwYDVR0jBBgwFoAUa2koOjUvSGNAz3vYr0np
+# Ptk92yEwbAYDVR0fBGUwYzBhoF+gXYZbaHR0cDovL3d3dy5taWNyb3NvZnQuY29t
+# L3BraW9wcy9jcmwvTWljcm9zb2Z0JTIwUHVibGljJTIwUlNBJTIwVGltZXN0YW1w
+# aW5nJTIwQ0ElMjAyMDIwLmNybDB5BggrBgEFBQcBAQRtMGswaQYIKwYBBQUHMAKG
+# XWh0dHA6Ly93d3cubWljcm9zb2Z0LmNvbS9wa2lvcHMvY2VydHMvTWljcm9zb2Z0
+# JTIwUHVibGljJTIwUlNBJTIwVGltZXN0YW1waW5nJTIwQ0ElMjAyMDIwLmNydDAM
+# BgNVHRMBAf8EAjAAMBYGA1UdJQEB/wQMMAoGCCsGAQUFBwMIMA4GA1UdDwEB/wQE
+# AwIHgDBmBgNVHSAEXzBdMFEGDCsGAQQBgjdMg30BATBBMD8GCCsGAQUFBwIBFjNo
+# dHRwOi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL0RvY3MvUmVwb3NpdG9yeS5o
+# dG0wCAYGZ4EMAQQCMA0GCSqGSIb3DQEBDAUAA4ICAQCAlM8r+t3hIb2h1lDTAx+i
+# YkQlxFuU7QONeyIFIBZ29xvGl8pehKxErDzIniOpIX/eluUAwQKoaI0zwuKAdR0m
+# rSHXCniMoLNko5W+5r7sXNamKX7QMV3BfGOX3gi9qVfxyUe7AHXbqQ8KBQHNYCnN
+# FtQQHgARrlYhtyAKol5ctM0CAc/y3oY7bTMsVJvnA5u7DVWPeXoST2KEMDeLBvJY
+# q0IJZ6yMpDOWLZ4UP82bksyShIB/XdawirIGLdseudryRxVMk313mAcjGRb59+It
+# tt6otVvYQWqH+PGrTUzEcez8aQuO3umoNZjKuFoX5VsPP/gSZse+orhG3zfZk9ID
+# yE3DfUFrhvkv6H0tijK1D0uIGhwMBWSm9ktQ6oeU+aurZFx3MI+LODnHsbRFZAy1
+# 1uMvwKq+ZNC1Se4tIM1u9piWAhnTPoh6mULKikHOVhHaO953tkzDCtjsse5GUKOx
+# 9yg9nqHKWMgnODp62/uPPzC/yDEISrXCcU7UB7tATr3zWNEdtM4d009iXWI6dV/S
+# dcIIX44rpoLyCLw+nXjxp+fY/dygLO7UdSQaVaUFVj3K2nVyuujPspt5Lunc5Fvu
+# YPqmi/z8kASmmwbiF+W0P0UTWFaC84MWfU2h6MDg5s0oxmdNFK76jXr3wZfdSoV7
+# FCKfq5GdeGoy5UwDQwMC0DGCA9QwggPQAgEBMHgwYTELMAkGA1UEBhMCVVMxHjAc
+# BgNVBAoTFU1pY3Jvc29mdCBDb3Jwb3JhdGlvbjEyMDAGA1UEAxMpTWljcm9zb2Z0
+# IFB1YmxpYyBSU0EgVGltZXN0YW1waW5nIENBIDIwMjACEzMAAABa9g1njIXt3QgA
+# AAAAAFowDQYJYIZIAWUDBAIBBQCgggEtMBoGCSqGSIb3DQEJAzENBgsqhkiG9w0B
+# CRABBDAvBgkqhkiG9w0BCQQxIgQgFGzguCJLcX29i/XYBCXQabkiJMvoosiDdiUF
+# FUwcxSMwgd0GCyqGSIb3DQEJEAIvMYHNMIHKMIHHMIGgBCBiuWRAi+p96PRsBt3T
+# wW3jNozgPQS+Qco1CVm/NaU0QzB8MGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UE
 # ChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVi
-# bGljIFJTQSBUaW1lc3RhbXBpbmcgQ0EgMjAyMDCCAiIwDQYJKoZIhvcNAQEBBQAD
-# ggIPADCCAgoCggIBAJ5851Jj/eDFnwV9Y7UGIqMcHtfnlzPREwW9ZUZHd5HBXXBv
-# f7KrQ5cMSqFSHGqg2/qJhYqOQxwuEQXG8kB41wsDJP5d0zmLYKAY8Zxv3lYkuLDs
-# fMuIEqvGYOPURAH+Ybl4SJEESnt0MbPEoKdNihwM5xGv0rGofJ1qOYSTNcc55EbB
-# T7uq3wx3mXhtVmtcCEr5ZKTkKKE1CxZvNPWdGWJUPC6e4uRfWHIhZcgCsJ+sozf5
-# EeH5KrlFnxpjKKTavwfFP6XaGZGWUG8TZaiTogRoAlqcevbiqioUz1Yt4FRK53P6
-# ovnUfANjIgM9JDdJ4e0qiDRm5sOTiEQtBLGd9Vhd1MadxoGcHrRCsS5rO9yhv2fj
-# JHrmlQ0EIXmp4DhDBieKUGR+eZ4CNE3ctW4uvSDQVeSp9h1SaPV8UWEfyTxgGjOs
-# RpeexIveR1MPTVf7gt8hY64XNPO6iyUGsEgt8c2PxF87E+CO7A28TpjNq5eLiiun
-# hKbq0XbjkNoU5JhtYUrlmAbpxRjb9tSreDdtACpm3rkpxp7AQndnI0Shu/fk1/rE
-# 3oWsDqMX3jjv40e8KN5YsJBnczyWB4JyeeFMW3JBfdeAKhzohFe8U5w9WuvcP1E8
-# cIxLoKSDzCCBOu0hWdjzKNu8Y5SwB1lt5dQhABYyzR3dxEO/T1K/BVF3rV69AgMB
-# AAGjggIbMIICFzAOBgNVHQ8BAf8EBAMCAYYwEAYJKwYBBAGCNxUBBAMCAQAwHQYD
-# VR0OBBYEFGtpKDo1L0hjQM972K9J6T7ZPdshMFQGA1UdIARNMEswSQYEVR0gADBB
-# MD8GCCsGAQUFBwIBFjNodHRwOi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL0Rv
-# Y3MvUmVwb3NpdG9yeS5odG0wEwYDVR0lBAwwCgYIKwYBBQUHAwgwGQYJKwYBBAGC
-# NxQCBAweCgBTAHUAYgBDAEEwDwYDVR0TAQH/BAUwAwEB/zAfBgNVHSMEGDAWgBTI
-# ftJqhSobyhmYBAcnz1AQT2ioojCBhAYDVR0fBH0wezB5oHegdYZzaHR0cDovL3d3
-# dy5taWNyb3NvZnQuY29tL3BraW9wcy9jcmwvTWljcm9zb2Z0JTIwSWRlbnRpdHkl
-# MjBWZXJpZmljYXRpb24lMjBSb290JTIwQ2VydGlmaWNhdGUlMjBBdXRob3JpdHkl
-# MjAyMDIwLmNybDCBlAYIKwYBBQUHAQEEgYcwgYQwgYEGCCsGAQUFBzAChnVodHRw
-# Oi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL2NlcnRzL01pY3Jvc29mdCUyMElk
-# ZW50aXR5JTIwVmVyaWZpY2F0aW9uJTIwUm9vdCUyMENlcnRpZmljYXRlJTIwQXV0
-# aG9yaXR5JTIwMjAyMC5jcnQwDQYJKoZIhvcNAQEMBQADggIBAF+Idsd+bbVaFXXn
-# THho+k7h2ESZJRWluLE0Oa/pO+4ge/XEizXvhs0Y7+KVYyb4nHlugBesnFqBGEdC
-# 2IWmtKMyS1OWIviwpnK3aL5JedwzbeBF7POyg6IGG/XhhJ3UqWeWTO+Czb1c2NP5
-# zyEh89F72u9UIw+IfvM9lzDmc2O2END7MPnrcjWdQnrLn1Ntday7JSyrDvBdmgbN
-# nCKNZPmhzoa8PccOiQljjTW6GePe5sGFuRHzdFt8y+bN2neF7Zu8hTO1I64XNGqs
-# t8S+w+RUdie8fXC1jKu3m9KGIqF4aldrYBamyh3g4nJPj/LR2CBaLyD+2BuGZCVm
-# oNR/dSpRCxlot0i79dKOChmoONqbMI8m04uLaEHAv4qwKHQ1vBzbV/nG89LDKbRS
-# SvijmwJwxRxLLpMQ/u4xXxFfR4f/gksSkbJp7oqLwliDm/h+w0aJ/U5ccnYhYb7v
-# PKNMN+SZDWycU5ODIRfyoGl59BsXR/HpRGtiJquOYGmvA/pk5vC1lcnbeMrcWD/2
-# 6ozePQ/TWfNXKBOmkFpvPE8CH+EeGGWzqTCjdAsno2jzTeNSxlx3glDGJgcdz5D/
-# AAxw9Sdgq/+rY7jjgs7X6fqPTXPmaCAJKVHAP19oEjJIBwD1LyHbaEgBxFCogYSO
-# iUIr0Xqcr1nJfiWG2GwYe6ZoAF1bMIIHlzCCBX+gAwIBAgITMwAAAFXZ3WkmKPn4
-# 4gAAAAAAVTANBgkqhkiG9w0BAQwFADBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMV
-# TWljcm9zb2Z0IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGlj
-# IFJTQSBUaW1lc3RhbXBpbmcgQ0EgMjAyMDAeFw0yNTEwMjMyMDQ2NDlaFw0yNjEw
-# MjIyMDQ2NDlaMIHbMQswCQYDVQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQ
-# MA4GA1UEBxMHUmVkbW9uZDEeMBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9u
-# MSUwIwYDVQQLExxNaWNyb3NvZnQgQW1lcmljYSBPcGVyYXRpb25zMScwJQYDVQQL
-# Ex5uU2hpZWxkIFRTUyBFU046N0QwMC0wNUUwLUQ5NDcxNTAzBgNVBAMTLE1pY3Jv
-# c29mdCBQdWJsaWMgUlNBIFRpbWUgU3RhbXBpbmcgQXV0aG9yaXR5MIICIjANBgkq
-# hkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAvbkfkh5ZSLP0MCUWafaw/KZoVZu9iQx8
-# r5JwhZvdrUi86UjCCFQONjQanrIxGF9hRGIZLQZ50gHrLC+4fpUEJff5t04VwByW
-# C2/bWOuk6NmaTh9JpPZDcGzNR95QlryjfEjtl+gxj12zNPEdADPplVfzt8cYRWFB
-# x/Fbfch08k6P9p7jX2q1jFPbUxWYJ+xOyGC1aKhDGY5b+8wL39v6qC0HFIx/v3y+
-# bep+aEXooK8VoeWK+szfaFjXo8YTcvQ8UL4szu9HFTuZNv6vvoJ7Ju+o5aTj51sp
-# h+0+FXW38TlL/rDBd5ia79jskLtOeHbDjkbljilwzegcxv9i49F05ZrS/5ELZCCY
-# 1VaqO7EOLKVaxxdAO5oy1vb0Bx0ZRVX1mxFjYzay2EC051k6yGJHm58y1oe2IKRa
-# /SM1+BTGse6vHNi5Q2d5ZnoR9AOAUDDwJIIqRI4rZz2MSinh11WrXTG9urF2uoyd
-# 5Ve+8hxes9ABeP2PYQKlXYTAxvdaeanDTQ/vwmnM+yTcWzrVm84Z38XVFw4G7p/Z
-# NZ2nscvv6uru2AevXcyV1t8ha7iWmhhgTWBNBrViuDlc3iPvOz2SVPbPeqhyY/NX
-# wNZCAgc2H5pOztu6MwQxDIjte3XM/FkKBxHofS2abNT/0HG+xZtFqUJDaxgbJa6l
-# N1zh7spjuQ8CAwEAAaOCAcswggHHMB0GA1UdDgQWBBRWBF8QbdwIA/DIv6nJFsrB
-# 16xltjAfBgNVHSMEGDAWgBRraSg6NS9IY0DPe9ivSek+2T3bITBsBgNVHR8EZTBj
-# MGGgX6BdhltodHRwOi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL2NybC9NaWNy
-# b3NvZnQlMjBQdWJsaWMlMjBSU0ElMjBUaW1lc3RhbXBpbmclMjBDQSUyMDIwMjAu
-# Y3JsMHkGCCsGAQUFBwEBBG0wazBpBggrBgEFBQcwAoZdaHR0cDovL3d3dy5taWNy
-# b3NvZnQuY29tL3BraW9wcy9jZXJ0cy9NaWNyb3NvZnQlMjBQdWJsaWMlMjBSU0El
-# MjBUaW1lc3RhbXBpbmclMjBDQSUyMDIwMjAuY3J0MAwGA1UdEwEB/wQCMAAwFgYD
-# VR0lAQH/BAwwCgYIKwYBBQUHAwgwDgYDVR0PAQH/BAQDAgeAMGYGA1UdIARfMF0w
-# UQYMKwYBBAGCN0yDfQEBMEEwPwYIKwYBBQUHAgEWM2h0dHA6Ly93d3cubWljcm9z
-# b2Z0LmNvbS9wa2lvcHMvRG9jcy9SZXBvc2l0b3J5Lmh0bTAIBgZngQwBBAIwDQYJ
-# KoZIhvcNAQEMBQADggIBAFIe4ZJUe9qUKcWeWypchB58fXE/ZIWv2D5XP5/k/tB7
-# LCN9BvmNSVKZ3VeclQM978wfEvuvdMQSUv6Y20boIM8DK1K1IU9cP21MG0ExiHxa
-# qjrikf2qbfrXIip4Ef3v2bNYKQxCxN3Sczp1SX0H7uqK2L5OhfDEiXf15iou5hh+
-# EPaaqp49czNQpJDOR/vfJghUc/qcslDPhoCZpZx8b2ODvywGQNXwqlbsmCS24uGm
-# EkQ3UH5JUeN6c91yasVchS78riMrm6R9ZpAiO5pfNKMGU2MLm1A3pp098DcbFTAc
-# 95Hh6Qvkh//28F/Xe2bMFb6DL7Sw0ZO95v0gv0ZTyJfxS/LCxfraeEII9FSFOKAM
-# Ep1zNFSs2ue0GGjBt9yEEMUwvxq9ExFz0aZzYm8ivJfffpIVDnX/+rVRTYcxIkQy
-# FYslIhYlWF9SjCw5r49qakjMRNh8W9O7aaoolSVZleQZjGt0K8JzMlyp6hp2lbW6
-# XqRx2cOHbbxJDxmENzohGUziI13lI2g2Bf5qibfC4bKNRpJo9lbE8HUbY0qJiE8u
-# 3SU8eDQaySPXOEhJjxRCQwwOvejYmBG5P7CckQNBSnnl12+FKRKgPoj0Mv+z5OMh
-# j9z2MtpbnHLAkep0odQClEyyCG/uR5tK5rW6mZH5Oq56UWS0NI6NV1JGS7Jri6jF
-# MYIHQzCCBz8CAQEweDBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0
-# IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1l
-# c3RhbXBpbmcgQ0EgMjAyMAITMwAAAFXZ3WkmKPn44gAAAAAAVTANBglghkgBZQME
-# AgEFAKCCBJwwEQYLKoZIhvcNAQkQAg8xAgUAMBoGCSqGSIb3DQEJAzENBgsqhkiG
-# 9w0BCRABBDAcBgkqhkiG9w0BCQUxDxcNMjYwNDExMDMwMzE0WjAvBgkqhkiG9w0B
-# CQQxIgQgKaaHOxndJyeR45OTTR/2d3QMJCyxD6yS09iRydIEsVkwgbkGCyqGSIb3
-# DQEJEAIvMYGpMIGmMIGjMIGgBCDYuTyXZIZiu799/v4PaqsmeSzBxh0rqkYq7sYY
-# avj+zTB8MGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0IENv
-# cnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lc3Rh
-# bXBpbmcgQ0EgMjAyMAITMwAAAFXZ3WkmKPn44gAAAAAAVTCCA14GCyqGSIb3DQEJ
-# EAISMYIDTTCCA0mhggNFMIIDQTCCAikCAQEwggEJoYHhpIHeMIHbMQswCQYDVQQG
-# EwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQMA4GA1UEBxMHUmVkbW9uZDEeMBwG
-# A1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMSUwIwYDVQQLExxNaWNyb3NvZnQg
-# QW1lcmljYSBPcGVyYXRpb25zMScwJQYDVQQLEx5uU2hpZWxkIFRTUyBFU046N0Qw
-# MC0wNUUwLUQ5NDcxNTAzBgNVBAMTLE1pY3Jvc29mdCBQdWJsaWMgUlNBIFRpbWUg
-# U3RhbXBpbmcgQXV0aG9yaXR5oiMKAQEwBwYFKw4DAhoDFQAdO1QBgmW/tuBZV5EG
-# jhfsV4cN6qBnMGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0
-# IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1l
-# c3RhbXBpbmcgQ0EgMjAyMDANBgkqhkiG9w0BAQsFAAIFAO2EA10wIhgPMjAyNjA0
-# MTAyMzE2NDVaGA8yMDI2MDQxMTIzMTY0NVowdDA6BgorBgEEAYRZCgQBMSwwKjAK
-# AgUA7YQDXQIBADAHAgEAAgIyfjAHAgEAAgIScTAKAgUA7YVU3QIBADA2BgorBgEE
-# AYRZCgQCMSgwJjAMBgorBgEEAYRZCgMCoAowCAIBAAIDB6EgoQowCAIBAAIDAYag
-# MA0GCSqGSIb3DQEBCwUAA4IBAQCu/vpNczVO+VXSFf7pGWOLa2oft9vrEPA4krtG
-# JDiniZhKn5tKpBPiXMqqgPWE3Ciqaz09HHUxWs+1slMWsWux/MJ6rXMPcoPpaRmn
-# 2BONx1iqYmFFLIRzOX9VFLOXSnRfqcHKpUrALm6Wb7Edfj1NbWUuEWNoYOq6w8bY
-# X0k2nGoLQTnN9LYEJCTfG3QccA5wA8/7TPB+jqvcqLYPdPgE1sgYojyP8fQVQqzA
-# gSupP7K5WeaKvy0/B7lOJfNB2PBdGfkasrxu6B6+nbUE5qXsDtUQW4px09ZWJ3cE
-# Jy36eReSz7FnB7Rjxj+4kChjU8jrCU1bk/ALbDj2D/j9WybvMA0GCSqGSIb3DQEB
-# AQUABIICAEVrtzqmDDc8cBxugFmX4zpl7Srr4tXftGl0v9spyUg89vTOrVLJTi46
-# N1/qKJ5O+W2BcsTRRuB4XAVjsqbXoImGXhV6/lndqqc/9MgIjw6ZaAWZoBtYZstj
-# 3/ntoh9hPiSL5zKvQdppR95mmQ9/3AP66vUo5CyD6AVDqDCae7MQwSs9oUxuGwVu
-# Cpa2KSy4I7a22sxIE1VMv/xagQnRYQ7RnjNuOQg9uxIfuk7JO9kdDetpx2J2KNaV
-# HLnCE5VSXdpmzpnsqXwxqd2LpS4OqVCnb7hmIwqMMw+dK+KSEa82ETtOo6qtt05Y
-# M2E7qKswDWbqoYhLKT8hsv3RjHHMdmijO5W4gfYWfXbaqkaMHTfeH9Y9PomGjm2J
-# 9jhvsNOVK6R3D2zs5btYvaopAiGh0AlSuBPR/ib/RaX2XbQUWe6t8sxhk87NsWYP
-# 8oZTNeGdyGF3DJagScX9B3vbBwmdORdT9ctSo4WcYTWhFho/ItILoWU5tqaH8Fxl
-# DtSRjYvU/167zDKUEHAmI+MkYGXcRgDGbwIaZFwAvRIncODEw9zG9ayscoddnYqd
-# qdNkuOsFAGkHBplGFQhga6f9GSi1ThK1YohnEav2GdT8oEchgcInWVa4cjNpo6g/
-# xKO9qi0INi1fZSZ6rDR8ylXzR3HHf1DsKUUf0TFXnk0X1XbfkQFF
+# bGljIFJTQSBUaW1lc3RhbXBpbmcgQ0EgMjAyMAITMwAAAFr2DWeMhe3dCAAAAAAA
+# WjAiBCBlN79ls4NPyXsalOG2qmw4d6OVoitrWeRJZrJM45RKQDANBgkqhkiG9w0B
+# AQsFAASCAgDXBDciYC+XRTLHST66mw/LZIbYztCq2Ex1lg/+Em+qeXdN5HL+souI
+# rSUtvmboYoAErc7KqnDjPThjbCygmmI9BvfPgssFdHQLzDJGmP1DgsiN+vYzb4QR
+# /JvqXm4B/2AOHw05yLBUfDfcntyoUqm5dvettWqRKAdVSSWULhXKhae6s4hQOpNe
+# DI4ubkPbzmKsqub2O/C+NHlhfDvP/oYd38H91Dwu3UcjsK+AjhhN1U2vZ0Zal9y4
+# 8IheExnTM2xVORajS2yBw91BIupB87eCqUU6svYsrGWBNpjwKlFcl+w0KtPtJ+4x
+# N+KhlMzbs0E1zX5ZoqlaC0JreBPsOpHvCngI13rVX8jQOgbR60B5qKOqfZ4tgMmb
+# vnZWQ3VtgSmhnVEExmrTWtNUWMspG8WYo48vUHdsCUV0uAnx0drbA8b9j6snqboA
+# YF7xk5+FxzyjHZQTDYCk9s/dNMNMjx2fzTvdTdjdyMsy2lL4+IWI9zGfBA9Y0Wy+
+# 2/OyU9QGEKn2LgGMxaBACsOEyeDNIvbkgOEJJgkoWnyZuvOgIJotarJhTLM7Sv9f
+# TR6PuySFhIGAfEhJ8gMgzGXqXQGv4uye/h3Vi5/teC94nAXRZFW+StNiMxmWCLoF
+# kZsZf/OHEOzlMpXrzkREJJqGxRKDVIrnRD/6ZKkFDN+Pu0hVqnTspQ==
 # SIG # End signature block

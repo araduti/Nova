@@ -103,7 +103,13 @@ Import-Module "$script:ModulesRoot\Nova.Imaging"      -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Drivers"      -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Provisioning" -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.TaskSequence" -Force -ErrorAction Stop
-Set-NovaLogPrefix -Step "`n[Nova]" -Success '[OK]' -Warn '[WARN]' -Fail '[FAIL]'
+Set-NovaLogPrefix -Step "`n[Nova]" -Success '[OK]' -Warn '[WARN]' -Fail '[FAIL]' -Info '[Nova]' -Detail '[Nova]'
+
+# ── Nova file logging ───────────────────────────────────────────────────────
+# Start structured file logging alongside the existing Start-Transcript.
+# The Nova log captures timestamped, level-tagged entries that are easier to
+# parse than raw transcript output.
+Start-NovaLog -Path 'X:\Nova-Detailed.log'
 
 #region ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -151,8 +157,8 @@ function Invoke-DownloadWithProgress {
         [int]$MaxRetries     = 3
     )
     Write-Step "$Description"
-    Write-Host "  Source : $Uri"
-    Write-Host "  Target : $OutFile"
+    Write-Info "Source : $Uri"
+    Write-Info "Target : $OutFile"
 
     $attempt = 0
     while ($true) {
@@ -170,7 +176,7 @@ function Invoke-DownloadWithProgress {
 
             if ($existingSize -gt 0) {
                 $wr.AddRange([long]$existingSize)
-                Write-Host "  Resuming from $(Get-FileSizeReadable $existingSize)..."
+                Write-Info "Resuming from $(Get-FileSizeReadable $existingSize)..."
             }
 
             $response  = $wr.GetResponse()
@@ -272,9 +278,10 @@ function Invoke-TaskSequenceStep {
     )
 
     $pct = [math]::Min(100, [math]::Round(($Index / $TotalSteps) * 100))
-    # Bootstrap.ps1 UI shows four progress steps (Network / Connect / Sign in /
-    # Deploy).  During the deploy phase all four indicators should stay lit, so
-    # always report Step 4 to keep the first three steps highlighted.
+    # Bootstrap.ps1 UI shows four progress steps (Initialize / Network /
+    # Authenticate / Deploy).  During the deploy phase all four indicators
+    # should stay lit, so always report Step 4 to keep the first three
+    # steps highlighted.
     $uiStep = 4
     $p = $Step.parameters
 
@@ -294,10 +301,18 @@ function Invoke-TaskSequenceStep {
             # Auto-select disk when -1 or not specified
             if ($disk -eq -1) {
                 $disk = Get-TargetDisk -DiskNumber -1
+                Write-Detail "Auto-selected target disk: $disk"
             }
             $drv  = if ($p -and $p.PSObject.Properties['osDriveLetter'] -and $p.osDriveLetter) { $p.osDriveLetter } else { $CurrentOSDrive }
             $createRecovery = if ($p -and $p.PSObject.Properties['createRecoveryPartition'] -and $p.createRecoveryPartition) { $true } else { $false }
             $recoverySize = if ($p -and $p.PSObject.Properties['recoveryPartitionSize'] -and $p.recoveryPartitionSize -gt 0) { [long]$p.recoveryPartitionSize } else { 990MB }
+            Write-Data -Label 'Partition Configuration' -Data @{
+                DiskNumber      = "$disk"
+                FirmwareType    = $CurrentFirmwareType
+                OSDriveLetter   = $drv
+                RecoveryPartition = "$createRecovery"
+                RecoverySize    = "$(Get-FileSizeReadable $recoverySize)"
+            }
             Update-BootstrapStatus -Message "Partitioning disk..." -Detail "Creating layout on disk $disk" -Step $uiStep -Progress $pct
             Initialize-TargetDisk -DiskNumber $disk -FirmwareType $CurrentFirmwareType -OSDriveLetter $drv `
                 -CreateRecoveryPartition:$createRecovery -RecoveryPartitionSize $recoverySize -Confirm:$false
@@ -305,6 +320,7 @@ function Invoke-TaskSequenceStep {
         'ImportAutopilot' {
             $tag   = if ($p -and $p.PSObject.Properties['groupTag']  -and $p.groupTag)  { $p.groupTag }  else { '' }
             $email = if ($p -and $p.PSObject.Properties['userEmail'] -and $p.userEmail) { $p.userEmail } else { '' }
+            Write-Info "Autopilot import -- GroupTag: '$tag', UserEmail: '$email'"
             Update-BootstrapStatus -Message "Importing Autopilot device..." -Detail "Registering device in Windows Autopilot" -Step $uiStep -Progress $pct
             Invoke-AutopilotImport -GroupTag $tag -UserEmail $email
         }
@@ -313,12 +329,19 @@ function Invoke-TaskSequenceStep {
             $ed   = if ($p -and $p.PSObject.Properties['edition']       -and $p.edition)       { $p.edition }       else { 'Professional' }
             $lang = if ($p -and $p.PSObject.Properties['language']      -and $p.language)      { $p.language }      else { 'en-us' }
             $arch = if ($p -and $p.PSObject.Properties['architecture']  -and $p.architecture)  { $p.architecture }  else { 'x64' }
+            Write-Data -Label 'Image Download' -Data @{
+                Edition      = $ed
+                Language     = $lang
+                Architecture = $arch
+                ImageUrl     = $(if ($url) { $url } else { '(auto-detect ESD)' })
+            }
             Update-BootstrapStatus -Message "Downloading Windows image..." -Detail "Fetching $ed $lang $arch" -Step $uiStep -Progress $pct
             $script:TsImagePath = Get-WindowsImageSource `
                 -ImageUrl $url -Edition $ed -Language $lang -Architecture $arch `
                 -FirmwareType $CurrentFirmwareType -ScratchDir $CurrentScratchDir `
                 -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch `
                 -DownloadCommand $dlCmd
+            Write-Info "Image resolved: $($script:TsImagePath)"
         }
         'ApplyImage' {
             $ed   = if ($p -and $p.PSObject.Properties['edition']       -and $p.edition)       { $p.edition }       else { 'Professional' }
@@ -326,6 +349,7 @@ function Invoke-TaskSequenceStep {
             $arch = if ($p -and $p.PSObject.Properties['architecture']  -and $p.architecture)  { $p.architecture }  else { 'x64' }
             if (-not $script:TsImagePath) {
                 $url = if ($p -and $p.PSObject.Properties['imageUrl'] -and $p.imageUrl) { $p.imageUrl } else { '' }
+                Write-Info "No cached image path -- downloading image for ApplyImage step"
                 Update-BootstrapStatus -Message "Downloading Windows image..." -Detail "Fetching $ed $lang $arch" -Step $uiStep -Progress $pct
                 $script:TsImagePath = Get-WindowsImageSource `
                     -ImageUrl $url -Edition $ed -Language $lang -Architecture $arch `
@@ -333,15 +357,18 @@ function Invoke-TaskSequenceStep {
                     -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch `
                     -DownloadCommand $dlCmd
             }
+            Write-Info "Applying image: $($script:TsImagePath) (edition: $ed)"
             Update-BootstrapStatus -Message "Applying Windows image..." -Detail "Expanding Windows files" -Step $uiStep -Progress $pct
             Install-WindowsImage -ImagePath $script:TsImagePath -Edition $ed -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
         'SetBootloader' {
+            Write-Info "Configuring bootloader: $CurrentFirmwareType on disk $CurrentDiskNumber"
             Update-BootstrapStatus -Message "Configuring bootloader..." -Detail "Writing BCD store" -Step $uiStep -Progress $pct
             Set-Bootloader -OSDriveLetter $CurrentOSDrive -FirmwareType $CurrentFirmwareType -DiskNumber $CurrentDiskNumber
         }
         'InjectDrivers' {
             $dp = if ($p -and $p.PSObject.Properties['driverPath'] -and $p.driverPath) { $p.driverPath } else { '' }
+            Write-Info "Driver path: $(if ($dp) { $dp } else { '(none specified)' })"
             Update-BootstrapStatus -Message "Injecting drivers..." -Detail "Adding drivers" -Step $uiStep -Progress $pct
             Add-Driver -DriverPath $dp -OSDriveLetter $CurrentOSDrive
         }
@@ -496,6 +523,23 @@ if (-not $PSBoundParameters.ContainsKey('FirmwareType')) {
     $FirmwareType = Get-FirmwareType
 }
 
+Write-Section 'Nova Imaging Engine Initializing'
+Write-Data -Label 'Engine Configuration' -Data @{
+    GitHubUser    = $GitHubUser
+    GitHubRepo    = $GitHubRepo
+    GitHubBranch  = $GitHubBranch
+    FirmwareType  = $FirmwareType
+    TargetDisk    = $TargetDiskNumber
+    OSDrive       = $OSDrive
+    ScratchDir    = $ScratchDir
+    TaskSequence  = $TaskSequencePath
+    DryRun        = "$DryRun"
+    ModulesRoot   = $script:ModulesRoot
+}
+Write-Detail "PowerShell version: $($PSVersionTable.PSVersion)"
+Write-Detail "Computer name: $($env:COMPUTERNAME)"
+Write-Detail "OS: $([System.Environment]::OSVersion.VersionString)"
+
 $stepName = ''
 $script:DeploymentStartTime = Get-Date
 $script:CompletedStepCount  = 0
@@ -505,6 +549,8 @@ try {
     # Read the step list from the JSON task sequence file and execute
     # each enabled step in the order defined by the editor.
     $ts = Read-TaskSequence -Path $TaskSequencePath
+    Write-Info "Task sequence loaded: $($ts.name)"
+    Write-Detail "Schema version: $(if ($ts.PSObject.Properties['schemaVersion']) { $ts.schemaVersion } else { '1.0' })"
 
     if ($DryRun) {
         Invoke-DryRunValidation -TaskSequence $ts -ScratchDir $ScratchDir -OSDrive $OSDrive -FirmwareType $FirmwareType -DiskNumber $TargetDiskNumber
@@ -516,7 +562,9 @@ try {
     New-ScratchDirectory -Path $ScratchDir
 
     $enabledSteps = @($ts.steps | Where-Object { $_.enabled -ne $false })
-    Write-Step "Executing $($enabledSteps.Count) enabled steps"
+    $disabledCount = @($ts.steps | Where-Object { $_.enabled -eq $false }).Count
+    Write-Section "Task Sequence Execution"
+    Write-Step "Executing $($enabledSteps.Count) enabled steps ($disabledCount disabled/skipped)"
 
     # Inter-step state: DownloadImage stores the resolved image path for
     # ApplyImage to consume.  ComputerName and locale settings are synced
@@ -528,9 +576,11 @@ try {
     for ($i = 0; $i -lt $enabledSteps.Count; $i++) {
         $s = $enabledSteps[$i]
         $stepName = $s.name
+        $stepStartTime = Get-Date
 
         # Evaluate step condition (if any) before execution
         if ($s.PSObject.Properties['condition'] -and $s.condition -and $s.condition.type) {
+            Write-Detail "Evaluating condition for step '$($s.name)': type=$($s.condition.type)"
             if (-not (Test-StepCondition -Condition $s.condition)) {
                 Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type)) -- condition not met, skipping"
                 continue
@@ -538,6 +588,10 @@ try {
         }
 
         Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type))"
+        Write-Detail "Step parameters: $(if ($s.parameters) { ($s.parameters | ConvertTo-Json -Compress -Depth 3) } else { 'none' })"
+        if ($s.PSObject.Properties['continueOnError'] -and $s.continueOnError) {
+            Write-Detail "continueOnError is enabled for this step"
+        }
 
         # Update active deployment report so the Monitoring dashboard can
         # display in-progress status for this device.
@@ -550,7 +604,7 @@ try {
                 -ScratchDir $ScratchDir `
                 -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
         } catch {
-            Write-Verbose "Non-blocking: active deployment report update failed for step '$($s.name)': $_"
+            Write-Detail "Non-blocking: active deployment report update failed for step '$($s.name)': $_"
         }
 
         # After PartitionDisk, redirect scratch to OS drive
@@ -561,6 +615,7 @@ try {
                 -CurrentDiskNumber $TargetDiskNumber
             $ScratchDir = Join-Path "${OSDrive}:" 'Nova'
             New-ScratchDirectory -Path $ScratchDir
+            Write-Detail "Scratch directory redirected to OS drive: $ScratchDir"
         } else {
             try {
                 Invoke-TaskSequenceStep -Step $s -Index ($i+1) -TotalSteps $enabledSteps.Count `
@@ -575,32 +630,46 @@ try {
                 }
             }
         }
+        $stepDuration = (Get-Date) - $stepStartTime
+        Write-Info "Step '$($s.name)' completed in $([math]::Round($stepDuration.TotalSeconds, 1))s"
         $script:CompletedStepCount = $i + 1
     }
 
     # ── Deployment reporting & alerting ─────────────────────────────
+    Write-Section 'Deployment Complete'
     $elapsed   = (Get-Date) - $script:DeploymentStartTime
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
+    Write-Data -Label 'Deployment Summary' -Data @{
+        Status         = 'Success'
+        TaskSequence   = $tsName
+        StepsCompleted = "$($enabledSteps.Count) / $($enabledSteps.Count)"
+        Duration       = $durString
+        ComputerName   = "$($env:COMPUTERNAME)"
+        OSDrive        = "${OSDrive}:"
+    }
 
     # Clear active deployment file -- device is no longer deploying
     try { Update-ActiveDeploymentReport -Clear -ScratchDir $ScratchDir -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch }
-    catch { Write-Warning "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
+    catch { Write-Detail "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
 
     Save-DeploymentReport -Status 'success' -TaskSequence $tsName `
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count `
         -StartTime $script:DeploymentStartTime `
         -ScratchDir $ScratchDir `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
+    Write-Detail 'Deployment report saved'
 
     # Record asset inventory for fleet tracking
     Save-AssetInventory -TaskSequence $tsName -ComputerName $env:COMPUTERNAME -ReportDir $ScratchDir `
         -ScratchDir $ScratchDir `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
+    Write-Detail 'Asset inventory recorded'
 
     Send-DeploymentAlert -Status 'success' -TaskSequence $tsName `
         -Duration $durString `
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
+    Write-Detail 'Deployment alert sent'
 
     Update-BootstrapStatus -Message 'Imaging complete -- rebooting...' -Detail 'Windows installation finished successfully' -Step 4 -Progress 100 -Done
 
@@ -619,6 +688,9 @@ try {
         Remove-Item $ScratchDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    # Finalize Nova file logging before exporting logs to OS drive
+    Stop-NovaLog
+
     # Export WinPE logs to OS drive for post-reboot troubleshooting
     Export-DeploymentLogs -OSDriveLetter $OSDrive -EngineLogPath $script:EngineLogPath
 
@@ -627,7 +699,9 @@ try {
     Restart-Computer -Force
 
 } catch {
+    Write-Section 'Deployment Failed'
     Write-Fail "Nova imaging failed at step '$stepName': $_"
+    Write-Detail "Stack trace: $($_.ScriptStackTrace)"
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
     Write-Host ''
 
@@ -637,9 +711,18 @@ try {
     $elapsed   = (Get-Date) - $script:DeploymentStartTime
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
 
+    Write-Data -Label 'Failure Details' -Data @{
+        Status         = 'Failed'
+        TaskSequence   = $tsName
+        FailedStep     = $stepName
+        StepsCompleted = "$($script:CompletedStepCount) / $totalSteps"
+        Duration       = $durString
+        Error          = "$_"
+    }
+
     # Clear active deployment file -- device is no longer deploying
     try { Update-ActiveDeploymentReport -Clear -ScratchDir $ScratchDir -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch }
-    catch { Write-Warning "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
+    catch { Write-Detail "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
 
     Save-DeploymentReport -Status 'failed' -TaskSequence $tsName `
         -StepsCompleted $script:CompletedStepCount -StepsTotal $totalSteps `
@@ -659,6 +742,9 @@ try {
     Update-BootstrapStatus -Message "Imaging failed at step '$stepName'" `
         -Detail "$_" -Step 4
 
+    # Finalize Nova file logging before exporting
+    Stop-NovaLog
+
     # Export logs even on failure for troubleshooting
     try { Export-DeploymentLogs -OSDriveLetter $OSDrive -EngineLogPath $script:EngineLogPath } catch { $null = $_ }
 
@@ -675,10 +761,10 @@ try {
 #endregion
 
 # SIG # Begin signature block
-# MII9dgYJKoZIhvcNAQcCoII9ZzCCPWMCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MII6FAYJKoZIhvcNAQcCoII6BTCCOgECAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDSu8Tz2QwZQ4MJ
-# 9H+vERVJSiWdDQ+s2A3IOpWKnHmQ26CCIjgwggXMMIIDtKADAgECAhBUmNLR1FsZ
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCadnvemd89mLMl
+# DrxKsfeASU9CUbqsWCItLV6mkRcvyKCCIjgwggXMMIIDtKADAgECAhBUmNLR1FsZ
 # lUgTecgRwIeZMA0GCSqGSIb3DQEBDAUAMHcxCzAJBgNVBAYTAlVTMR4wHAYDVQQK
 # ExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xSDBGBgNVBAMTP01pY3Jvc29mdCBJZGVu
 # dGl0eSBWZXJpZmljYXRpb24gUm9vdCBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkgMjAy
@@ -861,146 +947,128 @@ try {
 # UfMwxCCX3mccFgx6UsQeRSdVVVNSyALQe6PT12418xon2iDGE81OGCreLzDcMAZn
 # rUAx4XQLUz6ZTl65yPUiOh3k7Yww94lDf+8oG2oZmDh5O1Qe38E+M3vhKwmzIeoB
 # 1dVLlz4i3IpaDcR+iuGjH2TdaC1ZOmBXiCRKJLj4DT2uhJ04ji+tHD6n58vhavFI
-# rmcxghqUMIIakAIBATBxMFoxCzAJBgNVBAYTAlVTMR4wHAYDVQQKExVNaWNyb3Nv
+# rmcxghcyMIIXLgIBATBxMFoxCzAJBgNVBAYTAlVTMR4wHAYDVQQKExVNaWNyb3Nv
 # ZnQgQ29ycG9yYXRpb24xKzApBgNVBAMTIk1pY3Jvc29mdCBJRCBWZXJpZmllZCBD
 # UyBBT0MgQ0EgMDQCEzMAAAsliaF5N+X1X2YAAAAACyUwDQYJYIZIAWUDBAIBBQCg
 # XjAQBgorBgEEAYI3AgEMMQIwADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAv
-# BgkqhkiG9w0BCQQxIgQgwuScQhdWYiXf/ozDwkK9bIO3PlhditHIN3hxZAWOCLEw
-# DQYJKoZIhvcNAQEBBQAEggGAfnd8VmqQ7R0T+cKZYC8gzFTM5j2d3dpGvDvQ2nlV
-# DZ3orvnBmlUt+nkIQ9DTxLQgOyTt0bELhIsLUeVrGUQGP7OpZLohiZjVK+Gw5cBX
-# AVeHhPz+rEyUznBK4npy2D7BOW4ZUbrzKd/kA/68iDiwUxQckADM5evTtNjYauqs
-# KRnzxjZ1AqtD9J9vAfVAF/Pf5nQXbVbkcyGPNTpxZdNrg2TFqcJXvBQIQw5AK3o8
-# rrpux11e/RReLDweU3R6xye59HDTEV7/5Orz4NbzcUtVwhNC9PCbHS+ogVxlCpIe
-# A0FNH7/sRz2zoGdsOsjNuOJgA4EQ+tKs2D6170U7GbeBFj4Pw74w6boyXntb42Nj
-# 4nhrgIik4iAmXrVWD3RWuVCdC2vmvtoFdVkr5oqHkUJIRxIEpSpqlzt4D8PeKz6w
-# qU3F37Re6QiUNyOLvthb2o4hti2OXsdYnBj0rW4ygXDFpjlD18J0qzg7QE1KaoUu
-# y6z4fqTDbEByNYEDWEpG1F46oYIYFDCCGBAGCisGAQQBgjcDAwExghgAMIIX/AYJ
-# KoZIhvcNAQcCoIIX7TCCF+kCAQMxDzANBglghkgBZQMEAgEFADCCAWIGCyqGSIb3
-# DQEJEAEEoIIBUQSCAU0wggFJAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIB
-# BQAEIIFrmuli7TJNubwCbyS/G76IIyfxhiAhRk6w8dKWux6mAgZp1AaDwPkYEzIw
-# MjYwNDExMDMwNDAxLjAxMVowBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMw
+# BgkqhkiG9w0BCQQxIgQgSVz8ucIkxgXM1CoeLUx6io5gq31SI1aUw1zqHVDlrmkw
+# DQYJKoZIhvcNAQEBBQAEggGAVg9VqXqyDa21dvDpjMITYY8Uaea6B6IsVE5fhV0c
+# QRbChT2BKh1VZP6BdbRHmYkVU4sG+IZczulCN0R6qQMAb9l/u+3HXeGronZ43Z4T
+# lMp7cxxqVjTvNEllPiTd9dLAJHQqz4GN4LSYqzruFfqslgtpBA7yIDd6r7rr8F8B
+# oGIFdxz8kHO3+T2gf7SNe/WGSefDXdo8vpQ1LiSe/8XvFuMrxdO/vmy0Ifu8bdoQ
+# 6uYKqMRIu1YRD+F1US3TXRbmk9T4JTa0J2z2pu6LRJkr3yjaeo6PtZOtf4Dw+Hj+
+# XqSE7uOzKFCGmtbS3KUQwJYFVdEUwPYUfPO42CH7F9nvqUbH57LvLQnwd8ddS380
+# tZkN+0rPEiZtVzqWiNP0tCr+IHgcPJYBYjnLYYFsxWul/B2nR5X+IQPEVud1duXJ
+# nrL3Ds9MIm+vaAPGqyAXYoF9+0oNDSO5tc4C2OG71FsYzNSjvU+zwGMfvMDK5RGG
+# JcZy6z/La3+BEvCU8TG/1Eg7oYIUsjCCFK4GCisGAQQBgjcDAwExghSeMIIUmgYJ
+# KoZIhvcNAQcCoIIUizCCFIcCAQMxDzANBglghkgBZQMEAgEFADCCAWoGCyqGSIb3
+# DQEJEAEEoIIBWQSCAVUwggFRAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIB
+# BQAEIIqjMpuqV3rnC4shHTPkYvCjP4sdRzAjrPsdnjbyIc8aAgZpxmgKBRgYEzIw
+# MjYwNDExMTMzNDU2LjgyOVowBIACAfSggemkgeYwgeMxCzAJBgNVBAYTAlVTMRMw
 # EQYDVQQIEwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdSZWRtb25kMR4wHAYDVQQKExVN
-# aWNyb3NvZnQgQ29ycG9yYXRpb24xJTAjBgNVBAsTHE1pY3Jvc29mdCBBbWVyaWNh
-# IE9wZXJhdGlvbnMxJzAlBgNVBAsTHm5TaGllbGQgVFNTIEVTTjo3ODAwLTA1RTAt
-# RDk0NzE1MDMGA1UEAxMsTWljcm9zb2Z0IFB1YmxpYyBSU0EgVGltZSBTdGFtcGlu
-# ZyBBdXRob3JpdHmggg8hMIIHgjCCBWqgAwIBAgITMwAAAAXlzw//Zi7JhwAAAAAA
-# BTANBgkqhkiG9w0BAQwFADB3MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9z
-# b2Z0IENvcnBvcmF0aW9uMUgwRgYDVQQDEz9NaWNyb3NvZnQgSWRlbnRpdHkgVmVy
-# aWZpY2F0aW9uIFJvb3QgQ2VydGlmaWNhdGUgQXV0aG9yaXR5IDIwMjAwHhcNMjAx
-# MTE5MjAzMjMxWhcNMzUxMTE5MjA0MjMxWjBhMQswCQYDVQQGEwJVUzEeMBwGA1UE
+# aWNyb3NvZnQgQ29ycG9yYXRpb24xLTArBgNVBAsTJE1pY3Jvc29mdCBJcmVsYW5k
+# IE9wZXJhdGlvbnMgTGltaXRlZDEnMCUGA1UECxMeblNoaWVsZCBUU1MgRVNOOjdC
+# MUEtMDVFMC1EOTQ3MTUwMwYDVQQDEyxNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1l
+# IFN0YW1waW5nIEF1dGhvcml0eaCCDykwggeCMIIFaqADAgECAhMzAAAABeXPD/9m
+# LsmHAAAAAAAFMA0GCSqGSIb3DQEBDAUAMHcxCzAJBgNVBAYTAlVTMR4wHAYDVQQK
+# ExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xSDBGBgNVBAMTP01pY3Jvc29mdCBJZGVu
+# dGl0eSBWZXJpZmljYXRpb24gUm9vdCBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkgMjAy
+# MDAeFw0yMDExMTkyMDMyMzFaFw0zNTExMTkyMDQyMzFaMGExCzAJBgNVBAYTAlVT
+# MR4wHAYDVQQKExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xMjAwBgNVBAMTKU1pY3Jv
+# c29mdCBQdWJsaWMgUlNBIFRpbWVzdGFtcGluZyBDQSAyMDIwMIICIjANBgkqhkiG
+# 9w0BAQEFAAOCAg8AMIICCgKCAgEAnnznUmP94MWfBX1jtQYioxwe1+eXM9ETBb1l
+# Rkd3kcFdcG9/sqtDlwxKoVIcaqDb+omFio5DHC4RBcbyQHjXCwMk/l3TOYtgoBjx
+# nG/eViS4sOx8y4gSq8Zg49REAf5huXhIkQRKe3Qxs8Sgp02KHAznEa/Ssah8nWo5
+# hJM1xznkRsFPu6rfDHeZeG1Wa1wISvlkpOQooTULFm809Z0ZYlQ8Lp7i5F9YciFl
+# yAKwn6yjN/kR4fkquUWfGmMopNq/B8U/pdoZkZZQbxNlqJOiBGgCWpx69uKqKhTP
+# Vi3gVErnc/qi+dR8A2MiAz0kN0nh7SqINGbmw5OIRC0EsZ31WF3Uxp3GgZwetEKx
+# Lms73KG/Z+MkeuaVDQQheangOEMGJ4pQZH55ngI0Tdy1bi69INBV5Kn2HVJo9XxR
+# YR/JPGAaM6xGl57Ei95HUw9NV/uC3yFjrhc087qLJQawSC3xzY/EXzsT4I7sDbxO
+# mM2rl4uKK6eEpurRduOQ2hTkmG1hSuWYBunFGNv21Kt4N20AKmbeuSnGnsBCd2cj
+# RKG79+TX+sTehawOoxfeOO/jR7wo3liwkGdzPJYHgnJ54UxbckF914AqHOiEV7xT
+# nD1a69w/UTxwjEugpIPMIIE67SFZ2PMo27xjlLAHWW3l1CEAFjLNHd3EQ79PUr8F
+# UXetXr0CAwEAAaOCAhswggIXMA4GA1UdDwEB/wQEAwIBhjAQBgkrBgEEAYI3FQEE
+# AwIBADAdBgNVHQ4EFgQUa2koOjUvSGNAz3vYr0npPtk92yEwVAYDVR0gBE0wSzBJ
+# BgRVHSAAMEEwPwYIKwYBBQUHAgEWM2h0dHA6Ly93d3cubWljcm9zb2Z0LmNvbS9w
+# a2lvcHMvRG9jcy9SZXBvc2l0b3J5Lmh0bTATBgNVHSUEDDAKBggrBgEFBQcDCDAZ
+# BgkrBgEEAYI3FAIEDB4KAFMAdQBiAEMAQTAPBgNVHRMBAf8EBTADAQH/MB8GA1Ud
+# IwQYMBaAFMh+0mqFKhvKGZgEByfPUBBPaKiiMIGEBgNVHR8EfTB7MHmgd6B1hnNo
+# dHRwOi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL2NybC9NaWNyb3NvZnQlMjBJ
+# ZGVudGl0eSUyMFZlcmlmaWNhdGlvbiUyMFJvb3QlMjBDZXJ0aWZpY2F0ZSUyMEF1
+# dGhvcml0eSUyMDIwMjAuY3JsMIGUBggrBgEFBQcBAQSBhzCBhDCBgQYIKwYBBQUH
+# MAKGdWh0dHA6Ly93d3cubWljcm9zb2Z0LmNvbS9wa2lvcHMvY2VydHMvTWljcm9z
+# b2Z0JTIwSWRlbnRpdHklMjBWZXJpZmljYXRpb24lMjBSb290JTIwQ2VydGlmaWNh
+# dGUlMjBBdXRob3JpdHklMjAyMDIwLmNydDANBgkqhkiG9w0BAQwFAAOCAgEAX4h2
+# x35ttVoVdedMeGj6TuHYRJklFaW4sTQ5r+k77iB79cSLNe+GzRjv4pVjJviceW6A
+# F6ycWoEYR0LYhaa0ozJLU5Yi+LCmcrdovkl53DNt4EXs87KDogYb9eGEndSpZ5ZM
+# 74LNvVzY0/nPISHz0Xva71QjD4h+8z2XMOZzY7YQ0Psw+etyNZ1CesufU211rLsl
+# LKsO8F2aBs2cIo1k+aHOhrw9xw6JCWONNboZ497mwYW5EfN0W3zL5s3ad4Xtm7yF
+# M7Ujrhc0aqy3xL7D5FR2J7x9cLWMq7eb0oYioXhqV2tgFqbKHeDick+P8tHYIFov
+# IP7YG4ZkJWag1H91KlELGWi3SLv10o4KGag42pswjybTi4toQcC/irAodDW8HNtX
+# +cbz0sMptFJK+KObAnDFHEsukxD+7jFfEV9Hh/+CSxKRsmnuiovCWIOb+H7DRon9
+# TlxydiFhvu88o0w35JkNbJxTk4MhF/KgaXn0GxdH8elEa2Imq45gaa8D+mTm8LWV
+# ydt4ytxYP/bqjN49D9NZ81coE6aQWm88TwIf4R4YZbOpMKN0CyejaPNN41LGXHeC
+# UMYmBx3PkP8ADHD1J2Cr/6tjuOOCztfp+o9Nc+ZoIAkpUcA/X2gSMkgHAPUvIdto
+# SAHEUKiBhI6JQivRepyvWcl+JYbYbBh7pmgAXVswggefMIIFh6ADAgECAhMzAAAA
+# WXzacemNXvXAAAAAAABZMA0GCSqGSIb3DQEBDAUAMGExCzAJBgNVBAYTAlVTMR4w
+# HAYDVQQKExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xMjAwBgNVBAMTKU1pY3Jvc29m
+# dCBQdWJsaWMgUlNBIFRpbWVzdGFtcGluZyBDQSAyMDIwMB4XDTI2MDEwODE4NTkw
+# MVoXDTI3MDEwNzE4NTkwMVowgeMxCzAJBgNVBAYTAlVTMRMwEQYDVQQIEwpXYXNo
+# aW5ndG9uMRAwDgYDVQQHEwdSZWRtb25kMR4wHAYDVQQKExVNaWNyb3NvZnQgQ29y
+# cG9yYXRpb24xLTArBgNVBAsTJE1pY3Jvc29mdCBJcmVsYW5kIE9wZXJhdGlvbnMg
+# TGltaXRlZDEnMCUGA1UECxMeblNoaWVsZCBUU1MgRVNOOjdCMUEtMDVFMC1EOTQ3
+# MTUwMwYDVQQDEyxNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lIFN0YW1waW5nIEF1
+# dGhvcml0eTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAKYu5/40eEX+
+# hT+5jFa146bid3dA4LnXYntvkP3CGw4LGARFhnvLMSJ/VtsubzDaeFnm7yb2KSM7
+# 0WmHQprdCVqpvUH7l0uB4jNw7urLoAR9kKHLE0VlMlDStDSxUBI3qwsdrjvdmvV0
+# k+9/njuDEiSlzJTf7Dowd1K3bO4beRyaFhR+Y8tymECOqlOAffYrG2wZdVM51+QS
+# BSe+PEykr8C6OnnqSipuF8fZvCb6/huk0Zm6ZwsaixSHIAT2IEGvS7c63Im8jV3a
+# 8R0K6i2yiw0NNlnTSpwy/Zfv7iwsLBwhfbjBTn+XOl6mPzDXQQ3V+SRP9xXbGKOs
+# BTxzGid7aKAHw3o4Ahl9UGWLH9kNP3VUokE6JYkjlfpuUGZ6gQyqDewfxD4VoYIl
+# opt4HZ0xQvqajuJx+cr8LR/IZ56gLLmwyMzde5+vtjBoilry/gSZwVGwgkvkIgpK
+# PBQHGsSB0y3szr7Y7wEb6v0yZal1XUvWnnz3inTaSWsCFrLPVwVmXy3ncY5/d25V
+# pOkht+m697GWNbvsNOhAOHRaftE9j/hhkoM6RsyJfBLnhqMcA/wcavf5oj5NeyRQ
+# dGZeLKcls9csKS3sBUzPidxx2iiNH9CPaDq/bLJEOXasYohXMnRinu+fUk81s8VO
+# 7DQSF6ffn5oqSHoV8lf1Ax6u+kdShb8BAgMBAAGjggHLMIIBxzAdBgNVHQ4EFgQU
+# j5bnC18D0vlnSRhCOiODGGuXNnYwHwYDVR0jBBgwFoAUa2koOjUvSGNAz3vYr0np
+# Ptk92yEwbAYDVR0fBGUwYzBhoF+gXYZbaHR0cDovL3d3dy5taWNyb3NvZnQuY29t
+# L3BraW9wcy9jcmwvTWljcm9zb2Z0JTIwUHVibGljJTIwUlNBJTIwVGltZXN0YW1w
+# aW5nJTIwQ0ElMjAyMDIwLmNybDB5BggrBgEFBQcBAQRtMGswaQYIKwYBBQUHMAKG
+# XWh0dHA6Ly93d3cubWljcm9zb2Z0LmNvbS9wa2lvcHMvY2VydHMvTWljcm9zb2Z0
+# JTIwUHVibGljJTIwUlNBJTIwVGltZXN0YW1waW5nJTIwQ0ElMjAyMDIwLmNydDAM
+# BgNVHRMBAf8EAjAAMBYGA1UdJQEB/wQMMAoGCCsGAQUFBwMIMA4GA1UdDwEB/wQE
+# AwIHgDBmBgNVHSAEXzBdMFEGDCsGAQQBgjdMg30BATBBMD8GCCsGAQUFBwIBFjNo
+# dHRwOi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL0RvY3MvUmVwb3NpdG9yeS5o
+# dG0wCAYGZ4EMAQQCMA0GCSqGSIb3DQEBDAUAA4ICAQBEMhzC/ZcjpG/zURE7z2Yp
+# 5vrUxUjsE5Xa3t/2RGvESwvbmsk3bLHhSFAajgo2XQ8xoGDP3sUhKCLPeICSbkVv
+# 6V8sSp8fJ8Jos6yrawf2YVis8tcV+OO7U9S6JGPQzpmPncfzQc4ne1fqZ4+HiKab
+# IDEoFdddQT2Egkk9fzxCY/EZ52avJ27dSfrI/IDmyn9V10O3iQpg2F+C9vNTrk7n
+# VgoDoHa9+Q3pYr0IHGnSmt5irgGT436zo5WnXP8FxMhswH1aiyiSZiVzhor10C9C
+# 52cP3C8/PEoMKUXstLjoPO0TMkeW/1Fr186KXD45QRgBo0xImgtWTdzWFnlD+p7+
+# iDBIuSrNcRXDRYuq/aYZaDhWSI0SYdPIWVh5XvXuWA31a8oQ0SO+oPa3Nk80k086
+# 4wiiyJ1KsbSnaaefg9vspeghrpY8ljCwxfCUtx5HQRNgAJOI8IKACK4d014Mk0hl
+# RO0lQVRHegqIg29K6Xqkc360W2ZJGUcstlKokkVj6KAHjGyrLRPzepYfiZUJq4gX
+# yxbpvKb1XJ2FN2682aUoNXo9RyRK1ch0f66k6+yj88kzvuC7+vJWtNDs/UpIM6Hh
+# m0kU64JUJ7MMEQcAc7kpft7Gm7YeRK+oKgqUgYXCfmzbX8nJXJZnPa8ADWVsIqsu
+# NAxCI0CZXkULofqo5Be6zzGCA9QwggPQAgEBMHgwYTELMAkGA1UEBhMCVVMxHjAc
+# BgNVBAoTFU1pY3Jvc29mdCBDb3Jwb3JhdGlvbjEyMDAGA1UEAxMpTWljcm9zb2Z0
+# IFB1YmxpYyBSU0EgVGltZXN0YW1waW5nIENBIDIwMjACEzMAAABZfNpx6Y1e9cAA
+# AAAAAFkwDQYJYIZIAWUDBAIBBQCgggEtMBoGCSqGSIb3DQEJAzENBgsqhkiG9w0B
+# CRABBDAvBgkqhkiG9w0BCQQxIgQgjYPc8/WlZO1BuccJuIZUm4JFhIHfosPKn5Az
+# URuAUgYwgd0GCyqGSIb3DQEJEAIvMYHNMIHKMIHHMIGgBCDLRbqx24bpscXEJ+Hj
+# j9xrcUVw7R8OyyMfSB2YGK3+vDB8MGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UE
 # ChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVi
-# bGljIFJTQSBUaW1lc3RhbXBpbmcgQ0EgMjAyMDCCAiIwDQYJKoZIhvcNAQEBBQAD
-# ggIPADCCAgoCggIBAJ5851Jj/eDFnwV9Y7UGIqMcHtfnlzPREwW9ZUZHd5HBXXBv
-# f7KrQ5cMSqFSHGqg2/qJhYqOQxwuEQXG8kB41wsDJP5d0zmLYKAY8Zxv3lYkuLDs
-# fMuIEqvGYOPURAH+Ybl4SJEESnt0MbPEoKdNihwM5xGv0rGofJ1qOYSTNcc55EbB
-# T7uq3wx3mXhtVmtcCEr5ZKTkKKE1CxZvNPWdGWJUPC6e4uRfWHIhZcgCsJ+sozf5
-# EeH5KrlFnxpjKKTavwfFP6XaGZGWUG8TZaiTogRoAlqcevbiqioUz1Yt4FRK53P6
-# ovnUfANjIgM9JDdJ4e0qiDRm5sOTiEQtBLGd9Vhd1MadxoGcHrRCsS5rO9yhv2fj
-# JHrmlQ0EIXmp4DhDBieKUGR+eZ4CNE3ctW4uvSDQVeSp9h1SaPV8UWEfyTxgGjOs
-# RpeexIveR1MPTVf7gt8hY64XNPO6iyUGsEgt8c2PxF87E+CO7A28TpjNq5eLiiun
-# hKbq0XbjkNoU5JhtYUrlmAbpxRjb9tSreDdtACpm3rkpxp7AQndnI0Shu/fk1/rE
-# 3oWsDqMX3jjv40e8KN5YsJBnczyWB4JyeeFMW3JBfdeAKhzohFe8U5w9WuvcP1E8
-# cIxLoKSDzCCBOu0hWdjzKNu8Y5SwB1lt5dQhABYyzR3dxEO/T1K/BVF3rV69AgMB
-# AAGjggIbMIICFzAOBgNVHQ8BAf8EBAMCAYYwEAYJKwYBBAGCNxUBBAMCAQAwHQYD
-# VR0OBBYEFGtpKDo1L0hjQM972K9J6T7ZPdshMFQGA1UdIARNMEswSQYEVR0gADBB
-# MD8GCCsGAQUFBwIBFjNodHRwOi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL0Rv
-# Y3MvUmVwb3NpdG9yeS5odG0wEwYDVR0lBAwwCgYIKwYBBQUHAwgwGQYJKwYBBAGC
-# NxQCBAweCgBTAHUAYgBDAEEwDwYDVR0TAQH/BAUwAwEB/zAfBgNVHSMEGDAWgBTI
-# ftJqhSobyhmYBAcnz1AQT2ioojCBhAYDVR0fBH0wezB5oHegdYZzaHR0cDovL3d3
-# dy5taWNyb3NvZnQuY29tL3BraW9wcy9jcmwvTWljcm9zb2Z0JTIwSWRlbnRpdHkl
-# MjBWZXJpZmljYXRpb24lMjBSb290JTIwQ2VydGlmaWNhdGUlMjBBdXRob3JpdHkl
-# MjAyMDIwLmNybDCBlAYIKwYBBQUHAQEEgYcwgYQwgYEGCCsGAQUFBzAChnVodHRw
-# Oi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL2NlcnRzL01pY3Jvc29mdCUyMElk
-# ZW50aXR5JTIwVmVyaWZpY2F0aW9uJTIwUm9vdCUyMENlcnRpZmljYXRlJTIwQXV0
-# aG9yaXR5JTIwMjAyMC5jcnQwDQYJKoZIhvcNAQEMBQADggIBAF+Idsd+bbVaFXXn
-# THho+k7h2ESZJRWluLE0Oa/pO+4ge/XEizXvhs0Y7+KVYyb4nHlugBesnFqBGEdC
-# 2IWmtKMyS1OWIviwpnK3aL5JedwzbeBF7POyg6IGG/XhhJ3UqWeWTO+Czb1c2NP5
-# zyEh89F72u9UIw+IfvM9lzDmc2O2END7MPnrcjWdQnrLn1Ntday7JSyrDvBdmgbN
-# nCKNZPmhzoa8PccOiQljjTW6GePe5sGFuRHzdFt8y+bN2neF7Zu8hTO1I64XNGqs
-# t8S+w+RUdie8fXC1jKu3m9KGIqF4aldrYBamyh3g4nJPj/LR2CBaLyD+2BuGZCVm
-# oNR/dSpRCxlot0i79dKOChmoONqbMI8m04uLaEHAv4qwKHQ1vBzbV/nG89LDKbRS
-# SvijmwJwxRxLLpMQ/u4xXxFfR4f/gksSkbJp7oqLwliDm/h+w0aJ/U5ccnYhYb7v
-# PKNMN+SZDWycU5ODIRfyoGl59BsXR/HpRGtiJquOYGmvA/pk5vC1lcnbeMrcWD/2
-# 6ozePQ/TWfNXKBOmkFpvPE8CH+EeGGWzqTCjdAsno2jzTeNSxlx3glDGJgcdz5D/
-# AAxw9Sdgq/+rY7jjgs7X6fqPTXPmaCAJKVHAP19oEjJIBwD1LyHbaEgBxFCogYSO
-# iUIr0Xqcr1nJfiWG2GwYe6ZoAF1bMIIHlzCCBX+gAwIBAgITMwAAAFck05XgounJ
-# MQAAAAAAVzANBgkqhkiG9w0BAQwFADBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMV
-# TWljcm9zb2Z0IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGlj
-# IFJTQSBUaW1lc3RhbXBpbmcgQ0EgMjAyMDAeFw0yNTEwMjMyMDQ2NTNaFw0yNjEw
-# MjIyMDQ2NTNaMIHbMQswCQYDVQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQ
-# MA4GA1UEBxMHUmVkbW9uZDEeMBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9u
-# MSUwIwYDVQQLExxNaWNyb3NvZnQgQW1lcmljYSBPcGVyYXRpb25zMScwJQYDVQQL
-# Ex5uU2hpZWxkIFRTUyBFU046NzgwMC0wNUUwLUQ5NDcxNTAzBgNVBAMTLE1pY3Jv
-# c29mdCBQdWJsaWMgUlNBIFRpbWUgU3RhbXBpbmcgQXV0aG9yaXR5MIICIjANBgkq
-# hkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAsWylCpMIfbizJLY1kPXO2cmX2HRWvRbA
-# meKSZ5ex7/jCymdV7Eap+Ic2iqRtWDkKKe5gL6JV80wtn5C2qHJLPxUYFKNG3UkH
-# kAI21MoCN+YWnhT8K/YuPib6+6970jdbeFKIiZMWwd5hnpX9J3jeteuEdXbp/DfF
-# BK15JuD3JOzWuF2suQCPgqYjQPk/gpq+3KCKtXJRbXSCSJ9YtITU2IHwmfdE7l2P
-# fZ154w041po+fDeTj0gJOzcV/Jv56Q0M+w19jAKo/I5PEzrLV1IPQnmP4or1X4Rb
-# JXk8ONXyOOfXOxK2VLpNxgklK1yAezbFP2uzqihaXkW1h9GQLGENKESnezwgdRaL
-# NNaYtm8AT/pZHYJ35mZVqkZdMIckpQHJk/F1fSLyDKeKtH4TC4cc3ESKUMgItq07
-# ZZm74JCsfhmrQ1ijVNDi1Sln+QBamgC7WviZbkQnceQRq9DY+6hANwOrasAZUiVr
-# 2kPuj1jHDOXzUG4O9QTK70P/oXSqZAN1oTv3UfF8JTGmAxg+l1ZPOz50MY96HBDw
-# /3bI/wBGNvLk6fLVnrxGN5B5unF/lYvjjWbIUdyBPVQnPOKXu08SRHbY19M1HoWX
-# 6PNZv+vzSeqVeWWHKdKjC3GjVjbbGpi+JLbiyaKRSwEqo49tJLvu69cQ7dWsbksa
-# i4TURnVj2mMCAwEAAaOCAcswggHHMB0GA1UdDgQWBBSOg8leLTUOAglIZ+bjXpiD
-# 7RKSpzAfBgNVHSMEGDAWgBRraSg6NS9IY0DPe9ivSek+2T3bITBsBgNVHR8EZTBj
-# MGGgX6BdhltodHRwOi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL2NybC9NaWNy
-# b3NvZnQlMjBQdWJsaWMlMjBSU0ElMjBUaW1lc3RhbXBpbmclMjBDQSUyMDIwMjAu
-# Y3JsMHkGCCsGAQUFBwEBBG0wazBpBggrBgEFBQcwAoZdaHR0cDovL3d3dy5taWNy
-# b3NvZnQuY29tL3BraW9wcy9jZXJ0cy9NaWNyb3NvZnQlMjBQdWJsaWMlMjBSU0El
-# MjBUaW1lc3RhbXBpbmclMjBDQSUyMDIwMjAuY3J0MAwGA1UdEwEB/wQCMAAwFgYD
-# VR0lAQH/BAwwCgYIKwYBBQUHAwgwDgYDVR0PAQH/BAQDAgeAMGYGA1UdIARfMF0w
-# UQYMKwYBBAGCN0yDfQEBMEEwPwYIKwYBBQUHAgEWM2h0dHA6Ly93d3cubWljcm9z
-# b2Z0LmNvbS9wa2lvcHMvRG9jcy9SZXBvc2l0b3J5Lmh0bTAIBgZngQwBBAIwDQYJ
-# KoZIhvcNAQEMBQADggIBAHJ1wHY86Zk5SUBDPY25d/u9YJVaaNa71uxjX4cyO/XJ
-# 4uPENCSOwkRTnNogPLxTD0Fg3z4TFf/2T/0IFSxdtWVtTjhzrn+WLInzeRawUhTC
-# FVrPBJKEWVshm+Ig7/nB7JbJN88+ltImBbL5kT1StBLfG6UksAcDbNSQww90CUXh
-# GueBxlnSvjkAX1ohiN16y1bB2s0rvQx8Csepl2CuBefTfDrMGzW/tzNx5YaK2D8O
-# WweqTWZcGlJO4YjZNI83cTrQghfHl/8AXOHj8cWL3wEFltQQs2xeRYAb3Kdnl7oI
-# WKKXWaBYJY5P3QPsiC+DTMp7ejdYKTrb396f3gr+wL/Ms5/Z3vIWZPJJv18qNw40
-# fUNveRnwzMQnx8dM2bGuXXQZ5y7P8aXT4HJMo349qZtn4XQwiUE/DDp++MUL0kgj
-# vd/Deo7Xr371PFPPYb4TboZhjV1x9+wCHDoOpNCBt+VuXU78ytJdKzQ1Jv2cEP1F
-# 9H9/wSLsMDUvWME7u9mGElOPDZPMVr8AuBEuLdbTSEdaLwsZBplzxLBcgxhZ/Cs3
-# 0yBhuE3QhqT1YDZ2pa56RexPA2SasPcToT6gJgJ6E06BmZ2zQTNvWOjs5XQqHbYu
-# XcoeDcwe2UaC7EDOGD8GmLE9LiqtQsuQCM7v7I2xR+sPZT2Ax/85HjIkM+3MzTK1
-# MYIHRjCCB0ICAQEweDBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0
-# IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1l
-# c3RhbXBpbmcgQ0EgMjAyMAITMwAAAFck05XgounJMQAAAAAAVzANBglghkgBZQME
-# AgEFAKCCBJ8wEQYLKoZIhvcNAQkQAg8xAgUAMBoGCSqGSIb3DQEJAzENBgsqhkiG
-# 9w0BCRABBDAcBgkqhkiG9w0BCQUxDxcNMjYwNDExMDMwNDAxWjAvBgkqhkiG9w0B
-# CQQxIgQgXLfNKTXraZCeleqsnu5TPfc8oicsB2mi5DPT+8EKyI0wgbkGCyqGSIb3
-# DQEJEAIvMYGpMIGmMIGjMIGgBCD1PJ9ktQVuTGWIbKLO4f1VUOlUU29ARCEpDZmF
-# THjbUjB8MGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0IENv
-# cnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lc3Rh
-# bXBpbmcgQ0EgMjAyMAITMwAAAFck05XgounJMQAAAAAAVzCCA2EGCyqGSIb3DQEJ
-# EAISMYIDUDCCA0yhggNIMIIDRDCCAiwCAQEwggEJoYHhpIHeMIHbMQswCQYDVQQG
-# EwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQMA4GA1UEBxMHUmVkbW9uZDEeMBwG
-# A1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMSUwIwYDVQQLExxNaWNyb3NvZnQg
-# QW1lcmljYSBPcGVyYXRpb25zMScwJQYDVQQLEx5uU2hpZWxkIFRTUyBFU046Nzgw
-# MC0wNUUwLUQ5NDcxNTAzBgNVBAMTLE1pY3Jvc29mdCBQdWJsaWMgUlNBIFRpbWUg
-# U3RhbXBpbmcgQXV0aG9yaXR5oiMKAQEwBwYFKw4DAhoDFQD9LzE5nEJRAUE2Ss3x
-# aKKPXHnLw6BnMGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0
-# IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1l
-# c3RhbXBpbmcgQ0EgMjAyMDANBgkqhkiG9w0BAQsFAAIFAO2DyvwwIhgPMjAyNjA0
-# MTAxOTE2MTJaGA8yMDI2MDQxMTE5MTYxMlowdzA9BgorBgEEAYRZCgQBMS8wLTAK
-# AgUA7YPK/AIBADAKAgEAAgIJAQIB/zAHAgEAAgISgTAKAgUA7YUcfAIBADA2Bgor
-# BgEEAYRZCgQCMSgwJjAMBgorBgEEAYRZCgMCoAowCAIBAAIDB6EgoQowCAIBAAID
-# AYagMA0GCSqGSIb3DQEBCwUAA4IBAQCywPzwah4UupivkBOuLTCjA91L6itQGfWk
-# tN+ZUReFHjTDmi9/gbxPl26tG0yabWVyomEOMBCacy8K86LYMQgNqsLk2L3Ikz9Z
-# BSR1lHe/mS2+rlfSZymfwz1a4XPBvFTyheBro71GWQpZ56lPrs8vIaPxO692DplK
-# XppBdxirTjit9KfNyeCToQACmWOoZmR5xh57+yekjrRhHrVuCn7KVTympWmgS1Dw
-# XopQoMrHWRyslf4Iv1TaXoZWp6TpaercwDMTCdGXa+vgaSMPQvijxc9Hc+Qc0ABW
-# Sdrbjj2HXsH18T3L8RvucgR+2+BD+dB7kP93s9I75u6b5jdvIqAxMA0GCSqGSIb3
-# DQEBAQUABIICAKnhHw19TSr/2bPQWfFNZ+ZygfGIPE9ceYLAGnfFxVue+Irzd4kf
-# WpnTH4ojR62JCmj1+aXM9PNMCl6qQf+uqPeQ/lEGiVhjaAmOf7jLEnGI43JjenYD
-# 7YK5pOlw4xnnJefmkcI9nQrCffY0tlWNYogst8eDM8UMeJ4xcOhgo9u/Q3GqE/G+
-# KP+l7sVZxxKFE7GJG6lHnlX1J43QC0vSQayZ2x20VH63rP1RW5qJPmLmO0O7cQ3F
-# hH3jJ9YuFUj7c8xisvKWLjfXRcUO40khJ1bljthDYKI3uDvfVRE5wy345jWALHYW
-# XHdwxMBB2Xv9cC21o80ksacvvottSdrNdfNq+gtuT6IJxZJF6KaKVwiYxGLyOJaq
-# uFE4qgXD6hr//lH1hDVPqjljD27crefKL5c5+9X8/44g2dh70vPJM5CiZxLxHAk4
-# +dRxdO+NSvYZUpr/nsBCsVS2ifUriprnWVq+OflMGkSAGyHLx1UPETYlpnsxZ3sE
-# V3H1OYHGTORkG03xLnUtnVMEjvy7P9G6415uEbHVO6mCnEmb3LKr3nRqOWQsLWk4
-# oOUnit4SE+w1Zwdj2ySRgPGRCHvQPSzZn5pGRHWCnP7eSwYukLRKMycOqA+uv1Kn
-# iCO+9Es3/GmsdlgS4XSQpbGCA6B8brSPrQRp1ymZHTFBB46Q6MLNIIXR
+# bGljIFJTQSBUaW1lc3RhbXBpbmcgQ0EgMjAyMAITMwAAAFl82nHpjV71wAAAAAAA
+# WTAiBCAG6p4bycm44vmHiR7lMDpBeHPThhN/XI++aU6tvRevQzANBgkqhkiG9w0B
+# AQsFAASCAgBBCDok+/31U3EuOsuUcLJMkg8Kfm3WubqmZtsMmzgrbDL5BVVa7Mxl
+# nX9f60HXrPSeLyqKpYTMBHTiayCk7N+FsyWY1TY9mRMSJSEhbpVuTO6aUGDxKbTX
+# WAWz7pD8bO3dt47dnHkCF37bqwXJoNVQ6iMl2+LaQCwlatSzsiyD4Um4wSz4SPb7
+# L+2dq6VVIC77v4UlZw0zAXaNi7AV+qhQ7bKc/3ADLHC0fLh6vu0MTvuJt6eJYfQQ
+# YyeeMYhC/LVSStvNgDRED4Ge+G0N4ZDB71FbKelnMWE/bYHxiuXlo5LgXX8R4Kbh
+# wPn/rDiljzFScRWFYcKgXdmlg0O5/IY06L0HjexaVRHuE/2+a3XqzLBUQEodnVwC
+# Pdane8sLugSv+d1Lnzo9eo+oq2obtRhXXB8kKBf1H67Hm1NsNbEdn2jDiKoeeXFF
+# a7BDu1nb07VIXZJ0ZN4Zh7uCR74e3fzBCPAgiBfhw1ExNFMPezgTXCi4qUI4icnj
+# Q75QtRjoPRQJw0wZy0FZ9btyljY/0Bt+9Lq92uj/6e5h7OspuEQTwrn1s6cYiNxe
+# CqjP+qNHzFwj2kPioYrt90s30wCv9iu8BHVsBWZlf+R66wnfaItChJvN6ZkxKvnQ
+# TizQqmuVwiK4yLBodasZCjqEgBdbGzAaGeAbi96jye+n4H+ur8YR5Q==
 # SIG # End signature block

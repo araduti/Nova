@@ -188,6 +188,13 @@ function _EdgeAppAuth {
         }
     }
 
+    # ── Clean up stale singleton files to prevent hand-off to a zombie instance ──
+    if (Test-Path $EdgeDataDir) {
+        foreach ($f in @('lockfile', 'SingletonLock', 'SingletonSocket', 'SingletonCookie')) {
+            try { Remove-Item (Join-Path $EdgeDataDir $f) -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+        }
+    }
+
     # ── Launch Edge in --app mode ──────────────────────────────────────────
     if ($WriteLog) { & $WriteLog "Launching Edge --app for auth popup" }
     $edgeArgs = @(
@@ -196,11 +203,13 @@ function _EdgeAppAuth {
         '--window-size=520,700',
         '--no-first-run',
         '--disable-fre',
+        '--inprivate',
         '--disable-features=msWebOOBE,PasswordManager',
         '--password-store=basic',
         '--disable-save-password-bubble'
     ) + $ExtraEdgeArgs
     $edgeProc = Start-Process -FilePath $EdgeExePath -ArgumentList $edgeArgs -PassThru
+    $edgeLaunchPid = if ($edgeProc) { $edgeProc.Id } else { $null }
 
     if ($UpdateUi) { & $UpdateUi @{ AuthInProgress = $true } }
 
@@ -274,10 +283,26 @@ function _EdgeAppAuth {
         # ── Clean up: stop listener and kill the Edge --app process ──────────────
         try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
 
+        # Brief pause so the user can see the sign-in result before the window disappears.
+        if ($authCode -or $authError) { Start-Sleep -Milliseconds 600 }
+
         if ($edgeProc -and -not $edgeProc.HasExited) {
             if ($WriteLog) { & $WriteLog "Closing Edge auth window (PID $($edgeProc.Id))" }
             try { $edgeProc.Kill() } catch { $null = $_ }
         }
+
+        # When Edge handed off to an existing browser process, $edgeProc is
+        # null or already exited.  Use taskkill /T on the original launch PID
+        # to kill only that process tree -- this is safe because it targets
+        # the exact PID we started and its children, not other Edge instances.
+        # If the PID already exited, taskkill simply returns a non-zero exit
+        # code which we ignore.
+        if ($edgeLaunchPid) {
+            try {
+                $null = & taskkill /PID $edgeLaunchPid /T /F 2>&1
+            } catch { $null = $_ }
+        }
+
         # Remove stale lock files so the auth data dir can be reused.
         try { Remove-Item (Join-Path $EdgeDataDir 'lockfile')      -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
         try { Remove-Item (Join-Path $EdgeDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
@@ -579,8 +604,8 @@ Export-ModuleMember -Function @(
 # SIG # Begin signature block
 # MII9cwYJKoZIhvcNAQcCoII9ZDCCPWACAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCCHnBpKn7OLDE2P
-# 9QUp9EnXUucdzQ6CoIkl1os1+gb0xKCCIjgwggXMMIIDtKADAgECAhBUmNLR1FsZ
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCC7ewxsY/BD9kqV
+# tyWgRsaYFnxiPVvXNiA0qbljolNanaCCIjgwggXMMIIDtKADAgECAhBUmNLR1FsZ
 # lUgTecgRwIeZMA0GCSqGSIb3DQEBDAUAMHcxCzAJBgNVBAYTAlVTMR4wHAYDVQQK
 # ExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xSDBGBgNVBAMTP01pY3Jvc29mdCBJZGVu
 # dGl0eSBWZXJpZmljYXRpb24gUm9vdCBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkgMjAy
@@ -767,23 +792,23 @@ Export-ModuleMember -Function @(
 # ZnQgQ29ycG9yYXRpb24xKzApBgNVBAMTIk1pY3Jvc29mdCBJRCBWZXJpZmllZCBD
 # UyBBT0MgQ0EgMDQCEzMAAAsliaF5N+X1X2YAAAAACyUwDQYJYIZIAWUDBAIBBQCg
 # XjAQBgorBgEEAYI3AgEMMQIwADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAv
-# BgkqhkiG9w0BCQQxIgQgAjNgajcBaeV/zzxMaJhPzgwqsn2YYznU9xAgnfmMwcsw
-# DQYJKoZIhvcNAQEBBQAEggGAUJWPRppInSNU+GZQ9T11BkMRlKEPXWzkIVDwsj7b
-# WLHn6BQ2cF+Z9C15wa6wXFbRjthWi4briR0AXlMxe/WCo+LGUI419ZLD5LAkukWl
-# ja8Q9H9maYmuMuqJIXcucCbLqld9PC6H5RoIKXM5nJ/5UD598LZLmQbNIRyXa2FI
-# jjQ4ilojVQDxTm5J4rgYZ1RVxqmgrCQST0xWR57t4kOWaGQlFMBYjjhG3MH43Nbi
-# j2NcZdorVLviyoE+zmzxu7o27to+cNjBy1ioeYXRa2u+6uVpl/7DNDr+nFU14i4Z
-# uMvCdkf6mkg7rKViJdZ/P+yykk2oARD15GpT2ES01vhIps46Go781CUXNbClm+j8
-# nJcianChLdFxOri4gSssOBw7vbSAdykrJZ6LNJnZ72D/N4ufsLtEepSsUsl/v3UB
-# jF1/MRahvDAt1IWs8h4IYfOJtja69QEm2ynwmbZ4hhRRko+51Q2n/LpocXnuNRSp
-# beteHOvn4/D0nqagnqJ2dgaHoYIYETCCGA0GCisGAQQBgjcDAwExghf9MIIX+QYJ
+# BgkqhkiG9w0BCQQxIgQgOiI5eX4EzWgO2fP56jhN6OIY5MFtm3hrPcLA2d88G1sw
+# DQYJKoZIhvcNAQEBBQAEggGAFnrU3ZiGsaQ1sOlqyhhrG/15ou5fhnNLJrCQAUUc
+# 09/yHGcli3dYGIOvvZKgBnaq09c0a09Z3M1fZBNk1c3Pe2HlImqakxLY5osFMRJx
+# tR2ila3UeQQt8XHiFxE6tNZ8mjVuvicUBUa7uFPj1z1VRD+UCOdLh3BJtVDJ6KLI
+# xjqOoT3VFgNlaibO5wzCQYI+yCgXJmWq7QBMDxOWhN2CmGObS5SO04h0HwvSIAqA
+# vIrnxjycJAC8L9lZKneP64sfOqeqwlsxdwXCJSQsIv7TQ+YJ6irNEd+cNrstpk1m
+# TpVtnNWXGsTXYAv44jJ2lgqIEXGeCUjwjaWgt/eAu9vT5Zs/XmkxR+zxaqKJZqIY
+# Ni2qOiaBIBX/dOYRJc0WjjUbUuLG9jVbM/a8bHjcyUyA9x4+CR4FwC2DEL4N61pN
+# vmb7FFajSiib9FlHuGx72t3rP13nx3/jrP6oP1pjonjKqi932uFzo6kI30Icu+wl
+# VfihL8hOYdOFIubAwuJjnK6qoYIYETCCGA0GCisGAQQBgjcDAwExghf9MIIX+QYJ
 # KoZIhvcNAQcCoIIX6jCCF+YCAQMxDzANBglghkgBZQMEAgEFADCCAWIGCyqGSIb3
 # DQEJEAEEoIIBUQSCAU0wggFJAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIB
-# BQAEII15s5xw84CImvg80Dovzf48TWFeQxhje612SuKPbwIWAgZpwnLUSVcYEzIw
-# MjYwNDExMDMwMjMxLjc4OVowBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMw
+# BQAEIFiaXm0Q5Qmr/IMrxMxnfk6KLg5tZOWXJYYxx/cM7X1+AgZpwmaoKiwYEzIw
+# MjYwNDExMTMzMzI3LjA5MVowBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMw
 # EQYDVQQIEwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdSZWRtb25kMR4wHAYDVQQKExVN
 # aWNyb3NvZnQgQ29ycG9yYXRpb24xJTAjBgNVBAsTHE1pY3Jvc29mdCBBbWVyaWNh
-# IE9wZXJhdGlvbnMxJzAlBgNVBAsTHm5TaGllbGQgVFNTIEVTTjo3RDAwLTA1RTAt
+# IE9wZXJhdGlvbnMxJzAlBgNVBAsTHm5TaGllbGQgVFNTIEVTTjpBNTAwLTA1RTAt
 # RDk0NzE1MDMGA1UEAxMsTWljcm9zb2Z0IFB1YmxpYyBSU0EgVGltZSBTdGFtcGlu
 # ZyBBdXRob3JpdHmggg8hMIIHgjCCBWqgAwIBAgITMwAAAAXlzw//Zi7JhwAAAAAA
 # BTANBgkqhkiG9w0BAQwFADB3MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9z
@@ -825,28 +850,28 @@ Export-ModuleMember -Function @(
 # PKNMN+SZDWycU5ODIRfyoGl59BsXR/HpRGtiJquOYGmvA/pk5vC1lcnbeMrcWD/2
 # 6ozePQ/TWfNXKBOmkFpvPE8CH+EeGGWzqTCjdAsno2jzTeNSxlx3glDGJgcdz5D/
 # AAxw9Sdgq/+rY7jjgs7X6fqPTXPmaCAJKVHAP19oEjJIBwD1LyHbaEgBxFCogYSO
-# iUIr0Xqcr1nJfiWG2GwYe6ZoAF1bMIIHlzCCBX+gAwIBAgITMwAAAFXZ3WkmKPn4
-# 4gAAAAAAVTANBgkqhkiG9w0BAQwFADBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMV
+# iUIr0Xqcr1nJfiWG2GwYe6ZoAF1bMIIHlzCCBX+gAwIBAgITMwAAAFZ+j51YCI7p
+# YAAAAAAAVjANBgkqhkiG9w0BAQwFADBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMV
 # TWljcm9zb2Z0IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGlj
-# IFJTQSBUaW1lc3RhbXBpbmcgQ0EgMjAyMDAeFw0yNTEwMjMyMDQ2NDlaFw0yNjEw
-# MjIyMDQ2NDlaMIHbMQswCQYDVQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQ
+# IFJTQSBUaW1lc3RhbXBpbmcgQ0EgMjAyMDAeFw0yNTEwMjMyMDQ2NTFaFw0yNjEw
+# MjIyMDQ2NTFaMIHbMQswCQYDVQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQ
 # MA4GA1UEBxMHUmVkbW9uZDEeMBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9u
 # MSUwIwYDVQQLExxNaWNyb3NvZnQgQW1lcmljYSBPcGVyYXRpb25zMScwJQYDVQQL
-# Ex5uU2hpZWxkIFRTUyBFU046N0QwMC0wNUUwLUQ5NDcxNTAzBgNVBAMTLE1pY3Jv
+# Ex5uU2hpZWxkIFRTUyBFU046QTUwMC0wNUUwLUQ5NDcxNTAzBgNVBAMTLE1pY3Jv
 # c29mdCBQdWJsaWMgUlNBIFRpbWUgU3RhbXBpbmcgQXV0aG9yaXR5MIICIjANBgkq
-# hkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAvbkfkh5ZSLP0MCUWafaw/KZoVZu9iQx8
-# r5JwhZvdrUi86UjCCFQONjQanrIxGF9hRGIZLQZ50gHrLC+4fpUEJff5t04VwByW
-# C2/bWOuk6NmaTh9JpPZDcGzNR95QlryjfEjtl+gxj12zNPEdADPplVfzt8cYRWFB
-# x/Fbfch08k6P9p7jX2q1jFPbUxWYJ+xOyGC1aKhDGY5b+8wL39v6qC0HFIx/v3y+
-# bep+aEXooK8VoeWK+szfaFjXo8YTcvQ8UL4szu9HFTuZNv6vvoJ7Ju+o5aTj51sp
-# h+0+FXW38TlL/rDBd5ia79jskLtOeHbDjkbljilwzegcxv9i49F05ZrS/5ELZCCY
-# 1VaqO7EOLKVaxxdAO5oy1vb0Bx0ZRVX1mxFjYzay2EC051k6yGJHm58y1oe2IKRa
-# /SM1+BTGse6vHNi5Q2d5ZnoR9AOAUDDwJIIqRI4rZz2MSinh11WrXTG9urF2uoyd
-# 5Ve+8hxes9ABeP2PYQKlXYTAxvdaeanDTQ/vwmnM+yTcWzrVm84Z38XVFw4G7p/Z
-# NZ2nscvv6uru2AevXcyV1t8ha7iWmhhgTWBNBrViuDlc3iPvOz2SVPbPeqhyY/NX
-# wNZCAgc2H5pOztu6MwQxDIjte3XM/FkKBxHofS2abNT/0HG+xZtFqUJDaxgbJa6l
-# N1zh7spjuQ8CAwEAAaOCAcswggHHMB0GA1UdDgQWBBRWBF8QbdwIA/DIv6nJFsrB
-# 16xltjAfBgNVHSMEGDAWgBRraSg6NS9IY0DPe9ivSek+2T3bITBsBgNVHR8EZTBj
+# hkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAtKWfm/ul027/d8Rlb8Mn/g0QUvvLqY2V
+# sy3tI8U2tFSspTZomZOD3BHT8LkR+RrhMJgb1VjAKFNysaK9cLSXifPGSIBrPCgs
+# 9P4y24lrJEmrV6Q5z4BmqMhIPrZhEvZnWpCS4HO7jYSei/nxmC7/1Er+l5Lg3PmS
+# xb8d2IVcARxSw1B4mxB6XI0nkel9wa1dYb2wfGpofraFmxZOxT9eNht4LH0RBSVu
+# eba6ZNpjS/0gtfm7qiIiyP6p6PRzTTbMnVqsHnV/d/rW0zHx+Q+QNZ5wUqKmTZJB
+# 9hU853+2pX5rDfK32uNY9/WBOAmzbqgpEdQkbiMavUMyUDShmycIvgHdQnS207sT
+# j8M+kJL3tOdahPuPqMwsaCCgdfwwQx0O9TKe7FSvbAEYs1AnldCl/KHGZCOVvUNq
+# jyL10JLe0/+GD9/ynqXGWFpXOjaunvZ/cKROhjN4M5e6xx0b2miqcPii4/ii2Zhe
+# KallJET7CKlpFShs3wyg6F/fojQxQvPnbWD4Nyx6lhjWjwmoLcx6w1FSCtavLCly
+# 33BLRSlTU4qKUxaa8d7YN7Eqpn9XO0SY0umOvKFXrWH7rxl+9iaicitdnTTksAnR
+# jvekdKT3lg7lRMfmfZU8vXNiN0UYJzT9EjqjRm0uN/h0oXxPhNfPYqeFbyPXGGxz
+# aYUz6zx3qTcCAwEAAaOCAcswggHHMB0GA1UdDgQWBBS+tjPyu6tZ/h5GsyLvyz1H
+# +FNIWjAfBgNVHSMEGDAWgBRraSg6NS9IY0DPe9ivSek+2T3bITBsBgNVHR8EZTBj
 # MGGgX6BdhltodHRwOi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL2NybC9NaWNy
 # b3NvZnQlMjBQdWJsaWMlMjBSU0ElMjBUaW1lc3RhbXBpbmclMjBDQSUyMDIwMjAu
 # Y3JsMHkGCCsGAQUFBwEBBG0wazBpBggrBgEFBQcwAoZdaHR0cDovL3d3dy5taWNy
@@ -855,54 +880,54 @@ Export-ModuleMember -Function @(
 # VR0lAQH/BAwwCgYIKwYBBQUHAwgwDgYDVR0PAQH/BAQDAgeAMGYGA1UdIARfMF0w
 # UQYMKwYBBAGCN0yDfQEBMEEwPwYIKwYBBQUHAgEWM2h0dHA6Ly93d3cubWljcm9z
 # b2Z0LmNvbS9wa2lvcHMvRG9jcy9SZXBvc2l0b3J5Lmh0bTAIBgZngQwBBAIwDQYJ
-# KoZIhvcNAQEMBQADggIBAFIe4ZJUe9qUKcWeWypchB58fXE/ZIWv2D5XP5/k/tB7
-# LCN9BvmNSVKZ3VeclQM978wfEvuvdMQSUv6Y20boIM8DK1K1IU9cP21MG0ExiHxa
-# qjrikf2qbfrXIip4Ef3v2bNYKQxCxN3Sczp1SX0H7uqK2L5OhfDEiXf15iou5hh+
-# EPaaqp49czNQpJDOR/vfJghUc/qcslDPhoCZpZx8b2ODvywGQNXwqlbsmCS24uGm
-# EkQ3UH5JUeN6c91yasVchS78riMrm6R9ZpAiO5pfNKMGU2MLm1A3pp098DcbFTAc
-# 95Hh6Qvkh//28F/Xe2bMFb6DL7Sw0ZO95v0gv0ZTyJfxS/LCxfraeEII9FSFOKAM
-# Ep1zNFSs2ue0GGjBt9yEEMUwvxq9ExFz0aZzYm8ivJfffpIVDnX/+rVRTYcxIkQy
-# FYslIhYlWF9SjCw5r49qakjMRNh8W9O7aaoolSVZleQZjGt0K8JzMlyp6hp2lbW6
-# XqRx2cOHbbxJDxmENzohGUziI13lI2g2Bf5qibfC4bKNRpJo9lbE8HUbY0qJiE8u
-# 3SU8eDQaySPXOEhJjxRCQwwOvejYmBG5P7CckQNBSnnl12+FKRKgPoj0Mv+z5OMh
-# j9z2MtpbnHLAkep0odQClEyyCG/uR5tK5rW6mZH5Oq56UWS0NI6NV1JGS7Jri6jF
+# KoZIhvcNAQEMBQADggIBAA4DqAXEsO26j/La7Fgn/Qifit8xuZekqZ57+Ye+sH/h
+# RTbEEjGYrZgsqwR/lUUfKCFpbZF8msaZPQJOR4YYUEU8XyjLrn8Y1jCSmoxh9l7t
+# WiSoc/JFBw356JAmzGGxeBA2EWSxRuTr1AuZe6nYaN8/wtFkiHcs8gMadxXBs6Dx
+# Vhyu5YnhLPQkfumKm3lFftwE7pieV7f1lskmlgsC6AeSGCzGPZUgCvcH5Tv/Qe9z
+# 7bIImSD3SuzhOIwaP+eKQTYf67TifyJKkWQSdGfTA6Kcu41k8LB6oPK+MLk1jbxx
+# K5wPqLSL62xjK04SBXHEJSEnsFt0zxWkxP/lgej1DxqUnmrYEdkxvzKSHIAqFWSZ
+# ul/5hI+vJxvFPhsNQBEk4cSulDkJQpcdVi/gmf/mHFOYhDBjsa15s4L+2sBil3XV
+# /T8RiR66Q8xYvTLRWxd2dVsrOoCwnsU4WIeiC0JinCv1WLHEh7Qyzr9RSr4kKJLW
+# dpNYLhgjkojTmEkAjFO774t3xB7enbvIF0GOsV19xnCUzq9EGKyt0gMuaphKlNjJ
+# +aTpjWMZDGo+GOKsnp93Hmftml0Syp3F9+M3y+y6WJGUZoIZJq227jDjjEndtpUr
+# h9BdPdVIfVJD/Au81Rzh05UHAivorQ3Os8PELHIgiOd9TWzbdgmGzcILt/ddVQER
 # MYIHQzCCBz8CAQEweDBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0
 # IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1l
-# c3RhbXBpbmcgQ0EgMjAyMAITMwAAAFXZ3WkmKPn44gAAAAAAVTANBglghkgBZQME
+# c3RhbXBpbmcgQ0EgMjAyMAITMwAAAFZ+j51YCI7pYAAAAAAAVjANBglghkgBZQME
 # AgEFAKCCBJwwEQYLKoZIhvcNAQkQAg8xAgUAMBoGCSqGSIb3DQEJAzENBgsqhkiG
-# 9w0BCRABBDAcBgkqhkiG9w0BCQUxDxcNMjYwNDExMDMwMjMxWjAvBgkqhkiG9w0B
-# CQQxIgQglMD7jMzy3lF8/CSF2Mhk3lC7cMQvah+TxRGrAd7xY6owgbkGCyqGSIb3
-# DQEJEAIvMYGpMIGmMIGjMIGgBCDYuTyXZIZiu799/v4PaqsmeSzBxh0rqkYq7sYY
-# avj+zTB8MGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0IENv
+# 9w0BCRABBDAcBgkqhkiG9w0BCQUxDxcNMjYwNDExMTMzMzI3WjAvBgkqhkiG9w0B
+# CQQxIgQgf+g2KfnWvuLMgjQcDbXd052a4Cw/hkPHa6boIx/wAQEwgbkGCyqGSIb3
+# DQEJEAIvMYGpMIGmMIGjMIGgBCC2DDMlTaTj8JV3iTg5Xnpe4CSH60143Z+X9o5N
+# BgMMqDB8MGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0IENv
 # cnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lc3Rh
-# bXBpbmcgQ0EgMjAyMAITMwAAAFXZ3WkmKPn44gAAAAAAVTCCA14GCyqGSIb3DQEJ
+# bXBpbmcgQ0EgMjAyMAITMwAAAFZ+j51YCI7pYAAAAAAAVjCCA14GCyqGSIb3DQEJ
 # EAISMYIDTTCCA0mhggNFMIIDQTCCAikCAQEwggEJoYHhpIHeMIHbMQswCQYDVQQG
 # EwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQMA4GA1UEBxMHUmVkbW9uZDEeMBwG
 # A1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMSUwIwYDVQQLExxNaWNyb3NvZnQg
-# QW1lcmljYSBPcGVyYXRpb25zMScwJQYDVQQLEx5uU2hpZWxkIFRTUyBFU046N0Qw
+# QW1lcmljYSBPcGVyYXRpb25zMScwJQYDVQQLEx5uU2hpZWxkIFRTUyBFU046QTUw
 # MC0wNUUwLUQ5NDcxNTAzBgNVBAMTLE1pY3Jvc29mdCBQdWJsaWMgUlNBIFRpbWUg
-# U3RhbXBpbmcgQXV0aG9yaXR5oiMKAQEwBwYFKw4DAhoDFQAdO1QBgmW/tuBZV5EG
-# jhfsV4cN6qBnMGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0
+# U3RhbXBpbmcgQXV0aG9yaXR5oiMKAQEwBwYFKw4DAhoDFQD/c/cpFSqQWYBeXggy
+# RJ2ZbvYEEaBnMGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0
 # IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1l
-# c3RhbXBpbmcgQ0EgMjAyMDANBgkqhkiG9w0BAQsFAAIFAO2EA10wIhgPMjAyNjA0
-# MTAyMzE2NDVaGA8yMDI2MDQxMTIzMTY0NVowdDA6BgorBgEEAYRZCgQBMSwwKjAK
-# AgUA7YQDXQIBADAHAgEAAgIyfjAHAgEAAgIScTAKAgUA7YVU3QIBADA2BgorBgEE
+# c3RhbXBpbmcgQ0EgMjAyMDANBgkqhkiG9w0BAQsFAAIFAO2En+8wIhgPMjAyNjA0
+# MTExMDI0NDdaGA8yMDI2MDQxMjEwMjQ0N1owdDA6BgorBgEEAYRZCgQBMSwwKjAK
+# AgUA7YSf7wIBADAHAgEAAgIhFjAHAgEAAgISPjAKAgUA7YXxbwIBADA2BgorBgEE
 # AYRZCgQCMSgwJjAMBgorBgEEAYRZCgMCoAowCAIBAAIDB6EgoQowCAIBAAIDAYag
-# MA0GCSqGSIb3DQEBCwUAA4IBAQCu/vpNczVO+VXSFf7pGWOLa2oft9vrEPA4krtG
-# JDiniZhKn5tKpBPiXMqqgPWE3Ciqaz09HHUxWs+1slMWsWux/MJ6rXMPcoPpaRmn
-# 2BONx1iqYmFFLIRzOX9VFLOXSnRfqcHKpUrALm6Wb7Edfj1NbWUuEWNoYOq6w8bY
-# X0k2nGoLQTnN9LYEJCTfG3QccA5wA8/7TPB+jqvcqLYPdPgE1sgYojyP8fQVQqzA
-# gSupP7K5WeaKvy0/B7lOJfNB2PBdGfkasrxu6B6+nbUE5qXsDtUQW4px09ZWJ3cE
-# Jy36eReSz7FnB7Rjxj+4kChjU8jrCU1bk/ALbDj2D/j9WybvMA0GCSqGSIb3DQEB
-# AQUABIICAJmwzcqCec1ibXFBbtexPxvYiCA6hoA7PGfI/zhtGjNZudcnHYMx65xk
-# cpaAceVZo+m9gw8hhIipyXbDGgHvzu052iVUn2ffL5YyhKNaA2YPJCfpsy2i5EMn
-# vId5mkzphr+wKHxvx+svUDogbOYlTNg56h7oLP8yc6Ws6v+u9dP3rICNjCZrHWo/
-# q/OkRHFhixrK1R2i7Y1DlqnN3XsQy9PztHSQQAyzwBd9AXop/Ms4FkMVIccxuCqD
-# eSe4y5tsnuT9XcRddY7zBTd5fpgLE0XWRf3TUBmicfUO9koWb09g2pFr3TkSFqTe
-# VZuOkQRRN29/QVXrEo1IoXX4R/UecSvZozNgy1Yc58j4Fq0W4efON8K5vvpkWeDe
-# N6Qg/Nl88gJxdAeC/EFNEl6Qo+J8JZL0stXHtb33BCzM5nn7V/Erxq45odSur1iM
-# f6Lkm5jC6wZv7GGiQQTpJ/W964ycc5N6WwpaSdWQSjH0wDCBF/cbfyPjVlu3npIP
-# 4bWOJiQS2+wYegEMDw1A29bosRXs4vFQ+eL8CQrkw2syopZS5E/bbAPBumtSlZKX
-# tfAK/2Ea5P/0ZwqGnQaJaQMAavHEWlVhzpqgvTPJb0cXA5VQKIx0AeBBrTtH0GUt
-# nttDejpDIny6ADV3390sU+o29Xu9749W9hue1DkrEeEdC922Z0wB
+# MA0GCSqGSIb3DQEBCwUAA4IBAQCPmIXtkEOg1sRrGqshYtqABLq4W3m1hT4nA7T7
+# fI/XxO/W1SeLdZaYr0+ohwLLYYFz2DpysTxeJiZlBREVbBXaNKZmQy2f0/kY7Pcb
+# SCrsl1Y7sFCSfZNarpfX7eHf1bbIby+15kuNiXUI0+ulMUtCExl976ZLqCJQHELw
+# Sv01I1Qkya19AZV0JwbdIvlzr3zspRTTepKbWbTPjyNr0waZ5vuhB2Rf6R2Dg/Dz
+# 3yJ/gwRl6+JpkCyHE4QFhbYTYfULK1DPdJWaVs6yBSHVPKqNxn8LA3w9HcP/GRka
+# FwhFw2j0A/hp237kziP8LheDBXEiI3tlluyks1SZ6iklwYulMA0GCSqGSIb3DQEB
+# AQUABIICACTJJG0Mj0qGTKPDGCPq0qb+f87W5ftwP1tPWXIL+eQMfu4JF/KHc39F
+# kvm3Rl7ZpM+xhAcf7santPL2GMQr5c+calH4OnTYmPMebAnQWZgJ4aWTpwA3a0de
+# ibNhXY9akgiX0NB1N/lOMjegHydSQ/KY6gG10vu+oAfidSCRjYrxdOztWFCdI/8L
+# GTrobT+40ty8Mu6wE26+HNYFTOQKX17d5vS/72MkBX1tsBNlHinO7hhI1Xq3dOtJ
+# KoW+As6bp8zj0FcfsPIgYApF22pnhgsPF3ahs0WKLAMEt6aJEeVyMBe342LxhvL+
+# Ktig+1SsG0Ia07UQLIKSmY8B3sfCscipK6JFCLHuxOcMJLAHeQkGrGO70Y3aOBuL
+# slhxgiaC6EaPDG3BQu7yKdcZIWv6OXMsmiXZXbNxmZIhUCrEGfvh3l0F8iToK22O
+# O8FlXBKzAAQRyVYUA7/Liotj8Sq/rVSW75QY4PwThfUlYN7hht1449Sp5pjAG9Xl
+# PpkLXpl6bw0qieK5fzWnKH6yUVx4Q8ES6HhwxDbzLkP0Jbt/WQgOOEeabgWiiC/p
+# fLai4yqBrTyeDVNM/FMkqPi6hBc6a6zJgYDLGAGleRup6FGEAmK52sc/bOurpmTH
+# PSK/+z32IiZcV/2Tf+51fIqj99OANmFZmoWbPsCiGr6G+tL4+iXZ
 # SIG # End signature block
