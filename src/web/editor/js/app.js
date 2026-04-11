@@ -2761,7 +2761,7 @@ document.getElementById('btnAddAssignment').addEventListener('click', function (
     }
     /* Sanitize task sequence path -- filename only, no directory traversal */
     tsPath = tsPath.replace(/\\/g, '/').split('/').pop();
-    if (!tsPath) { tsPath = 'default.json'; }
+    if (!tsPath || !/\.json$/i.test(tsPath)) { tsPath = 'default.json'; }
     /* Check for duplicate */
     var exists = assignments.some(function (a) { return a.target === target; });
     if (exists) { alert('An assignment for this group already exists.'); return; }

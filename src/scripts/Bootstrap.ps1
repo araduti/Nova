@@ -1083,18 +1083,22 @@ function ProceedToEngine {
                     # Sanitize the task sequence path to prevent directory traversal.
                     $tsFile = $matched.taskSequence -replace '\\','/'
                     $tsFile = $tsFile.Split('/')[-1]
-                    $assignedTsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/task-sequence/$tsFile"
-                    $assignedTsDir = 'X:\Nova'
-                    if (-not (Test-Path $assignedTsDir)) {
-                        $null = New-Item -ItemType Directory -Path $assignedTsDir -Force
+                    if (-not $tsFile -or $tsFile -notmatch '\.json$') {
+                        Write-AuthLog "Invalid task sequence filename: '$tsFile' -- skipping"
+                    } else {
+                        $assignedTsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/task-sequence/$tsFile"
+                        $assignedTsDir = 'X:\Nova'
+                        if (-not (Test-Path $assignedTsDir)) {
+                            $null = New-Item -ItemType Directory -Path $assignedTsDir -Force
+                        }
+                        $assignedTsPath = Join-Path $assignedTsDir 'tasksequence.json'
+                        $tsWc = New-Object System.Net.WebClient
+                        $tsWc.Headers.Add('Cache-Control', 'no-cache')
+                        $tsWc.Headers.Add('Pragma', 'no-cache')
+                        $tsWc.DownloadFile($assignedTsUrl, $assignedTsPath)
+                        $script:AssignedTaskSequence = $assignedTsPath
+                        Write-AuthLog "Assigned task sequence downloaded to $assignedTsPath"
                     }
-                    $assignedTsPath = Join-Path $assignedTsDir 'tasksequence.json'
-                    $tsWc = New-Object System.Net.WebClient
-                    $tsWc.Headers.Add('Cache-Control', 'no-cache')
-                    $tsWc.Headers.Add('Pragma', 'no-cache')
-                    $tsWc.DownloadFile($assignedTsUrl, $assignedTsPath)
-                    $script:AssignedTaskSequence = $assignedTsPath
-                    Write-AuthLog "Assigned task sequence downloaded to $assignedTsPath"
                 }
             }
         } catch {
