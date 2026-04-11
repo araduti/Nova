@@ -1024,7 +1024,7 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\nova-start.cmd
 
 #endregion
 
-# Invoke-M365DeviceCodeAuth is now provided by the Nova.Auth module.
+# Invoke-M365Auth is now provided by the Nova.Auth module.
 
 #region ── Main ─────────────────────────────────────────────────────────────────
 
@@ -1042,7 +1042,7 @@ Write-Host @"
 
 try {
     # ── 0. M365 authentication gate ──────────────────────────────────────────
-    $authResult = Invoke-M365DeviceCodeAuth `
+    $authResult = Invoke-M365Auth `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
     if (-not $authResult.Authenticated) {
         Write-Fail 'Authentication is required. Exiting.'
