@@ -1042,11 +1042,16 @@ Write-Host @"
 
 try {
     # ── 0. M365 authentication gate ──────────────────────────────────────────
-    $authResult = Invoke-M365Auth `
-        -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
-    if (-not $authResult.Authenticated) {
-        Write-Fail 'Authentication is required. Exiting.'
-        exit 1
+    # On full Windows the launched Edge --app process may hand off to an
+    # existing browser instance and exit, causing the auth module to return
+    # before the user finishes signing in.  Retry until authenticated.
+    $authResult = $null
+    while ($true) {
+        $authResult = Invoke-M365Auth `
+            -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
+        if ($authResult.Authenticated) { break }
+        Write-Step 'Waiting for sign-in to complete...'
+        Start-Sleep -Seconds 2
     }
     if ($authResult.GraphAccessToken) {
         $script:GraphAccessToken = $authResult.GraphAccessToken
