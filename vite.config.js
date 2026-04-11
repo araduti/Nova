@@ -14,7 +14,7 @@ import { cpSync, existsSync } from 'fs';
  * and run offline — they are NOT part of this build.
  */
 export default defineConfig({
-  base: '/Nova/',
+  base: '/',
   build: {
     outDir: 'dist',
     rollupOptions: {
@@ -39,6 +39,8 @@ export default defineConfig({
           ['src/web/editor/lib', 'dist/src/web/editor/lib'],
           /* PowerShell entry point for irm <url> | iex one-liner */
           ['src/scripts/Trigger.ps1', 'dist/Trigger.ps1'],
+          /* Custom domain file for GitHub Pages */
+          ['CNAME', 'dist/CNAME'],
         ];
         for (const [src, dest] of copies) {
           if (existsSync(src)) {
