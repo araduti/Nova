@@ -393,6 +393,21 @@
         }
 
         setInterval(pollStatus, POLL_MS);
+
+        /* ── Renderer keep-alive: force continuous paint cycles to
+         *    prevent the SwiftShader renderer from being terminated
+         *    (Edge Error code 39) during long operations. ────────── */
+        (function keepAlive() {
+            var el = document.querySelector('.spinner-wrap');
+            var tick = 0;
+            function frame() {
+                tick = (tick + 1) % 3600;
+                el.style.willChange = 'transform';
+                el.style.transform  = 'translateZ(' + (tick % 2 === 0 ? '0' : '0.01') + 'px)';
+                requestAnimationFrame(frame);
+            }
+            requestAnimationFrame(frame);
+        })();
     </script>
 </body>
 </html>
