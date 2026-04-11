@@ -287,14 +287,15 @@
         .btn.hidden { display: none; }
 
         /* ── Bottom labels ─────────────────────────────────────────── */
-        .brand, .hint {
+        .hint {
             position: fixed;
             font-size: 11px;
             color: rgba(0, 0, 0, 0.25);
             transition: color 0.4s ease;
+            bottom: 12px;
+            left: 16px;
         }
-        .dark .brand, .dark .hint { color: rgba(255, 255, 255, 0.15); }
-        .brand { bottom: 12px; right: 16px; }
+        .dark .hint { color: rgba(255, 255, 255, 0.15); }
         .company-logo {
             position: fixed;
             bottom: 12px;
@@ -305,7 +306,6 @@
             transition: opacity 0.3s ease;
         }
         .company-logo:hover { opacity: 0.6; }
-        .hint  { bottom: 12px; left: 16px; }
 
         /* ── Footer action buttons (Reboot / Shutdown / Shell) ──── */
         .footer-actions {
