@@ -5,8 +5,8 @@
 .DESCRIPTION
     Provides OAuth2 Authorization Code Flow with PKCE for authenticating
     OSD operators.  A single Invoke-M365Auth entry point auto-detects the
-    environment (full Windows vs WinPE) and sets appropriate Edge flags,
-    timeouts, and grace periods.
+    environment (full Windows vs WinPE) and sets appropriate Edge flags
+    and grace periods.
     Also includes token refresh via Update-M365Token.
 #>
 
@@ -104,7 +104,6 @@ function _EdgeAppAuth {
         [Parameter(Mandatory)]
         [string]$EdgeDataDir,
         [string[]]$ExtraEdgeArgs = @(),
-        [int]$TimeoutMinutes = 15,
         [int]$EdgeExitGracePeriod = 0,
         [switch]$WaitForDns,
         [scriptblock]$WriteLog,
@@ -208,11 +207,10 @@ function _EdgeAppAuth {
 
     # ── Wait for the redirect callback ──────────────────────────────────────
     $asyncResult = $listener.BeginGetContext($null, $null)
-    $timeout   = [datetime]::UtcNow.AddMinutes($TimeoutMinutes)
     $cancelled = $false
 
     while (-not $authCode -and -not $authError `
-           -and -not $cancelled -and [datetime]::UtcNow -lt $timeout) {
+           -and -not $cancelled) {
 
         if ($CheckCancelled) { $cancelled = (& $CheckCancelled) -eq $true }
 
@@ -326,11 +324,10 @@ function Invoke-M365Auth {
         localhost HTTP listener captures the redirect.
 
         Auto-detects the environment (full Windows vs WinPE) and applies
-        the appropriate Edge flags, timeout, and grace period:
-          - Full Windows: 2 min timeout, 15 s edge-exit grace period,
-            no extra Edge flags.
-          - WinPE: 5 min timeout, 0 s grace period, GPU/SwiftShader
-            flags, DNS wait.
+        the appropriate Edge flags and grace period:
+          - Full Windows: 15 s edge-exit grace period, no extra Edge
+            flags.
+          - WinPE: 0 s grace period, GPU/SwiftShader flags, DNS wait.
 
         Tenant restrictions are enforced at the Entra ID app registration
         level -- only tenants explicitly allowed in the app's
@@ -441,13 +438,11 @@ function Invoke-M365Auth {
             '--enable-unsafe-swiftshader',
             '--in-process-gpu'
         )
-        $timeoutMin  = 50
         $gracePeriod = 0
         $waitForDns  = $true
     } else {
         $edgeDataDir   = Join-Path $env:TEMP 'Nova-EdgeAuth'
         $extraEdgeArgs = @()
-        $timeoutMin    = 20
         $gracePeriod   = 15
         $waitForDns    = $false
     }
@@ -460,7 +455,6 @@ function Invoke-M365Auth {
         EdgeExePath         = $EdgeExePath
         EdgeDataDir         = $edgeDataDir
         ExtraEdgeArgs       = $extraEdgeArgs
-        TimeoutMinutes      = $timeoutMin
         EdgeExitGracePeriod = $gracePeriod
         WriteLog            = $logFn
     }
