@@ -5,13 +5,12 @@
     Author            = 'Nova Contributors'
     CompanyName       = 'Ampliosoft'
     Copyright         = '(c) 2026 Ampliosoft. All rights reserved.'
-    Description       = 'Microsoft 365 / Azure AD OAuth2 authentication for Nova deployment scripts.'
+    Description       = 'Microsoft 365 / Entra ID OAuth2 authentication for Nova deployment scripts.'
     PowerShellVersion = '5.1'
     RequiredModules   = @('Nova.Logging')
     FunctionsToExport = @(
-        'Invoke-M365DeviceCodeAuth'
+        'Invoke-M365Auth'
         'Update-M365Token'
-        'Invoke-KioskM365Auth'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()

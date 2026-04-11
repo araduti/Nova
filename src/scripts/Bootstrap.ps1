@@ -928,15 +928,14 @@ function Show-ConfigurationMenu {
 }
 
 #region ── M365 Authentication ────────────────────────────────────────────────
-# The kiosk auth orchestrator (Invoke-KioskM365Auth) is in the Nova.Auth
-# module.  This wrapper bridges the module's callback parameters to
-# Bootstrap.ps1's UI layer.
+# This wrapper bridges the Nova.Auth module's Invoke-M365Auth callback
+# parameters to Bootstrap.ps1's UI layer.
 
-function Invoke-M365Auth {
+function Invoke-BootstrapM365Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via the Nova.Auth module's kiosk auth flow.
+    .SYNOPSIS  Authenticate the operator via the Nova.Auth module.
     .DESCRIPTION
-        Delegates to Invoke-KioskM365Auth from the Nova.Auth module, passing
+        Delegates to Invoke-M365Auth from the Nova.Auth module, passing
         Bootstrap.ps1's UI functions as scriptblock callbacks.  Returns $true
         when auth succeeded or was not required, $false on failure.
     .OUTPUTS
@@ -984,7 +983,7 @@ function Invoke-M365Auth {
         Invoke-Sound $Freq $Duration
     }
 
-    $result = Invoke-KioskM365Auth `
+    $result = Invoke-M365Auth `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch `
         -EdgeExePath $script:EdgeExe `
         -WriteLog $writeLog -WriteStatus $writeStatus -UpdateUi $updateUi `
@@ -1020,7 +1019,7 @@ function ProceedToEngine {
     # Launches Edge in --app mode for a clean login popup (Auth Code + PKCE)
     # as the primary method; falls back to Device Code Flow shown in
     # an HTML modal overlay if Edge is not available.
-    $authPassed = Invoke-M365Auth
+    $authPassed = Invoke-BootstrapM365Auth
     if (-not $authPassed) {
         $script:EngineStarted = $false   # allow retry after WiFi reconnect
         Update-HtmlUi -Message $S.AuthFailed -Step 2 -ShowRetryAuth

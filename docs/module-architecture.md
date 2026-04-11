@@ -23,7 +23,7 @@ Nova's deployment engine is built from **17 PowerShell modules** in `src/modules
 | **Nova.WinRE** | WinRE discovery from System32 or recovery partition, recovery-package removal | `Get-WinREPath`, `Get-WinREPathFromWindowsISO`, `Remove-WinRERecoveryPackage` |
 | **Nova.ADK** | Windows ADK registry detection, installation validation, WinPE file copy | `Get-ADKRoot`, `Assert-ADKInstalled`, `Copy-WinPEFile` |
 | **Nova.BuildConfig** | Interactive build configuration UI, language/package selection, config persistence | `Get-BuildConfigPath`, `Save-BuildConfiguration`, `Read-SavedBuildConfiguration`, `Resolve-WinPEPackagePath`, `Show-BuildConfiguration`, `Get-DefaultLanguage`, `Get-AvailableWinPEPackages` |
-| **Nova.Auth** | M365/Entra ID OAuth2 authentication (Edge --app flows) | `Invoke-M365DeviceCodeAuth`, `Update-M365Token`, `Invoke-KioskM365Auth` |
+| **Nova.Auth** | M365/Entra ID OAuth2 authentication (Edge --app flows) | `Invoke-M365Auth`, `Update-M365Token` |
 | **Nova.BCD** | Boot Configuration Data management for WinPE boot entries | `Invoke-Bcdedit`, `New-BcdEntry`, `New-BCDRamdiskEntry` |
 | **Nova.CloudImage** | Cloud boot image management via GitHub Releases | `Get-CloudBootImage`, `Publish-BootImage` |
 

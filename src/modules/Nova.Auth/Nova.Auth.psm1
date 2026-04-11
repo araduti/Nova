@@ -1,79 +1,96 @@
 ﻿<#
 .SYNOPSIS
-    Microsoft 365 / Azure AD authentication module for Nova.
+    Microsoft 365 / Entra ID authentication module for Nova.
 
 .DESCRIPTION
     Provides OAuth2 Authorization Code Flow with PKCE for authenticating
-    OSD operators.  Both environments use Edge --app mode:
-      1. Trigger.ps1 (full Windows): Edge --app mode
-      2. Bootstrap.ps1 (WinPE kiosk): Edge --app mode (always available in boot image)
-    Also includes token refresh.
+    OSD operators.  A single Invoke-M365Auth entry point auto-detects the
+    environment (full Windows vs WinPE) and sets appropriate Edge flags,
+    timeouts, and grace periods.
+    Also includes token refresh via Update-M365Token.
 #>
 
 Set-StrictMode -Version Latest
 
-# ── Private helper: safely check if a PSCustomObject has a property ─────────
+#region ── Private helpers ──────────────────────────────────────────────────────
+
 function _HasProp {
+    <# Safely check if a PSCustomObject has a named property. #>
     param([psobject]$Obj, [string]$Name)
     return ($null -ne $Obj -and $null -ne $Obj.PSObject.Properties[$Name])
 }
 
+function _FetchAuthConfig {
+    <#
+    .SYNOPSIS  Download and validate config/auth.json from GitHub.
+    .OUTPUTS
+        [hashtable] with keys:
+          Required   [bool]   $true when auth is required and config is valid.
+          AuthConfig [object] The parsed auth.json, or $null.
+          ClientId   [string] The validated client ID, or $null.
+          Scope      [string] The resolved OAuth scope string, or $null.
+    #>
+    param(
+        [string]$GitHubUser,
+        [string]$GitHubRepo,
+        [string]$GitHubBranch,
+        [scriptblock]$WriteLog
+    )
 
-#region ── Shared Edge --app Auth Helper ────────────────────────────────────────────
-# Both Invoke-M365DeviceCodeAuth (full Windows) and Invoke-KioskM365Auth
-# (WinPE kiosk) delegate to this private function for the interactive
-# Edge --app OAuth2 Authorization Code + PKCE flow.
+    $skip = @{ Required = $false; AuthConfig = $null; ClientId = $null; Scope = $null }
+
+    $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/auth.json"
+    $authConfig    = $null
+    try {
+        $wc      = New-Object System.Net.WebClient
+        $rawJson = $wc.DownloadString($authConfigUrl)
+        $authConfig = $rawJson | ConvertFrom-Json
+    } catch {
+        if ($WriteLog) { & $WriteLog "Could not fetch auth config: $_" }
+    }
+
+    if (-not $authConfig -or -not ((_HasProp $authConfig 'requireAuth') -and $authConfig.requireAuth)) {
+        return $skip
+    }
+
+    if (-not ((_HasProp $authConfig 'clientId') -and $authConfig.clientId)) {
+        if ($WriteLog) { & $WriteLog "Auth config incomplete -- skipping authentication." }
+        return $skip
+    }
+
+    $scope = 'openid profile'
+    if ((_HasProp $authConfig 'graphScopes') -and $authConfig.graphScopes) {
+        $trimmed = ($authConfig.graphScopes).Trim()
+        if ($trimmed) { $scope = "openid profile $trimmed" }
+    }
+
+    return @{
+        Required   = $true
+        AuthConfig = $authConfig
+        ClientId   = $authConfig.clientId
+        Scope      = $scope
+    }
+}
 
 function _EdgeAppAuth {
     <#
     .SYNOPSIS  Authenticate via Edge --app popup (Auth Code + PKCE).
     .DESCRIPTION
         Generates PKCE codes, starts a localhost HTTP listener, launches Edge
-        in --app mode pointing at the Azure AD authorization endpoint, waits
+        in --app mode pointing at the Entra ID authorization endpoint, waits
         for the redirect callback, and exchanges the authorization code for
         tokens.
 
-        Used by both Invoke-M365DeviceCodeAuth (full Windows) and
-        Invoke-KioskM365Auth (WinPE kiosk).  Environment differences are
-        handled through parameters:
+        Environment differences are handled through parameters:
           - ExtraEdgeArgs: WinPE passes GPU-related flags.
           - EdgeExitGracePeriod: full Windows allows a grace period because
             Edge may hand off window creation to an existing process.
           - WaitForDns: WinPE waits for DNS readiness after WiFi connects.
-    .PARAMETER ClientId
-        Azure AD application (client) ID.
-    .PARAMETER Scope
-        OAuth 2.0 scopes to request (space-separated).
-    .PARAMETER EdgeExePath
-        Full path to msedge.exe.
-    .PARAMETER EdgeDataDir
-        Temporary directory for Edge user-data-dir (avoids conflicts).
-    .PARAMETER ExtraEdgeArgs
-        Additional command-line arguments for Edge (e.g. WinPE GPU flags).
-    .PARAMETER TimeoutMinutes
-        How long to wait for the user to complete sign-in.
-    .PARAMETER EdgeExitGracePeriod
-        Seconds to wait before treating an exited Edge process as user
-        cancellation.  On full Windows, Edge may hand off window creation
-        to an already-running browser process, causing the initial process
-        to exit immediately.  Set to 0 in WinPE where Edge is the sole instance.
-    .PARAMETER WaitForDns
-        When set, waits for DNS resolution of login.microsoftonline.com
-        before launching Edge.  Useful in WinPE where the network stack
-        may not be fully ready.
-    .PARAMETER WriteLog
-        Scriptblock for writing auth log entries.
-    .PARAMETER UpdateUi
-        Scriptblock for updating the HTML UI.
-    .PARAMETER CheckCancelled
-        Scriptblock that returns $true when auth has been cancelled.
-    .PARAMETER DoEvents
-        Scriptblock that pumps the WinForms message loop.
     .OUTPUTS
         [hashtable] with keys:
-          Success          [bool]   $true if auth succeeded.
-          GraphAccessToken [string] Microsoft Graph access token, or $null.
-          RefreshToken     [string] Refresh token, or $null.
+          Success          [bool]     $true if auth succeeded.
+          GraphAccessToken [string]   Microsoft Graph access token, or $null.
+          RefreshToken     [string]   Refresh token, or $null.
           ExpiresAt        [datetime] Token expiration time, or $null.
     #>
     [OutputType([hashtable])]
@@ -310,114 +327,194 @@ function _EdgeAppAuth {
 
 #endregion
 
+#region ── Public functions ─────────────────────────────────────────────────────
 
-function Invoke-M365DeviceCodeAuth {
+function Invoke-M365Auth {
     <#
-    .SYNOPSIS  Authenticate the operator via Edge --app sign-in.
+    .SYNOPSIS  Authenticate the operator via Edge --app sign-in (Auth Code + PKCE).
     .DESCRIPTION
         Downloads config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
-        launches Edge in --app mode for an interactive Azure AD sign-in
+        launches Edge in --app mode for an interactive Entra ID sign-in
         using the Authorization Code Flow with PKCE.  A temporary
         localhost HTTP listener captures the redirect.
+
+        Auto-detects the environment (full Windows vs WinPE) and applies
+        the appropriate Edge flags, timeout, and grace period:
+          - Full Windows: 2 min timeout, 15 s edge-exit grace period,
+            no extra Edge flags.
+          - WinPE: 5 min timeout, 0 s grace period, GPU/SwiftShader
+            flags, DNS wait.
+
         Tenant restrictions are enforced at the Entra ID app registration
         level -- only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
     .PARAMETER GitHubUser   GitHub account that hosts the Nova repository.
     .PARAMETER GitHubRepo   Repository name.
     .PARAMETER GitHubBranch Branch to fetch auth config from.
+    .PARAMETER EdgeExePath
+        Full path to msedge.exe.  When omitted the function searches the
+        standard Program Files locations (full OS) or X:\WebView2\Edge
+        (WinPE).
+    .PARAMETER WriteLog
+        Scriptblock for writing auth log entries.  Receives a single
+        string parameter.  Falls back to Write-Verbose when not supplied.
+    .PARAMETER WriteStatus
+        Scriptblock for writing user-visible status messages.  Receives
+        (message, color).  Falls back to Write-Step / Write-Success /
+        Write-Fail from Nova.Logging when not supplied.
+    .PARAMETER UpdateUi     Scriptblock for updating the HTML UI.
+    .PARAMETER CheckCancelled Scriptblock that returns $true when auth
+        has been cancelled.
+    .PARAMETER DoEvents     Scriptblock that pumps the WinForms message loop.
+    .PARAMETER PlaySound    Scriptblock for playing sound feedback.
+        Receives (frequency, duration).
     .NOTES
-        The Azure AD app registration must include http://localhost as a
+        The Entra ID app registration must include http://localhost as a
         redirect URI under the "Mobile and desktop applications" platform.
     .OUTPUTS
         [hashtable] with keys:
-          Authenticated    [bool]   $true if auth succeeded or was not required.
-          GraphAccessToken [string] Microsoft Graph access token, or $null.
-          AuthConfig       [object] The parsed auth.json config, or $null.
+          Authenticated    [bool]     $true if auth succeeded or was not required.
+          GraphAccessToken [string]   Microsoft Graph access token, or $null.
+          RefreshToken     [string]   Refresh token, or $null.
+          ExpiresAt        [datetime] Token expiration time, or $null.
+          AuthConfig       [object]   The parsed auth.json config, or $null.
     #>
     [OutputType([hashtable])]
     [CmdletBinding()]
     param(
-        [string] $GitHubUser  = 'araduti',
-        [string] $GitHubRepo  = 'Nova',
-        [string] $GitHubBranch = 'main'
+        [string]$GitHubUser   = 'araduti',
+        [string]$GitHubRepo   = 'Nova',
+        [string]$GitHubBranch = 'main',
+        [string]$EdgeExePath,
+        [scriptblock]$WriteLog,
+        [scriptblock]$WriteStatus,
+        [scriptblock]$UpdateUi,
+        [scriptblock]$CheckCancelled,
+        [scriptblock]$DoEvents,
+        [scriptblock]$PlaySound
     )
 
-    # ── Fetch auth configuration from the repository ────────────────────────────
-    $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/auth.json"
-    $authConfig    = $null
-    try {
-        $wc      = New-Object System.Net.WebClient
-        $rawJson = $wc.DownloadString($authConfigUrl)
-        $authConfig = $rawJson | ConvertFrom-Json
-    } catch {
-        Write-Verbose "Could not fetch auth config: $_"
+    $isWinPE = ($env:SystemDrive -eq 'X:')
+    $skip    = @{ Authenticated = $true; GraphAccessToken = $null; RefreshToken = $null; ExpiresAt = $null; AuthConfig = $null }
+
+    # ── Resolve logging callback ──────────────────────────────────────────
+    $logFn = if ($WriteLog) { $WriteLog } else { { param([string]$m) Write-Verbose $m } }
+
+    # ── Fetch and validate auth config ────────────────────────────────────
+    $cfg = _FetchAuthConfig -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo `
+                            -GitHubBranch $GitHubBranch -WriteLog $logFn
+    if (-not $cfg.Required) {
+        if ($WriteStatus) { & $WriteStatus 'Authentication not required' 'Green' }
+        return $skip
     }
 
-    # If auth is not configured or not required, skip silently.
-    if (-not $authConfig -or -not ((_HasProp $authConfig 'requireAuth') -and $authConfig.requireAuth)) {
-        return @{ Authenticated = $true; GraphAccessToken = $null; AuthConfig = $null }
+    # ── Status: signing in ────────────────────────────────────────────────
+    if ($WriteStatus) {
+        & $WriteStatus 'Signing in with Microsoft 365...' 'Cyan'
+    } else {
+        Write-Step 'Signing in with Microsoft 365...'
     }
+    if ($DoEvents) { & $DoEvents }
 
-    # Validate that the config has the minimum required fields.
-    if (-not ((_HasProp $authConfig 'clientId') -and $authConfig.clientId)) {
-        Write-Verbose "Auth config incomplete -- skipping authentication."
-        return @{ Authenticated = $true; GraphAccessToken = $null; AuthConfig = $null }
-    }
-
-    $clientId = $authConfig.clientId
-
-    # ── Build scope string ────────────────────────────────────────────────
-    $scope = 'openid profile'
-    if ((_HasProp $authConfig 'graphScopes') -and $authConfig.graphScopes) {
-        $trimmed = ($authConfig.graphScopes).Trim()
-        if ($trimmed) { $scope = "openid profile $trimmed" }
-    }
-
-    Write-Step 'Signing in with Microsoft 365...'
-
-    # ── Find Edge ──────────────────────────────────────────────────────────
-    $edgePath = $null
-    foreach ($candidate in @(
-        "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
-        "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
-    )) {
-        if ($candidate -and (Test-Path $candidate)) {
-            $edgePath = $candidate
-            break
+    # ── Locate Edge ───────────────────────────────────────────────────────
+    if (-not $EdgeExePath) {
+        if ($isWinPE) {
+            $EdgeExePath = 'X:\WebView2\Edge\msedge.exe'
+        } else {
+            foreach ($candidate in @(
+                "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+                "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+            )) {
+                if ($candidate -and (Test-Path $candidate)) {
+                    $EdgeExePath = $candidate
+                    break
+                }
+            }
         }
     }
 
-    if (-not $edgePath) {
-        Write-Fail 'Microsoft Edge is required but was not found.'
-        return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
+    if (-not $EdgeExePath) {
+        if ($WriteStatus) {
+            & $WriteStatus 'Microsoft Edge is required but was not found.' 'Red'
+        } else {
+            Write-Fail 'Microsoft Edge is required but was not found.'
+        }
+        return @{ Authenticated = $false; GraphAccessToken = $null; RefreshToken = $null; ExpiresAt = $null; AuthConfig = $cfg.AuthConfig }
     }
 
-    # ── Delegate to shared Edge --app auth helper ──────────────────────────────
-    $edgeAuthDataDir = Join-Path $env:TEMP 'Nova-EdgeAuth'
-    $writeLog = { param([string]$m) Write-Verbose $m }
+    # ── Environment-specific Edge settings ────────────────────────────────
+    if ($isWinPE) {
+        $edgeDataDir   = 'X:\Temp\EdgeAuth'
+        $extraEdgeArgs = @(
+            '--allow-run-as-system',
+            '--disable-gpu',
+            '--disable-gpu-compositing',
+            '--disable-direct-composition',
+            '--use-angle=swiftshader',
+            '--enable-unsafe-swiftshader',
+            '--in-process-gpu'
+        )
+        $timeoutMin  = 5
+        $gracePeriod = 0
+        $waitForDns  = $true
+    } else {
+        $edgeDataDir   = Join-Path $env:TEMP 'Nova-EdgeAuth'
+        $extraEdgeArgs = @()
+        $timeoutMin    = 2
+        $gracePeriod   = 15
+        $waitForDns    = $false
+    }
 
-    $edgeResult = _EdgeAppAuth `
-        -ClientId $clientId -Scope $scope `
-        -EdgeExePath $edgePath `
-        -EdgeDataDir $edgeAuthDataDir `
-        -TimeoutMinutes 2 `
-        -EdgeExitGracePeriod 15 `
-        -WriteLog $writeLog
+    # ── Run the PKCE auth flow ────────────────────────────────────────────
+    $edgeResult = @{ Success = $false; GraphAccessToken = $null; RefreshToken = $null; ExpiresAt = $null }
+    $authParams = @{
+        ClientId            = $cfg.ClientId
+        Scope               = $cfg.Scope
+        EdgeExePath         = $EdgeExePath
+        EdgeDataDir         = $edgeDataDir
+        ExtraEdgeArgs       = $extraEdgeArgs
+        TimeoutMinutes      = $timeoutMin
+        EdgeExitGracePeriod = $gracePeriod
+        WriteLog            = $logFn
+    }
+    if ($waitForDns)     { $authParams['WaitForDns']     = $true }
+    if ($UpdateUi)       { $authParams['UpdateUi']       = $UpdateUi }
+    if ($CheckCancelled) { $authParams['CheckCancelled'] = $CheckCancelled }
+    if ($DoEvents)       { $authParams['DoEvents']       = $DoEvents }
 
+    try {
+        $edgeResult = _EdgeAppAuth @authParams
+    } catch {
+        & $logFn "Edge app auth failed: $_"
+    }
+
+    # ── Return result ─────────────────────────────────────────────────────
     if ($edgeResult.Success) {
-        Write-Success 'Identity verified.'
+        if ($WriteStatus) {
+            & $WriteStatus 'Identity verified' 'Green'
+        } else {
+            Write-Success 'Identity verified.'
+        }
+        if ($PlaySound) { & $PlaySound 1000 200 }
+        if ($isWinPE) { Start-Sleep -Seconds 1 }
         return @{
             Authenticated    = $true
             GraphAccessToken = $edgeResult.GraphAccessToken
             RefreshToken     = $edgeResult.RefreshToken
             ExpiresAt        = $edgeResult.ExpiresAt
-            AuthConfig       = $authConfig
+            AuthConfig       = $cfg.AuthConfig
         }
     }
 
-    Write-Fail 'Sign-in was not completed.'
-    return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
+    $failMsg = if ($isWinPE) { 'Authentication failed. Please try again.' } else { 'Sign-in was not completed.' }
+    if ($WriteStatus) {
+        & $WriteStatus $failMsg 'Red'
+    } else {
+        Write-Fail $failMsg
+    }
+    if ($isWinPE) { Start-Sleep -Seconds 3 }
+    return @{ Authenticated = $false; GraphAccessToken = $null; RefreshToken = $null; ExpiresAt = $null; AuthConfig = $cfg.AuthConfig }
 }
 
 function Update-M365Token {
@@ -425,7 +522,7 @@ function Update-M365Token {
     .SYNOPSIS  Refresh an expired Microsoft 365 access token.
     .DESCRIPTION
         Exchanges a refresh token for a new access/refresh token pair via
-        the Azure AD token endpoint.  Designed for long-running deployments
+        the Entra ID token endpoint.  Designed for long-running deployments
         where the original token may expire before completion.
     .PARAMETER TokenInfo
         Hashtable with keys: RefreshToken, ClientId, Scope.
@@ -479,130 +576,11 @@ function Update-M365Token {
     return $null
 }
 
-function Invoke-KioskM365Auth {
-    <#
-    .SYNOPSIS  Authenticate the operator via M365 (Edge --app popup with Auth Code + PKCE).
-    .DESCRIPTION
-        Downloads config/auth.json from the GitHub repository.  When
-        requireAuth is true and a clientId is configured, the function
-        launches Edge in --app mode for interactive sign-in using the
-        Authorization Code Flow with PKCE.  Edge is always present in
-        the WinPE boot image.
-        Tenant restrictions are enforced at the Entra ID app registration
-        level -- only tenants explicitly allowed in the app's
-        "Supported account types" configuration can complete sign-in.
-    .PARAMETER GitHubUser   GitHub account that hosts the Nova repository.
-    .PARAMETER GitHubRepo   Repository name.
-    .PARAMETER GitHubBranch Branch to fetch auth config from.
-    .PARAMETER EdgeExePath  Full path to msedge.exe for the --app auth window.
-    .PARAMETER WriteLog     Scriptblock for writing auth log entries.
-    .PARAMETER WriteStatus  Scriptblock for writing status messages. Called with (message, color).
-    .PARAMETER UpdateUi     Scriptblock for updating the HTML UI.
-    .PARAMETER CheckCancelled Scriptblock that returns $true when auth has been cancelled.
-    .PARAMETER DoEvents     Scriptblock that pumps the WinForms message loop.
-    .PARAMETER PlaySound    Scriptblock for playing sound feedback. Called with (frequency, duration).
-    .OUTPUTS
-        [hashtable] with keys:
-          Authenticated    [bool]     $true if auth succeeded or was not required.
-          GraphAccessToken [string]   Microsoft Graph access token, or $null.
-          AuthConfig       [object]   The parsed auth.json config, or $null.
-    #>
-    [OutputType([hashtable])]
-    [CmdletBinding()]
-    param(
-        [string]$GitHubUser   = 'araduti',
-        [string]$GitHubRepo   = 'Nova',
-        [string]$GitHubBranch = 'main',
-        [string]$EdgeExePath  = 'X:\WebView2\Edge\msedge.exe',
-        [scriptblock]$WriteLog,
-        [scriptblock]$WriteStatus,
-        [scriptblock]$UpdateUi,
-        [scriptblock]$CheckCancelled,
-        [scriptblock]$DoEvents,
-        [scriptblock]$PlaySound
-    )
-
-    $skip = @{ Authenticated = $true; GraphAccessToken = $null; AuthConfig = $null }
-
-    # ── Fetch auth configuration from the repository ────────────────────────────
-    $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/auth.json"
-    $authConfig    = $null
-    try {
-        $wc      = New-Object System.Net.WebClient
-        $rawJson = $wc.DownloadString($authConfigUrl)
-        $authConfig = $rawJson | ConvertFrom-Json
-    } catch {
-        if ($WriteLog) { & $WriteLog "Could not fetch auth config: $_" }
-    }
-
-    # If auth is not configured or not required, skip silently.
-    if (-not $authConfig -or -not ((_HasProp $authConfig 'requireAuth') -and $authConfig.requireAuth)) {
-        if ($WriteStatus) { & $WriteStatus 'Authentication not required' 'Green' }
-        return $skip
-    }
-
-    # Validate that the config has the minimum required fields.
-    if (-not ((_HasProp $authConfig 'clientId') -and $authConfig.clientId)) {
-        if ($WriteLog) { & $WriteLog "Auth config incomplete -- skipping authentication." }
-        if ($WriteStatus) { & $WriteStatus 'Authentication not required' 'Green' }
-        return $skip
-    }
-
-    $clientId = $authConfig.clientId
-
-    # ── Build scope string ────────────────────────────────────────────────
-    $scope = 'openid profile'
-    if ((_HasProp $authConfig 'graphScopes') -and $authConfig.graphScopes) {
-        $trimmed = ($authConfig.graphScopes).Trim()
-        if ($trimmed) { $scope = "openid profile $trimmed" }
-    }
-
-    if ($WriteStatus) { & $WriteStatus 'Signing in with Microsoft 365...' 'Cyan' }
-    if ($DoEvents) { & $DoEvents }
-
-    # ── Delegate to shared Edge --app auth helper ──────────────────────────────
-    $winPeEdgeArgs = @(
-        '--allow-run-as-system',
-        '--disable-gpu',
-        '--disable-gpu-compositing',
-        '--disable-direct-composition',
-        '--use-angle=swiftshader',
-        '--enable-unsafe-swiftshader',
-        '--in-process-gpu'
-    )
-
-    $edgeResult = @{ Success = $false; GraphAccessToken = $null }
-    try {
-        $edgeResult = _EdgeAppAuth `
-            -ClientId $clientId -Scope $scope `
-            -EdgeExePath $EdgeExePath `
-            -EdgeDataDir 'X:\Temp\EdgeAuth' `
-            -ExtraEdgeArgs $winPeEdgeArgs `
-            -TimeoutMinutes 5 `
-            -EdgeExitGracePeriod 0 `
-            -WaitForDns `
-            -WriteLog $WriteLog -UpdateUi $UpdateUi `
-            -CheckCancelled $CheckCancelled -DoEvents $DoEvents
-    } catch {
-        if ($WriteLog) { & $WriteLog "Edge app auth failed: $_" }
-    }
-
-    if ($edgeResult.Success) {
-        if ($WriteStatus) { & $WriteStatus 'Identity verified' 'Green' }
-        if ($PlaySound)   { & $PlaySound 1000 200 }
-        Start-Sleep -Seconds 1
-        return @{ Authenticated = $true; GraphAccessToken = $edgeResult.GraphAccessToken; AuthConfig = $authConfig }
-    }
-
-    if ($WriteStatus) { & $WriteStatus 'Authentication failed. Please try again.' 'Red' }
-    Start-Sleep -Seconds 3
-    return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
-}
+#endregion
 
 Export-ModuleMember -Function @(
-    'Invoke-M365DeviceCodeAuth'
+    'Invoke-M365Auth'
     'Update-M365Token'
-    'Invoke-KioskM365Auth'
 )
 
 # SIG # Begin signature block
