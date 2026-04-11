@@ -242,6 +242,20 @@ function _EdgeAppAuth {
                     }
                 }
 
+                # Send a response page that shows result and closes.
+                $html = if ($authCode) {
+                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
+                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
+                    '<div style="text-align:center"><h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
+                    '<p>This window will close automatically...</p></div>' +
+                    '<script>setTimeout(function(){window.close()},1500)</script></body></html>'
+                } else {
+                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
+                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
+                    '<div style="text-align:center"><h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
+                    '<p>This window will close automatically...</p></div>' +
+                    '<script>setTimeout(function(){window.close()},2500)</script></body></html>'
+                }
                 $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
                 $context.Response.ContentType     = 'text/html; charset=utf-8'
                 $context.Response.ContentLength64 = $buf.Length
