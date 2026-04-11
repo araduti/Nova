@@ -2723,7 +2723,6 @@ function renderAssignments() {
     assignments.forEach(function (a, i) {
         var tr = document.createElement('tr');
         tr.innerHTML =
-            '<td><span class="assign-type-badge ' + escapeHtml(a.type) + '">' + escapeHtml(a.type) + '</span></td>' +
             '<td>' + escapeHtml(a.target) + '</td>' +
             '<td>' + escapeHtml(a.taskSequence || 'default.json') + '</td>' +
             '<td><button class="btn-remove-assign" data-idx="' + i + '" title="Remove">&times;</button></td>';
@@ -2750,17 +2749,23 @@ document.getElementById('btnAssignmentsClose').addEventListener('click', functio
 });
 
 document.getElementById('btnAddAssignment').addEventListener('click', function () {
-    var typeEl = document.getElementById('assignTargetType');
     var valueEl = document.getElementById('assignTargetValue');
     var tsPathEl = document.getElementById('assignTsPath');
-    var type = typeEl.value;
     var target = valueEl.value.trim();
     var tsPath = tsPathEl.value.trim() || 'default.json';
-    if (!target) { alert('Please enter a user UPN or group object ID.'); return; }
+    if (!target) { alert('Please enter an Entra group Object ID.'); return; }
+    /* Validate GUID format */
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target)) {
+        alert('Invalid format. Please enter a valid Object ID (GUID).');
+        return;
+    }
+    /* Sanitize task sequence path -- filename only, no directory traversal */
+    tsPath = tsPath.replace(/\\/g, '/').split('/').pop();
+    if (!tsPath) { tsPath = 'default.json'; }
     /* Check for duplicate */
-    var exists = assignments.some(function (a) { return a.type === type && a.target === target; });
-    if (exists) { alert('An assignment for this target already exists.'); return; }
-    assignments.push({ type: type, target: target, taskSequence: tsPath });
+    var exists = assignments.some(function (a) { return a.target === target; });
+    if (exists) { alert('An assignment for this group already exists.'); return; }
+    assignments.push({ target: target, taskSequence: tsPath });
     valueEl.value = '';
     renderAssignments();
 });
