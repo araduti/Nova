@@ -45,6 +45,8 @@
             <button id="btnDownload" class="tb-btn" title="Download as JSON file">&#11015; Download</button>
             <button id="btnValidate" class="tb-btn" title="Validate task sequence">&#9989; Validate</button>
             <span class="toolbar-sep"></span>
+            <button id="btnAssignments" class="tb-btn" title="Manage group assignments">&#128101; Assignments</button>
+            <span class="toolbar-sep"></span>
             <button id="btnUndo" class="tb-btn" title="Undo (Ctrl+Z)" disabled>&#8617; Undo</button>
             <button id="btnRedo" class="tb-btn" title="Redo (Ctrl+Y)" disabled>&#8618; Redo</button>
         </div>
@@ -166,6 +168,36 @@
             <div class="dialog-actions">
                 <button id="btnAddStepCancel" class="btn">Cancel</button>
                 <button id="btnAddStepOk" class="btn btn-primary" disabled>Add</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Assignments dialog ───────────────────────────────────────── -->
+    <div id="assignmentsDialog" class="dialog-overlay hidden">
+        <div class="dialog dialog-wide">
+            <h2>&#128101; Task Sequence Assignments</h2>
+            <p class="assignments-desc">Assign task sequences to Entra ID groups by Object ID. When a user in the group runs Nova, their assigned task sequence is automatically selected.</p>
+            <div class="assignments-add-row">
+                <input id="assignTargetValue" type="text" class="assign-input" placeholder="Entra group Object ID (e.g. aabbccdd-1234-...)">
+                <input id="assignTsPath" type="text" class="assign-input assign-ts-path" placeholder="Task sequence file (e.g. default.json)" value="default.json">
+                <button id="btnAddAssignment" class="btn btn-primary">Add</button>
+            </div>
+            <div id="assignmentsListWrap" class="assignments-list-wrap">
+                <table id="assignmentsTable" class="assignments-table">
+                    <thead>
+                        <tr>
+                            <th>Group Object ID</th>
+                            <th>Task Sequence</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="assignmentsBody"></tbody>
+                </table>
+                <p id="noAssignments" class="no-assignments">No assignments configured. Add one above.</p>
+            </div>
+            <div class="dialog-actions">
+                <button id="btnAssignmentsClose" class="btn">Close</button>
+                <button id="btnAssignmentsSave" class="btn btn-primary">&#128190; Save to GitHub</button>
             </div>
         </div>
     </div>

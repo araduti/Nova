@@ -22,6 +22,14 @@ enabled = true
 [observability.logs]
 enabled = true
 
+# KV namespace for storing configuration (assignments, alerts, etc.)
+# Create the namespace with:
+#   wrangler kv namespace create NOVA_CONFIG
+# Then update the id below with the namespace ID from the output.
+[[kv_namespaces]]
+binding = "NOVA_CONFIG"
+id = "REPLACE_WITH_NAMESPACE_ID"
+
 # Optional: uncomment to lock the proxy to a single browser origin.
 # You can also set this in the Cloudflare dashboard under
 # Settings → Variables & Secrets instead of hard-coding it here.

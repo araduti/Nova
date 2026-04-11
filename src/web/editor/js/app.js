@@ -2705,6 +2705,152 @@ function updateBreadcrumb(name) {
     if (el) el.textContent = name || 'Editor';
 }
 
+/* ── Assignments Management ────────────────────────────────────────── */
+var assignments = [];
+
+/**
+ * Acquire an Entra ID access token for Graph API (User.Read) via MSAL.
+ * Returns the token string or null if unavailable.
+ */
+function getEntraAccessToken() {
+    if (!msalInstance) return Promise.resolve(null);
+    var account = msalInstance.getActiveAccount();
+    if (!account) return Promise.resolve(null);
+    return msalInstance.acquireTokenSilent({
+        scopes: ['User.Read'],
+        account: account
+    }).then(function (result) {
+        return result && result.accessToken ? result.accessToken : null;
+    }).catch(function () {
+        return null;
+    });
+}
+
+function loadAssignments() {
+    if (!githubConfig.oauthProxy) return Promise.resolve();
+    return getEntraAccessToken().then(function (entraToken) {
+        if (!entraToken) return null;
+        return fetch(githubConfig.oauthProxy + '/api/config/assignments', {
+            headers: { 'Authorization': 'Bearer ' + entraToken }
+        });
+    }).then(function (r) {
+        if (!r || !r.ok) return null;
+        return r.json();
+    }).then(function (data) {
+        if (data && data.value && data.value.assignments) {
+            assignments = data.value.assignments;
+        } else {
+            assignments = [];
+        }
+    }).catch(function () { assignments = []; });
+}
+
+function renderAssignments() {
+    var tbody = document.getElementById('assignmentsBody');
+    var noMsg = document.getElementById('noAssignments');
+    var table = document.getElementById('assignmentsTable');
+    tbody.innerHTML = '';
+    if (assignments.length === 0) {
+        table.classList.add('hidden');
+        noMsg.classList.remove('hidden');
+        return;
+    }
+    table.classList.remove('hidden');
+    noMsg.classList.add('hidden');
+    assignments.forEach(function (a, i) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+            '<td>' + escapeHtml(a.target) + '</td>' +
+            '<td>' + escapeHtml(a.taskSequence || 'default.json') + '</td>' +
+            '<td><button class="btn-remove-assign" data-idx="' + i + '" title="Remove">&times;</button></td>';
+        tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('.btn-remove-assign').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var idx = parseInt(this.getAttribute('data-idx'), 10);
+            assignments.splice(idx, 1);
+            renderAssignments();
+        });
+    });
+}
+
+document.getElementById('btnAssignments').addEventListener('click', function () {
+    loadAssignments().then(function () {
+        renderAssignments();
+        document.getElementById('assignmentsDialog').classList.remove('hidden');
+    });
+});
+
+document.getElementById('btnAssignmentsClose').addEventListener('click', function () {
+    document.getElementById('assignmentsDialog').classList.add('hidden');
+});
+
+document.getElementById('btnAddAssignment').addEventListener('click', function () {
+    var valueEl = document.getElementById('assignTargetValue');
+    var tsPathEl = document.getElementById('assignTsPath');
+    var target = valueEl.value.trim();
+    var tsPath = tsPathEl.value.trim() || 'default.json';
+    if (!target) { alert('Please enter an Entra group Object ID.'); return; }
+    /* Validate GUID format */
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(target)) {
+        alert('Invalid format. Please enter a valid Object ID (GUID).');
+        return;
+    }
+    /* Sanitize task sequence path -- filename only, no directory traversal */
+    tsPath = tsPath.replace(/\\/g, '/').split('/').pop();
+    if (!tsPath || !/\.json$/i.test(tsPath)) { tsPath = 'default.json'; }
+    /* Check for duplicate */
+    var exists = assignments.some(function (a) { return a.target === target; });
+    if (exists) { alert('An assignment for this group already exists.'); return; }
+    assignments.push({ target: target, taskSequence: tsPath });
+    valueEl.value = '';
+    renderAssignments();
+});
+
+document.getElementById('btnAssignmentsSave').addEventListener('click', async function () {
+    if (!githubConfig.oauthProxy) {
+        alert('OAuth proxy is not configured. Cannot save assignments.');
+        return;
+    }
+
+    var btn = this;
+    var origLabel = btn.innerHTML;
+    btn.textContent = '\u23F3 Saving\u2026';
+    btn.disabled = true;
+
+    try {
+        var entraToken = await getEntraAccessToken();
+        if (!entraToken) {
+            throw new Error('Could not acquire an Entra ID token. Please sign in again.');
+        }
+
+        var data = { schemaVersion: '1.0', assignments: assignments };
+        var json = JSON.stringify(data, null, 4);
+
+        var putResp = await fetch(githubConfig.oauthProxy + '/api/config/assignments', {
+            method: 'PUT',
+            headers: {
+                'Authorization': 'Bearer ' + entraToken,
+                'Content-Type': 'application/json'
+            },
+            body: json
+        });
+
+        if (!putResp.ok) {
+            var errBody = await putResp.json().catch(function () { return {}; });
+            throw new Error(errBody.error_description || 'Save failed (HTTP ' + putResp.status + ')');
+        }
+
+        btn.textContent = '\u2705 Saved';
+        setTimeout(function () { btn.innerHTML = origLabel; }, 2000);
+    } catch (err) {
+        alert('Save failed:\n' + err.message);
+        btn.innerHTML = origLabel;
+    } finally {
+        btn.disabled = false;
+    }
+});
+
 /* ── MSAL Authentication Gate ─────────────────────────────────────── */
 (function initAuth() {
     const loginOverlay  = document.getElementById('loginOverlay');
@@ -2776,6 +2922,7 @@ function updateBreadcrumb(name) {
                 cache: { cacheLocation: 'sessionStorage' }
             };
             const msalApp = new msal.PublicClientApplication(msalConfig);
+            msalInstance = msalApp;
 
             /* MSAL v4+ requires explicit initialisation before any API call. */
             msalApp.initialize().then(() => {
