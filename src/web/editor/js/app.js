@@ -1564,9 +1564,9 @@ document.getElementById('btnSave').addEventListener('click', async () => {
     try {
         const json = JSON.stringify(taskSequence, null, 2) + '\n';
         /* Use tracked file path for existing files, or derive from task sequence name for new ones */
-        var path = currentFilePath;
+        let path = currentFilePath;
         if (!path) {
-            var safeName = (taskSequence.name || 'tasksequence').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 60);
+            const safeName = (taskSequence.name || 'tasksequence').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 60);
             path = 'resources/task-sequence/' + safeName + '.json';
         }
         const apiBase = 'https://api.github.com/repos/' + encodeURIComponent(githubConfig.owner) + '/' + encodeURIComponent(githubConfig.repo) + '/contents/' + path;
@@ -1578,16 +1578,16 @@ document.getElementById('btnSave').addEventListener('click', async () => {
             sessionStorage.removeItem('nova_github_token');
             throw new Error('Invalid or expired GitHub token. Please try saving again.');
         }
-        var existingSha = null;
+        let existingSha = null;
         if (getResp.ok) {
-            var fileData = await getResp.json();
+            const fileData = await getResp.json();
             existingSha = fileData.sha;
         } else if (getResp.status !== 404) {
             throw new Error('Failed to read file from GitHub (HTTP ' + getResp.status + ')');
         }
 
         /* Create or update file */
-        var putBody = {
+        const putBody = {
             message: (existingSha ? 'Update ' : 'Create ') + path.split('/').pop() + ' via Nova Editor',
             content: toBase64(json)
         };
