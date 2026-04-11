@@ -110,3 +110,51 @@ Describe 'Build-WinPE' {
 }
 
 # Confirm-FileIntegrity tests have moved to Nova.Integrity.Tests.ps1
+
+Describe 'Invoke-RepoDownload' {
+    It 'is defined and accepts expected parameters' {
+        $cmd = Get-Command Invoke-RepoDownload -ErrorAction SilentlyContinue
+        $cmd | Should -Not -BeNullOrEmpty
+        $cmd.Parameters.Keys | Should -Contain 'RelativePath'
+        $cmd.Parameters.Keys | Should -Contain 'OutFile'
+        $cmd.Parameters.Keys | Should -Contain 'AllowFallback'
+    }
+
+    It 'RelativePath is mandatory' {
+        $cmd = Get-Command Invoke-RepoDownload
+        $p = $cmd.Parameters['RelativePath']
+        $p.Attributes | Where-Object {
+            $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory
+        } | Should -Not -BeNullOrEmpty
+    }
+
+    It 'OutFile is mandatory' {
+        $cmd = Get-Command Invoke-RepoDownload
+        $p = $cmd.Parameters['OutFile']
+        $p.Attributes | Where-Object {
+            $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory
+        } | Should -Not -BeNullOrEmpty
+    }
+
+    It 'AllowFallback is a switch parameter' {
+        $cmd = Get-Command Invoke-RepoDownload
+        $cmd.Parameters['AllowFallback'].SwitchParameter | Should -BeTrue
+    }
+}
+
+Describe 'Invoke-RepoRestMethod' {
+    It 'is defined and accepts expected parameters' {
+        $cmd = Get-Command Invoke-RepoRestMethod -ErrorAction SilentlyContinue
+        $cmd | Should -Not -BeNullOrEmpty
+        $cmd.Parameters.Keys | Should -Contain 'RelativePath'
+        $cmd.Parameters.Keys | Should -Contain 'AllowFallback'
+    }
+
+    It 'RelativePath is mandatory' {
+        $cmd = Get-Command Invoke-RepoRestMethod
+        $p = $cmd.Parameters['RelativePath']
+        $p.Attributes | Where-Object {
+            $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory
+        } | Should -Not -BeNullOrEmpty
+    }
+}

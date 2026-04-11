@@ -42,6 +42,11 @@ function Confirm-FileIntegrity {
                                 delay and retries the check once.
     .PARAMETER RetryDelaySeconds  Seconds to wait before the retry (default 5).
     .PARAMETER NoCacheHeaders     Headers hashtable for cache-busting CDN requests.
+    .PARAMETER ProxyBaseUrl    Base URL of the content proxy (e.g. https://proxy.example.com).
+                               When set with ProxyHeaders, the manifest is fetched from the
+                               proxy instead of raw.githubusercontent.com.
+    .PARAMETER ProxyHeaders    Headers hashtable for authenticated proxy requests.
+                               Must include the Authorization header with a bearer token.
     .PARAMETER GitHubUser   GitHub account that hosts the Nova repository.
     .PARAMETER GitHubRepo   Repository name.
     .PARAMETER GitHubBranch Branch to fetch the hash manifest from.
@@ -64,6 +69,10 @@ function Confirm-FileIntegrity {
 
         [hashtable]$NoCacheHeaders,
 
+        [string]$ProxyBaseUrl,
+
+        [hashtable]$ProxyHeaders,
+
         [string]$GitHubUser = 'araduti',
         [string]$GitHubRepo = 'Nova',
         [string]$GitHubBranch = 'main'
@@ -73,9 +82,14 @@ function Confirm-FileIntegrity {
         throw "File not found for integrity check: $Path"
     }
 
-    $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
-    $restParams = @{ Uri = $hashesUrl; UseBasicParsing = $true; ErrorAction = 'Stop'; TimeoutSec = 15 }
-    if ($NoCacheHeaders) { $restParams['Headers'] = $NoCacheHeaders }
+    if ($ProxyBaseUrl -and $ProxyHeaders) {
+        $hashesUrl = "$($ProxyBaseUrl.TrimEnd('/'))/api/repo/config/hashes.json"
+        $restParams = @{ Uri = $hashesUrl; UseBasicParsing = $true; ErrorAction = 'Stop'; TimeoutSec = 15; Headers = $ProxyHeaders }
+    } else {
+        $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
+        $restParams = @{ Uri = $hashesUrl; UseBasicParsing = $true; ErrorAction = 'Stop'; TimeoutSec = 15 }
+        if ($NoCacheHeaders) { $restParams['Headers'] = $NoCacheHeaders }
+    }
 
     # Load manifest if not supplied -- fail closed if unavailable
     if (-not $HashesJson) {

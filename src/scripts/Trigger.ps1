@@ -11,6 +11,7 @@ param(
     [string] $GitHubRepo      = 'Nova',
     [ValidateNotNullOrEmpty()]
     [string] $GitHubBranch    = 'main',
+    [string] $ProxyBaseUrl    = '',
     [ValidateNotNullOrEmpty()]
     [string] $WorkDir         = 'C:\Nova',
     [string] $WindowsISOUrl   = '',
@@ -101,6 +102,83 @@ $script:WimArchIntMap = @{ 0 = 'x86'; 5 = 'arm'; 9 = 'amd64'; 12 = 'arm64' }
 # Cache-Control max-age returned by GitHub).  This caused failures on devices
 # that had previously fetched unsigned script versions.
 $script:NoCacheHeaders = @{ 'Cache-Control' = 'no-cache' }
+
+# Content-proxy state (populated after authentication when $ProxyBaseUrl is set).
+$script:ProxyBaseUrl  = $null
+$script:ProxyHeaders  = $null
+
+# ── Repo download helpers ──────────────────────────────────────────────────────
+function Invoke-RepoDownload {
+    <#
+    .SYNOPSIS  Downloads a repo-relative file from GitHub or the content proxy.
+    .DESCRIPTION
+        When $script:ProxyBaseUrl is set and $script:ProxyHeaders is available,
+        downloads via the authenticated content proxy (GET /api/repo/{path}).
+        Otherwise falls back to raw.githubusercontent.com (public repo path).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RelativePath,   # e.g. 'src/scripts/Bootstrap.ps1'
+
+        [Parameter(Mandatory)]
+        [string]$OutFile,
+
+        [switch]$AllowFallback   # If proxy fails, fall back to public URL
+    )
+
+    # Try proxy first when configured
+    if ($script:ProxyBaseUrl -and $script:ProxyHeaders) {
+        $proxyUrl = "$($script:ProxyBaseUrl.TrimEnd('/'))/api/repo/$RelativePath"
+        try {
+            # 30s timeout -- file downloads may be larger than JSON payloads
+            Invoke-WebRequest -Uri $proxyUrl -OutFile $OutFile -UseBasicParsing `
+                -Headers $script:ProxyHeaders -ErrorAction Stop -TimeoutSec 30
+            return
+        } catch {
+            if (-not $AllowFallback) {
+                throw "Content proxy download failed for $RelativePath from ${proxyUrl}: $_"
+            }
+            Write-Verbose "Proxy download failed for $RelativePath, falling back to public URL: $_"
+        }
+    }
+
+    # Public GitHub fallback
+    $url = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/$RelativePath"
+    Invoke-WebRequest -Uri $url -OutFile $OutFile -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop -TimeoutSec 30
+}
+
+function Invoke-RepoRestMethod {
+    <#
+    .SYNOPSIS  Fetches a repo-relative JSON file from GitHub or the content proxy.
+    .DESCRIPTION
+        Like Invoke-RepoDownload but returns parsed content (for JSON endpoints).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$RelativePath,
+
+        [switch]$AllowFallback
+    )
+
+    if ($script:ProxyBaseUrl -and $script:ProxyHeaders) {
+        $proxyUrl = "$($script:ProxyBaseUrl.TrimEnd('/'))/api/repo/$RelativePath"
+        try {
+            # 15s timeout -- JSON metadata responses are small
+            return (Invoke-RestMethod -Uri $proxyUrl -UseBasicParsing `
+                -Headers $script:ProxyHeaders -ErrorAction Stop -TimeoutSec 15)
+        } catch {
+            if (-not $AllowFallback) {
+                throw "Content proxy request failed for $RelativePath from ${proxyUrl}: $_"
+            }
+            Write-Verbose "Proxy request failed for $RelativePath, falling back to public URL: $_"
+        }
+    }
+
+    $url = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/$RelativePath"
+    return (Invoke-RestMethod -Uri $url -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop -TimeoutSec 15)
+}
 
 # ── Import shared modules ──────────────────────────────────────────────────────
 $script:ModulesRoot = if ($PSScriptRoot -and (Test-Path "$PSScriptRoot\..\modules")) {
@@ -698,10 +776,9 @@ function Build-WinPE {
             # matching the pattern used for Bootstrap.ps1 and Nova.ps1 above.
             $null = New-Item -Path $customDest -ItemType Directory -Force
             foreach ($f in $autopilotFiles) {
-                $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/autopilot/$f"
                 $dest = Join-Path $customDest $f
                 try {
-                    Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop
+                    Invoke-RepoDownload -RelativePath "resources/autopilot/$f" -OutFile $dest
                     $staged++
                 } catch {
                     Write-Verbose "Autopilot file '$f' not available from GitHub: $_"
@@ -722,18 +799,16 @@ function Build-WinPE {
         # hash check fails, retry once after a short delay to handle propagation.
 
         # ── 5a. Embed Bootstrap.ps1 ───────────────────────────────────────────
-        $bootstrapUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/scripts/Bootstrap.ps1"
         $bootstrapDest = Join-Path $paths.MountDir 'Windows\System32\Bootstrap.ps1'
-        Write-Step "Fetching Bootstrap.ps1 from $bootstrapUrl"
-        Invoke-WebRequest -Uri $bootstrapUrl -OutFile $bootstrapDest -UseBasicParsing -Headers $script:NoCacheHeaders
+        Write-Step 'Fetching Bootstrap.ps1'
+        Invoke-RepoDownload -RelativePath 'src/scripts/Bootstrap.ps1' -OutFile $bootstrapDest
 
         # ── 5b. Pre-stage Nova.ps1 ──────────────────────────────────────
         # Embedding Nova.ps1 eliminates the internet dependency at boot time.
         # Bootstrap.ps1 will use this local copy instead of downloading it.
-        $novaUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/scripts/Nova.ps1"
         $novaDest = Join-Path $paths.MountDir 'Windows\System32\Nova.ps1'
-        Write-Step "Fetching Nova.ps1 from $novaUrl"
-        Invoke-WebRequest -Uri $novaUrl -OutFile $novaDest -UseBasicParsing -Headers $script:NoCacheHeaders
+        Write-Step 'Fetching Nova.ps1'
+        Invoke-RepoDownload -RelativePath 'src/scripts/Nova.ps1' -OutFile $novaDest
 
         # ── 5c. Stage shared PowerShell modules ────────────────────────────────
         # Copy the src/modules/ directory so that Bootstrap.ps1 and Nova.ps1 can
@@ -755,10 +830,9 @@ function Build-WinPE {
                 $modDir = Join-Path $modulesDest $mod
                 $null = New-Item -Path $modDir -ItemType Directory -Force
                 foreach ($ext in $moduleFiles) {
-                    $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/modules/$mod/$mod$ext"
                     $dest = Join-Path $modDir "$mod$ext"
                     try {
-                        Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop
+                        Invoke-RepoDownload -RelativePath "src/modules/$mod/$mod$ext" -OutFile $dest
                     } catch {
                         Write-Warn "Failed to download module file $mod$ext -- $($_.Exception.Message)"
                     }
@@ -773,20 +847,26 @@ function Build-WinPE {
         # This detects corruption and CDN inconsistencies but does not protect
         # against a compromised repository.  For tamper protection, the manifest
         # would need to be cryptographically signed or hosted separately.
-        $hashesUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
         $hashesJson = $null
         try {
-            $hashesJson = Invoke-RestMethod -Uri $hashesUrl -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop -TimeoutSec 15
+            $hashesJson = Invoke-RepoRestMethod -RelativePath 'config/hashes.json'
             Write-Success 'Integrity manifest loaded.'
         } catch {
-            throw "Could not load integrity manifest from $hashesUrl -- aborting build: $_"
+            throw "Could not load integrity manifest -- aborting build: $_"
         }
 
         # ── 5e. Verify script integrity (with CDN retry) ─────────────────────
-        Confirm-FileIntegrity -Path $bootstrapDest -RelativeName 'src/scripts/Bootstrap.ps1' `
-            -HashesJson $hashesJson -RetryOnMismatch -NoCacheHeaders $script:NoCacheHeaders
-        Confirm-FileIntegrity -Path $novaDest -RelativeName 'src/scripts/Nova.ps1' `
-            -HashesJson $hashesJson -RetryOnMismatch -NoCacheHeaders $script:NoCacheHeaders
+        $integrityParams = @{
+            HashesJson      = $hashesJson
+            RetryOnMismatch = $true
+            NoCacheHeaders  = $script:NoCacheHeaders
+        }
+        if ($script:ProxyBaseUrl -and $script:ProxyHeaders) {
+            $integrityParams['ProxyBaseUrl']  = $script:ProxyBaseUrl
+            $integrityParams['ProxyHeaders']  = $script:ProxyHeaders
+        }
+        Confirm-FileIntegrity -Path $bootstrapDest -RelativeName 'src/scripts/Bootstrap.ps1' @integrityParams
+        Confirm-FileIntegrity -Path $novaDest -RelativeName 'src/scripts/Nova.ps1' @integrityParams
 
         # ── 5f. Verify module integrity (iex scenario) ────────────────────────
         if (-not ($modulesSrc -and (Test-Path $modulesSrc))) {
@@ -796,8 +876,7 @@ function Build-WinPE {
                     $modFile = Join-Path $modulesDest "$mod\$mod$ext"
                     $relName = "src/modules/$mod/$mod$ext"
                     if (Test-Path $modFile) {
-                        Confirm-FileIntegrity -Path $modFile -RelativeName $relName `
-                            -HashesJson $hashesJson -RetryOnMismatch -NoCacheHeaders $script:NoCacheHeaders
+                        Confirm-FileIntegrity -Path $modFile -RelativeName $relName @integrityParams
                     }
                 }
             }
@@ -842,10 +921,9 @@ function Build-WinPE {
             Copy-Item -Path "$progressSrc\*" -Destination $progressDest -Recurse -Force
             Write-Success 'HTML Progress UI embedded from local repo.'
         } else {
-            $progressUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/web/progress/index.html"
             $progressFile = Join-Path $progressDest 'index.html'
             try {
-                Invoke-WebRequest -Uri $progressUrl -OutFile $progressFile -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop
+                Invoke-RepoDownload -RelativePath 'src/web/progress/index.html' -OutFile $progressFile
                 Write-Success 'HTML Progress UI downloaded and embedded.'
             } catch {
                 Write-Warn "HTML Progress UI not available (non-fatal): $_"
@@ -864,10 +942,9 @@ function Build-WinPE {
             Copy-Item -Path "$uiSrc\*" -Destination $uiDest -Recurse -Force
             Write-Success 'Nova-UI embedded from local repo.'
         } else {
-            $uiUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/web/nova-ui/index.html"
             $uiFile = Join-Path $uiDest 'index.html'
             try {
-                Invoke-WebRequest -Uri $uiUrl -OutFile $uiFile -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop
+                Invoke-RepoDownload -RelativePath 'src/web/nova-ui/index.html' -OutFile $uiFile
                 Write-Success 'Nova-UI downloaded and embedded.'
             } catch {
                 Write-Warn "Nova-UI not available (non-fatal): $_"
@@ -1076,6 +1153,26 @@ try {
     if ($authResult.GraphAccessToken) {
         $script:GraphAccessToken = $authResult.GraphAccessToken
         Write-Detail 'Graph access token acquired'
+    }
+
+    # ── Configure content proxy (private repo support) ───────────────────
+    # If $ProxyBaseUrl was not explicitly provided, auto-detect from auth config.
+    if (-not $ProxyBaseUrl -and $authResult.AuthConfig -and
+        $authResult.AuthConfig.PSObject.Properties['githubOAuthProxy'] -and
+        $authResult.AuthConfig.githubOAuthProxy) {
+        $ProxyBaseUrl = $authResult.AuthConfig.githubOAuthProxy
+    }
+    if ($ProxyBaseUrl) {
+        $script:ProxyBaseUrl = $ProxyBaseUrl.TrimEnd('/')
+        if ($script:GraphAccessToken) {
+            $script:ProxyHeaders = @{
+                'Authorization' = "Bearer $($script:GraphAccessToken)"
+            }
+            Write-Detail "Content proxy configured: $script:ProxyBaseUrl"
+        } else {
+            Write-Detail 'Content proxy URL set but no access token available -- using public downloads'
+            $script:ProxyBaseUrl = $null
+        }
     }
 
     # ── 1. Detect architecture ────────────────────────────────────────────────
