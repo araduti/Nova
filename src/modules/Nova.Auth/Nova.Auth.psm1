@@ -188,6 +188,13 @@ function _EdgeAppAuth {
         }
     }
 
+    # ── Clean up stale singleton files to prevent hand-off to a zombie instance ──
+    if (Test-Path $EdgeDataDir) {
+        foreach ($f in @('lockfile', 'SingletonLock', 'SingletonSocket', 'SingletonCookie')) {
+            try { Remove-Item (Join-Path $EdgeDataDir $f) -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+        }
+    }
+
     # ── Launch Edge in --app mode ──────────────────────────────────────────
     if ($WriteLog) { & $WriteLog "Launching Edge --app for auth popup" }
     $edgeArgs = @(
@@ -196,11 +203,13 @@ function _EdgeAppAuth {
         '--window-size=520,700',
         '--no-first-run',
         '--disable-fre',
+        '--inprivate',
         '--disable-features=msWebOOBE,PasswordManager',
         '--password-store=basic',
         '--disable-save-password-bubble'
     ) + $ExtraEdgeArgs
     $edgeProc = Start-Process -FilePath $EdgeExePath -ArgumentList $edgeArgs -PassThru
+    $edgeLaunchPid = if ($edgeProc) { $edgeProc.Id } else { $null }
 
     if ($UpdateUi) { & $UpdateUi @{ AuthInProgress = $true } }
 
@@ -274,10 +283,26 @@ function _EdgeAppAuth {
         # ── Clean up: stop listener and kill the Edge --app process ──────────────
         try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
 
+        # Brief pause so the user can see the sign-in result before the window disappears.
+        if ($authCode -or $authError) { Start-Sleep -Milliseconds 600 }
+
         if ($edgeProc -and -not $edgeProc.HasExited) {
             if ($WriteLog) { & $WriteLog "Closing Edge auth window (PID $($edgeProc.Id))" }
             try { $edgeProc.Kill() } catch { $null = $_ }
         }
+
+        # When Edge handed off to an existing browser process, $edgeProc is
+        # null or already exited.  Use taskkill /T on the original launch PID
+        # to kill only that process tree -- this is safe because it targets
+        # the exact PID we started and its children, not other Edge instances.
+        # If the PID already exited, taskkill simply returns a non-zero exit
+        # code which we ignore.
+        if ($edgeLaunchPid) {
+            try {
+                $null = & taskkill /PID $edgeLaunchPid /T /F 2>&1
+            } catch { $null = $_ }
+        }
+
         # Remove stale lock files so the auth data dir can be reused.
         try { Remove-Item (Join-Path $EdgeDataDir 'lockfile')      -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
         try { Remove-Item (Join-Path $EdgeDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
