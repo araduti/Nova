@@ -30,9 +30,15 @@ enabled = true
 binding = "NOVA_CONFIG"
 id = "REPLACE_WITH_NAMESPACE_ID"
 
+# Content proxy configuration — owner/repo/branch for private repo access.
+# These can also be set via Cloudflare dashboard → Settings → Variables.
+[vars]
+GITHUB_OWNER = "araduti"
+GITHUB_REPO = "Nova"
+GITHUB_BRANCH = "main"
+
 # Optional: uncomment to lock the proxy to a single browser origin.
 # You can also set this in the Cloudflare dashboard under
 # Settings → Variables & Secrets instead of hard-coding it here.
 #
-# [vars]
 # ALLOWED_ORIGIN = "https://<you>.github.io"

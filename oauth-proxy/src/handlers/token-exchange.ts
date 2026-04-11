@@ -1,8 +1,8 @@
+import { validateEntraToken } from '../auth';
 import { createGitHubAppJwt } from '../crypto';
 import type {
   CorsHeaders,
   Env,
-  GraphUser,
   InstallationToken,
   ProxyError,
   TokenExchangeResult,
@@ -63,35 +63,34 @@ export async function handleTokenExchange(
     );
   }
 
-  /* ── Validate the Entra token by calling Microsoft Graph /me ──── */
-  let graphUser: GraphUser;
-  try {
-    const graphResp = await fetch('https://graph.microsoft.com/v1.0/me', {
-      headers: { Authorization: 'Bearer ' + entraToken },
-    });
-    if (!graphResp.ok) {
-      let graphErr = '';
-      try {
-        graphErr = await graphResp.text();
-      } catch {
-        /* response body unavailable */
-      }
+  /* ── Validate the Entra token via shared auth module ──────────── */
+  const validation = await validateEntraToken(entraToken, env);
+  if (!validation.valid) {
+    if (validation.tenantMismatch) {
+      return jsonResponse(
+        {
+          error: 'tenant_mismatch',
+          error_description: 'Entra token tenant does not match the configured tenant.',
+        },
+        403,
+        cors,
+      );
+    }
+    if (validation.graphStatus) {
       return jsonResponse(
         {
           error: 'invalid_token',
           error_description:
             'Entra ID token validation failed (Graph /me returned HTTP ' +
-            graphResp.status +
+            validation.graphStatus +
             '). Ensure the token has User.Read scope and is not expired.',
-          graph_status: graphResp.status,
-          graph_error: graphErr.substring(0, 500),
+          graph_status: validation.graphStatus,
+          graph_error: validation.graphError,
         },
         401,
         cors,
       );
     }
-    graphUser = (await graphResp.json()) as GraphUser;
-  } catch {
     return jsonResponse(
       {
         error: 'token_validation_error',
@@ -100,31 +99,6 @@ export async function handleTokenExchange(
       502,
       cors,
     );
-  }
-
-  /* ── Optional tenant restriction ──────────────────────────────── */
-  if (env.ENTRA_TENANT_ID) {
-    try {
-      const parts = entraToken.split('.');
-      if (parts.length === 3) {
-        const payloadB64 = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
-        const payload = JSON.parse(atob(payloadB64)) as { tid?: string };
-        if (payload.tid && payload.tid !== env.ENTRA_TENANT_ID) {
-          return jsonResponse(
-            {
-              error: 'tenant_mismatch',
-              error_description: 'Entra token tenant does not match the configured tenant.',
-            },
-            403,
-            cors,
-          );
-        }
-      }
-    } catch {
-      /* JWT structure invalid — Graph already validated the token so
-         this is a non-standard token format.  Log and skip tenant check. */
-      console.warn('[Nova-OAuth-Proxy] Could not decode Entra JWT for tenant check');
-    }
   }
 
   /* ── Create a GitHub App JWT ──────────────────────────────────── */
@@ -174,7 +148,7 @@ export async function handleTokenExchange(
       {
         token: installData.token,
         expires_at: installData.expires_at,
-        user: graphUser.displayName ?? graphUser.userPrincipalName ?? 'unknown',
+        user: validation.user ?? 'unknown',
       },
       200,
       cors,
