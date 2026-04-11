@@ -254,6 +254,7 @@ let selectedIndex = -1;
 let selectedIndices = new Set();
 let dragSrcIndex = -1;
 let githubConfig = { owner: '', repo: '', clientId: '', oauthProxy: '' };
+let currentFilePath = null;
 let dirty = false;
 let autoSaveTimer = null;
 const DRAFT_KEY = 'nova_editor_draft';
@@ -1297,6 +1298,7 @@ document.getElementById('btnSaveTemplate').addEventListener('click', () => {
 document.getElementById('btnNew').addEventListener('click', () => {
     if (!confirm('Create a new empty task sequence? Unsaved changes will be lost.')) return;
     taskSequence = { name: 'New Task Sequence', version: '1.0', description: '', steps: [] };
+    currentFilePath = null;
     $tsName.textContent = taskSequence.name;
     selectedIndex = -1;
     renderStepList();
@@ -1315,6 +1317,7 @@ $fileInput.addEventListener('change', (e) => {
             const data = JSON.parse(ev.target.result);
             if (!data.steps || !Array.isArray(data.steps)) throw new Error('Invalid task sequence: missing steps array');
             taskSequence = data;
+            currentFilePath = null;
 
             /* Fill empty unattendContent from the repo file */
             populateDefaultUnattendContent(taskSequence.steps);
@@ -1560,28 +1563,39 @@ document.getElementById('btnSave').addEventListener('click', async () => {
 
     try {
         const json = JSON.stringify(taskSequence, null, 2) + '\n';
-        const path = 'resources/task-sequence/default.json';
+        /* Use tracked file path for existing files, or derive from task sequence name for new ones */
+        var path = currentFilePath;
+        if (!path) {
+            var safeName = (taskSequence.name || 'tasksequence').replace(/[^a-zA-Z0-9_-]/g, '_').substring(0, 60);
+            path = 'resources/task-sequence/' + safeName + '.json';
+        }
         const apiBase = 'https://api.github.com/repos/' + encodeURIComponent(githubConfig.owner) + '/' + encodeURIComponent(githubConfig.repo) + '/contents/' + path;
         const headers = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github.v3+json' };
 
-        /* Get current SHA */
+        /* Try to get current SHA (may be 404 for new files) */
         const getResp = await fetch(apiBase, { headers: headers });
         if (getResp.status === 401 || getResp.status === 403) {
             sessionStorage.removeItem('nova_github_token');
             throw new Error('Invalid or expired GitHub token. Please try saving again.');
         }
-        if (!getResp.ok) throw new Error('Failed to read file from GitHub (HTTP ' + getResp.status + ')');
-        const fileData = await getResp.json();
+        var existingSha = null;
+        if (getResp.ok) {
+            var fileData = await getResp.json();
+            existingSha = fileData.sha;
+        } else if (getResp.status !== 404) {
+            throw new Error('Failed to read file from GitHub (HTTP ' + getResp.status + ')');
+        }
 
-        /* Update file */
+        /* Create or update file */
+        var putBody = {
+            message: (existingSha ? 'Update ' : 'Create ') + path.split('/').pop() + ' via Nova Editor',
+            content: toBase64(json)
+        };
+        if (existingSha) putBody.sha = existingSha;
         const putResp = await fetch(apiBase, {
             method: 'PUT',
             headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
-            body: JSON.stringify({
-                message: 'Update default.json via Nova Editor',
-                content: toBase64(json),
-                sha: fileData.sha
-            })
+            body: JSON.stringify(putBody)
         });
         if (putResp.status === 401 || putResp.status === 403) {
             sessionStorage.removeItem('nova_github_token');
@@ -1592,6 +1606,7 @@ document.getElementById('btnSave').addEventListener('click', async () => {
             throw new Error(errBody.message || 'GitHub API error (HTTP ' + putResp.status + ')');
         }
 
+        currentFilePath = path;
         btnSave.textContent = '\u2705 Saved';
         markClean();
         setTimeout(function () { btnSave.innerHTML = origLabel; }, 2000);
@@ -2596,6 +2611,7 @@ function loadDefault() {
     if (isNew) {
         /* Start with an empty task sequence */
         taskSequence = { name: 'New Task Sequence', version: '1.0', description: '', steps: [] };
+        currentFilePath = null;
         $tsName.textContent = taskSequence.name;
         updateBreadcrumb(taskSequence.name);
         selectedIndex = -1;
@@ -2621,6 +2637,7 @@ function loadDefault() {
             try {
                 var data = JSON.parse(stored);
                 if (data.steps && Array.isArray(data.steps)) {
+                    currentFilePath = null;
                     /* Also fetch the default unattend.xml */
                     fetch('../../../resources/unattend/unattend.xml')
                         .then(function (r) { if (!r.ok) throw new Error(r.statusText); return r.text(); })
@@ -2662,6 +2679,7 @@ function loadDefault() {
         }
 
         taskSequence = data;
+        currentFilePath = 'resources/task-sequence/default.json';
 
         /* Fill empty unattendContent from the repo file */
         populateDefaultUnattendContent(taskSequence.steps);
