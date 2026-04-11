@@ -27,11 +27,11 @@
     margin-bottom: 28px;
     letter-spacing: 0.5px;
 }
-.login-card .login-logo .logo-icon {
-    display: inline-block;
+.login-card .login-logo .login-logo-img {
+    height: 36px;
+    width: auto;
+    vertical-align: -6px;
     margin-right: 8px;
-    font-size: 28px;
-    vertical-align: -2px;
 }
 .login-card h2 {
     font-size: 20px;
