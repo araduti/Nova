@@ -188,6 +188,13 @@ function _EdgeAppAuth {
         }
     }
 
+    # ── Clean up stale singleton files to prevent hand-off to a zombie instance ──
+    if (Test-Path $EdgeDataDir) {
+        foreach ($f in @('lockfile', 'SingletonLock', 'SingletonSocket', 'SingletonCookie')) {
+            try { Remove-Item (Join-Path $EdgeDataDir $f) -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+        }
+    }
+
     # ── Launch Edge in --app mode ──────────────────────────────────────────
     if ($WriteLog) { & $WriteLog "Launching Edge --app for auth popup" }
     $edgeArgs = @(
@@ -196,6 +203,7 @@ function _EdgeAppAuth {
         '--window-size=520,700',
         '--no-first-run',
         '--disable-fre',
+        '--inprivate',
         '--disable-features=msWebOOBE,PasswordManager',
         '--password-store=basic',
         '--disable-save-password-bubble'
@@ -274,10 +282,33 @@ function _EdgeAppAuth {
         # ── Clean up: stop listener and kill the Edge --app process ──────────────
         try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
 
+        # Brief pause so the user can see the sign-in result before the window disappears.
+        if ($authCode -or $authError) { Start-Sleep -Milliseconds 600 }
+
+        $processKilled = $false
         if ($edgeProc -and -not $edgeProc.HasExited) {
             if ($WriteLog) { & $WriteLog "Closing Edge auth window (PID $($edgeProc.Id))" }
-            try { $edgeProc.Kill() } catch { $null = $_ }
+            try { $edgeProc.Kill(); $processKilled = $true } catch { $null = $_ }
         }
+
+        # When Edge handed off to an existing browser process (common on full
+        # Windows), $edgeProc is either null or already exited.  window.close()
+        # also fails because the OAuth redirects create multiple history entries.
+        # Find Edge processes whose command line references the auth-specific
+        # user-data-dir and terminate them so the auth window actually closes.
+        if (-not $processKilled) {
+            try {
+                Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($EdgeDataDir) } |
+                    ForEach-Object {
+                        if ($WriteLog) { & $WriteLog "Closing handed-off Edge process (PID $($_.ProcessId))" }
+                        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+                    }
+            } catch {
+                if ($WriteLog) { & $WriteLog "CIM Edge cleanup: $_" }
+            }
+        }
+
         # Remove stale lock files so the auth data dir can be reused.
         try { Remove-Item (Join-Path $EdgeDataDir 'lockfile')      -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
         try { Remove-Item (Join-Path $EdgeDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
