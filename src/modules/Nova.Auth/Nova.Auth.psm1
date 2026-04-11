@@ -217,13 +217,13 @@ function _EdgeAppAuth {
         if ($edgeProc -and $edgeProc.HasExited) {
             if ($EdgeExitGracePeriod -gt 0) {
                 # Full Windows: Edge may hand off to an existing browser
-                # process, causing the initial process to exit immediately.
-                # Only treat as cancellation after the grace period.
-                if (([datetime]::UtcNow - $edgeLaunchTime).TotalSeconds -gt $EdgeExitGracePeriod) {
-                    if ($WriteLog) { & $WriteLog "Edge auth window was closed by user (after grace period)." }
-                    $cancelled = $true
-                    break
-                }
+                # process, causing the launched process to exit immediately
+                # while the sign-in window stays open in the existing browser.
+                # Stop monitoring the process and keep waiting for the HTTP
+                # listener callback, which will fire when the user completes
+                # sign-in regardless of which Edge process renders the window.
+                if ($WriteLog) { & $WriteLog "Edge process exited (likely handed off to existing browser). Waiting for sign-in callback..." }
+                $edgeProc = $null
             } else {
                 if ($WriteLog) { & $WriteLog "Edge auth window was closed by user." }
                 $cancelled = $true
