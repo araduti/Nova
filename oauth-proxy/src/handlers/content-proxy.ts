@@ -79,9 +79,9 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 /**
- * Validate and normalise a repo-relative path.
+ * Validate and normalize a repo-relative path.
  *
- * Returns the normalised path or null if the path is invalid,
+ * Returns the normalized path or null if the path is invalid,
  * contains traversal sequences, or is not in the whitelist.
  */
 export function validateRepoPath(rawPath: string): string | null {
@@ -100,20 +100,20 @@ export function validateRepoPath(rawPath: string): string | null {
   const segments = path.split('/');
   if (segments.some((s) => s === '..' || s === '.' || s === '')) return null;
 
-  // 4. Reconstruct normalised path
-  const normalised = segments.join('/');
+  // 4. Reconstruct normalized path
+  const normalized = segments.join('/');
 
   // 5. Check prefix whitelist
-  const prefixOk = ALLOWED_PREFIXES.some((p) => normalised.startsWith(p));
+  const prefixOk = ALLOWED_PREFIXES.some((p) => normalized.startsWith(p));
   if (!prefixOk) return null;
 
   // 6. Check extension whitelist
-  const lastDot = normalised.lastIndexOf('.');
+  const lastDot = normalized.lastIndexOf('.');
   if (lastDot === -1) return null;
-  const ext = normalised.substring(lastDot).toLowerCase();
+  const ext = normalized.substring(lastDot).toLowerCase();
   if (!ALLOWED_EXTENSIONS.has(ext)) return null;
 
-  return normalised;
+  return normalized;
 }
 
 /**

@@ -28,7 +28,7 @@ function jsonResponse(
  *    token is genuine and the caller is authenticated).
  * 3. If ENTRA_TENANT_ID is set we also verify the token's `tid` claim.
  * 4. We create a short-lived GitHub App installation access token scoped
- *    to `contents:write` -- sufficient for pushing deployment reports.
+ *    to `contents:write` — sufficient for pushing deployment reports.
  * 5. Return the installation token to the caller.
  */
 export async function handleTokenExchange(

@@ -68,7 +68,7 @@ export async function validateEntraToken(
             return { valid: false, user: null, tenantMismatch: true };
           }
         } catch {
-          /* Cannot decode -- Graph validated the token, skip tenant check. */
+          /* Cannot decode — Graph validated the token, skip tenant check. */
         }
       }
     }
