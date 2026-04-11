@@ -1,3 +1,4 @@
+import { validateEntraToken } from '../auth';
 import type { CorsHeaders, Env } from '../types';
 
 /**
@@ -6,6 +7,12 @@ import type { CorsHeaders, Env } from '../types';
  * This whitelist prevents callers from writing arbitrary keys.
  */
 const ALLOWED_KEYS = new Set(['assignments', 'alerts']);
+
+/**
+ * Reserved keys used internally by the Worker.
+ * These cannot be read or written via the config API.
+ */
+const RESERVED_KEYS = new Set(['_gh_install_token']);
 
 /** Maximum config value size in bytes (64 KB). */
 const MAX_VALUE_SIZE = 65_536;
@@ -20,45 +27,6 @@ function jsonResponse(
     status,
     headers: { ...cors, 'Content-Type': 'application/json' },
   });
-}
-
-/**
- * Validate an Entra ID access token by calling Microsoft Graph /me.
- *
- * Returns the user display name on success, or null on failure.
- */
-async function validateEntraToken(
-  token: string,
-  env: Env,
-): Promise<string | null> {
-  try {
-    const resp = await fetch('https://graph.microsoft.com/v1.0/me', {
-      headers: { Authorization: 'Bearer ' + token },
-    });
-    if (!resp.ok) return null;
-
-    const user = (await resp.json()) as { displayName?: string; userPrincipalName?: string };
-
-    /* Optional tenant restriction */
-    if (env.ENTRA_TENANT_ID) {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payloadB64 = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
-        try {
-          const payload = JSON.parse(atob(payloadB64)) as { tid?: string };
-          if (payload.tid && payload.tid !== env.ENTRA_TENANT_ID) {
-            return null;
-          }
-        } catch {
-          /* Cannot decode — Graph validated the token, skip tenant check. */
-        }
-      }
-    }
-
-    return user.displayName ?? user.userPrincipalName ?? 'authenticated';
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -81,7 +49,7 @@ export async function handleConfigStore(
 
   const key = match[1]!;
 
-  if (!ALLOWED_KEYS.has(key)) {
+  if (!ALLOWED_KEYS.has(key) || RESERVED_KEYS.has(key)) {
     return jsonResponse(
       { error: 'invalid_key', error_description: `Config key '${key}' is not allowed.` },
       400,
@@ -112,8 +80,8 @@ export async function handleConfigStore(
     );
   }
 
-  const user = await validateEntraToken(token, env);
-  if (!user) {
+  const validation = await validateEntraToken(token, env);
+  if (!validation.valid) {
     return jsonResponse(
       { error: 'invalid_token', error_description: 'Entra ID token validation failed.' },
       401,
@@ -167,7 +135,7 @@ export async function handleConfigStore(
     }
 
     await env.NOVA_CONFIG.put(key, body);
-    return jsonResponse({ key, saved: true, user }, 200, cors);
+    return jsonResponse({ key, saved: true, user: validation.user }, 200, cors);
   }
 
   return jsonResponse(

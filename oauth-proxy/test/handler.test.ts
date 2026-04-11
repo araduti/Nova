@@ -38,9 +38,18 @@ describe('worker fetch handler', () => {
     expect(resp.headers.get('Access-Control-Allow-Origin')).toBe('https://test.example.com');
   });
 
-  it('returns 405 for GET requests', async () => {
+  it('returns 405 for GET requests to non-GET endpoints', async () => {
     const resp = await worker.fetch(
       fakeRequest('/', { method: 'GET' }),
+      {} as Env,
+      {} as ExecutionContext,
+    );
+    expect(resp.status).toBe(405);
+  });
+
+  it('returns 405 for POST to /api/repo/', async () => {
+    const resp = await worker.fetch(
+      fakeRequest('/api/repo/src/scripts/Trigger.ps1', { method: 'POST' }),
       {} as Env,
       {} as ExecutionContext,
     );

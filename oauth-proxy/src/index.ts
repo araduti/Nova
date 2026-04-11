@@ -9,30 +9,41 @@
  * token obtained during sign-in instead of requiring a separate GitHub
  * Personal Access Token.
  *
+ * Additionally, it serves as a content proxy for private GitHub repo
+ * access, allowing Entra-authenticated clients to fetch scripts,
+ * modules, and config files without needing direct GitHub credentials.
+ *
  * Allowed endpoints (everything else returns 404):
  *   POST /login/device/code          → GitHub Device Flow (public, no secret)
  *   POST /login/oauth/access_token   → GitHub Device Flow token poll
  *   POST /api/token-exchange          → Entra ID → GitHub installation token
  *   GET  /api/config/:key            → Read config from KV (Entra-authenticated)
  *   PUT  /api/config/:key            → Write config to KV (Entra-authenticated)
+ *   GET  /api/repo/:path             → Content proxy (Entra-authenticated)
  *
  * Security:
  *   - IP-based rate limiting (60 req/min per IP, sliding window)
  *   - Optional origin locking via ALLOWED_ORIGIN
  *   - CORS preflight handling
+ *   - Path whitelist and extension whitelist on content proxy
+ *   - SSRF protection on upstream URL construction
  *
  * Environment variables (Cloudflare dashboard → Settings → Variables):
  *   ALLOWED_ORIGIN              – (optional) Lock to a single origin.
- *   GITHUB_APP_ID               – (required for /api/token-exchange)
- *   GITHUB_APP_PRIVATE_KEY      – (required for /api/token-exchange) PEM key
- *                                  (PKCS#1 or PKCS#8).
- *   GITHUB_APP_INSTALLATION_ID  – (required for /api/token-exchange)
+ *   GITHUB_APP_ID               – (required for /api/token-exchange, /api/repo/)
+ *   GITHUB_APP_PRIVATE_KEY      – (required for /api/token-exchange, /api/repo/)
+ *                                  PEM key (PKCS#1 or PKCS#8).
+ *   GITHUB_APP_INSTALLATION_ID  – (required for /api/token-exchange, /api/repo/)
  *   ENTRA_TENANT_ID             – (optional) Restrict accepted Entra tokens
  *                                  to a specific tenant.
+ *   GITHUB_OWNER                – (optional) Repository owner (default: araduti).
+ *   GITHUB_REPO                 – (optional) Repository name (default: Nova).
+ *   GITHUB_BRANCH               – (optional) Branch to serve (default: main).
  */
 
 import { corsHeaders, FALLBACK_CORS } from './cors';
 import { handleConfigStore } from './handlers/config-store';
+import { handleContentProxy } from './handlers/content-proxy';
 import { handleDeviceFlow } from './handlers/device-flow';
 import { handleTokenExchange } from './handlers/token-exchange';
 import { RateLimiter, DEFAULT_RATE_LIMIT, rateLimitHeaders } from './rate-limit';
@@ -98,6 +109,15 @@ export default {
         }
         const configResponse = await handleConfigStore(request, env, { ...cors, ...rlHeaders });
         if (configResponse) return configResponse;
+      }
+
+      /* ── Content proxy endpoint (GET) ────────────────────────── */
+      if (url.pathname.startsWith('/api/repo/')) {
+        if (request.method !== 'GET') {
+          return new Response('Method Not Allowed', { status: 405, headers: { ...cors, ...rlHeaders } });
+        }
+        const contentResponse = await handleContentProxy(request, env, { ...cors, ...rlHeaders });
+        if (contentResponse) return contentResponse;
       }
 
       /* Only POST is accepted for remaining endpoints */

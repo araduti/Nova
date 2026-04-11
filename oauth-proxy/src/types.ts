@@ -4,16 +4,22 @@
 export interface Env {
   /** Lock proxy to a single browser origin (optional). */
   ALLOWED_ORIGIN?: string;
-  /** GitHub App numeric App ID (required for /api/token-exchange). */
+  /** GitHub App numeric App ID (required for /api/token-exchange and /api/repo/). */
   GITHUB_APP_ID?: string;
-  /** GitHub App PEM private key — PKCS#1 or PKCS#8 (required for /api/token-exchange). */
+  /** GitHub App PEM private key — PKCS#1 or PKCS#8 (required for /api/token-exchange and /api/repo/). */
   GITHUB_APP_PRIVATE_KEY?: string;
-  /** GitHub App installation ID (required for /api/token-exchange). */
+  /** GitHub App installation ID (required for /api/token-exchange and /api/repo/). */
   GITHUB_APP_INSTALLATION_ID?: string;
   /** Restrict accepted Entra tokens to a specific tenant (optional). */
   ENTRA_TENANT_ID?: string;
   /** KV namespace for storing configuration (assignments, alerts, etc.). */
   NOVA_CONFIG?: KVNamespace;
+  /** GitHub repository owner for the content proxy (default: 'araduti'). */
+  GITHUB_OWNER?: string;
+  /** GitHub repository name for the content proxy (default: 'Nova'). */
+  GITHUB_REPO?: string;
+  /** Git branch to serve via the content proxy (default: 'main'). */
+  GITHUB_BRANCH?: string;
 }
 
 /** JSON error body returned by the proxy. */
