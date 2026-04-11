@@ -12,6 +12,8 @@ export interface Env {
   GITHUB_APP_INSTALLATION_ID?: string;
   /** Restrict accepted Entra tokens to a specific tenant (optional). */
   ENTRA_TENANT_ID?: string;
+  /** KV namespace for storing configuration (assignments, alerts, etc.). */
+  NOVA_CONFIG?: KVNamespace;
 }
 
 /** JSON error body returned by the proxy. */

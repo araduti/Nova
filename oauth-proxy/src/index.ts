@@ -13,6 +13,8 @@
  *   POST /login/device/code          → GitHub Device Flow (public, no secret)
  *   POST /login/oauth/access_token   → GitHub Device Flow token poll
  *   POST /api/token-exchange          → Entra ID → GitHub installation token
+ *   GET  /api/config/:key            → Read config from KV (Entra-authenticated)
+ *   PUT  /api/config/:key            → Write config to KV (Entra-authenticated)
  *
  * Security:
  *   - IP-based rate limiting (60 req/min per IP, sliding window)
@@ -30,6 +32,7 @@
  */
 
 import { corsHeaders, FALLBACK_CORS } from './cors';
+import { handleConfigStore } from './handlers/config-store';
 import { handleDeviceFlow } from './handlers/device-flow';
 import { handleTokenExchange } from './handlers/token-exchange';
 import { RateLimiter, DEFAULT_RATE_LIMIT, rateLimitHeaders } from './rate-limit';
@@ -87,12 +90,20 @@ export default {
         }
       }
 
-      /* Only POST is accepted */
+      /* ── Config store endpoints (GET/PUT) ────────────────────── */
+      const url = new URL(request.url);
+      if (url.pathname.startsWith('/api/config/')) {
+        if (request.method !== 'GET' && request.method !== 'PUT') {
+          return new Response('Method Not Allowed', { status: 405, headers: { ...cors, ...rlHeaders } });
+        }
+        const configResponse = await handleConfigStore(request, env, { ...cors, ...rlHeaders });
+        if (configResponse) return configResponse;
+      }
+
+      /* Only POST is accepted for remaining endpoints */
       if (request.method !== 'POST') {
         return new Response('Method Not Allowed', { status: 405, headers: { ...cors, ...rlHeaders } });
       }
-
-      const url = new URL(request.url);
 
       /* ── Token exchange endpoint ─────────────────────────────── */
       if (url.pathname === '/api/token-exchange') {

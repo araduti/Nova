@@ -27,7 +27,7 @@ export function corsHeaders(request: Request, env: Env): CorsHeaders {
 
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Accept, Authorization',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
@@ -37,6 +37,6 @@ export function corsHeaders(request: Request, env: Env): CorsHeaders {
 /** Minimal fallback CORS headers if `corsHeaders()` itself throws. */
 export const FALLBACK_CORS: CorsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Accept',
 };

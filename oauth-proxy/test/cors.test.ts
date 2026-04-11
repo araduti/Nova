@@ -28,7 +28,7 @@ describe('corsHeaders', () => {
 
   it('includes required CORS headers', () => {
     const cors = corsHeaders(fakeRequest('https://test.example.com'), {});
-    expect(cors['Access-Control-Allow-Methods']).toBe('POST, OPTIONS');
+    expect(cors['Access-Control-Allow-Methods']).toBe('GET, POST, PUT, OPTIONS');
     expect(cors['Access-Control-Allow-Headers']).toContain('Authorization');
     expect(cors.Vary).toBe('Origin');
   });
