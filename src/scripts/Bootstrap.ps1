@@ -60,6 +60,20 @@ Import-Module "$script:ModulesRoot\Nova.Auth"         -Force -ErrorAction Stop
 # Corporate environments can pre-configure proxy settings before network calls.
 Import-Module "$script:ModulesRoot\Nova.Proxy"        -Force -ErrorAction SilentlyContinue
 
+# ── Nova file logging ───────────────────────────────────────────────────────
+# Start structured file logging for Bootstrap phase.
+Start-NovaLog -Path 'X:\Nova-Detailed.log'
+Write-Section 'Bootstrap Initializing'
+Write-Data -Label 'Bootstrap Configuration' -Data @{
+    GitHubUser   = $GitHubUser
+    GitHubRepo   = $GitHubRepo
+    GitHubBranch = $GitHubBranch
+    MaxWait      = "${MaxWaitSeconds}s"
+    ModulesRoot  = $script:ModulesRoot
+}
+Write-Detail "PowerShell version: $($PSVersionTable.PSVersion)"
+Write-Detail "Architecture: $(if ([Environment]::Is64BitProcess) { 'x64' } else { 'x86' })"
+
 function Write-AuthLog {
     <#
     .SYNOPSIS  Write a timestamped entry to the dedicated auth log file.
@@ -1007,6 +1021,9 @@ function ProceedToEngine {
     $script:EngineStarted = $true
     if ($script:connectCheckTimer) { $script:connectCheckTimer.Stop() }
 
+    Write-Section 'Network Connected'
+    Write-Info 'Internet connectivity confirmed -- proceeding to engine setup'
+
     Update-Step 3
     Write-Status $S.Connected 'Green'
     Update-HtmlUi -Message $S.Connected -Step 3
@@ -1019,12 +1036,16 @@ function ProceedToEngine {
     # Launches Edge in --app mode for a clean login popup (Auth Code + PKCE)
     # as the primary method; falls back to Device Code Flow shown in
     # an HTML modal overlay if Edge is not available.
+    Write-Section 'M365 Authentication'
+    Write-Info 'Checking authentication requirements...'
     $authPassed = Invoke-BootstrapM365Auth
     if (-not $authPassed) {
+        Write-Warn 'M365 authentication failed -- allowing retry'
         $script:EngineStarted = $false   # allow retry after WiFi reconnect
         Update-HtmlUi -Message $S.AuthFailed -Step 2 -ShowRetryAuth
         return
     }
+    Write-Success 'Authentication gate passed'
 
     Update-Step 4
 
@@ -1038,28 +1059,37 @@ function ProceedToEngine {
     $script:S = $Strings[$script:Lang]
 
     # Unified configuration dialog: language + all Windows options in one step.
+    Write-Section 'Deployment Configuration'
     $config = Show-ConfigurationMenu
     $script:Lang = $config.Language
     $script:S    = $Strings[$script:Lang]
     $script:TaskSequencePath = $config.TaskSequencePath
+    Write-Data -Label 'User Configuration' -Data @{
+        Language      = $config.Language
+        TaskSequence  = "$($config.TaskSequencePath)"
+    }
 
     # Write user configuration choices into the task sequence JSON so the
     # engine reads everything from a single source of truth.
     if ($script:TaskSequencePath) {
         Update-TaskSequenceFromConfig -TaskSequencePath $script:TaskSequencePath -Config $config
+        Write-Info "Task sequence updated with user configuration choices"
     }
 
     # Clean up any stale status file from a previous run.
     if (Test-Path $script:StatusFile) { Remove-Item $script:StatusFile -Force }
 
+    Write-Section 'Launching Nova Engine'
     # Prefer the pre-staged copy embedded in the WinPE image by Trigger.ps1.
     # Fall back to downloading from GitHub when the local copy is absent.
     $engineFailed = $false
     try {
         $localNova = Join-Path $env:SystemRoot 'System32\Nova.ps1'
         if (-not (Test-Path $localNova)) {
+            Write-Info "Pre-staged Nova.ps1 not found -- downloading from GitHub"
             $url    = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/scripts/Nova.ps1"
             $localNova = 'X:\Nova.ps1'
+            Write-Detail "Download URL: $url"
             Write-Status ($S.Download -f 0)
             $web = New-Object System.Net.WebClient
             # Add cache-busting headers to avoid WinINet serving stale content

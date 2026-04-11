@@ -103,7 +103,13 @@ Import-Module "$script:ModulesRoot\Nova.Imaging"      -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Drivers"      -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.Provisioning" -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.TaskSequence" -Force -ErrorAction Stop
-Set-NovaLogPrefix -Step "`n[Nova]" -Success '[OK]' -Warn '[WARN]' -Fail '[FAIL]'
+Set-NovaLogPrefix -Step "`n[Nova]" -Success '[OK]' -Warn '[WARN]' -Fail '[FAIL]' -Info '[Nova]' -Detail '[Nova]'
+
+# ── Nova file logging ───────────────────────────────────────────────────────
+# Start structured file logging alongside the existing Start-Transcript.
+# The Nova log captures timestamped, level-tagged entries that are easier to
+# parse than raw transcript output.
+Start-NovaLog -Path 'X:\Nova-Detailed.log'
 
 #region ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -151,8 +157,8 @@ function Invoke-DownloadWithProgress {
         [int]$MaxRetries     = 3
     )
     Write-Step "$Description"
-    Write-Host "  Source : $Uri"
-    Write-Host "  Target : $OutFile"
+    Write-Info "Source : $Uri"
+    Write-Info "Target : $OutFile"
 
     $attempt = 0
     while ($true) {
@@ -170,7 +176,7 @@ function Invoke-DownloadWithProgress {
 
             if ($existingSize -gt 0) {
                 $wr.AddRange([long]$existingSize)
-                Write-Host "  Resuming from $(Get-FileSizeReadable $existingSize)..."
+                Write-Info "Resuming from $(Get-FileSizeReadable $existingSize)..."
             }
 
             $response  = $wr.GetResponse()
@@ -294,10 +300,18 @@ function Invoke-TaskSequenceStep {
             # Auto-select disk when -1 or not specified
             if ($disk -eq -1) {
                 $disk = Get-TargetDisk -DiskNumber -1
+                Write-Detail "Auto-selected target disk: $disk"
             }
             $drv  = if ($p -and $p.PSObject.Properties['osDriveLetter'] -and $p.osDriveLetter) { $p.osDriveLetter } else { $CurrentOSDrive }
             $createRecovery = if ($p -and $p.PSObject.Properties['createRecoveryPartition'] -and $p.createRecoveryPartition) { $true } else { $false }
             $recoverySize = if ($p -and $p.PSObject.Properties['recoveryPartitionSize'] -and $p.recoveryPartitionSize -gt 0) { [long]$p.recoveryPartitionSize } else { 990MB }
+            Write-Data -Label 'Partition Configuration' -Data @{
+                DiskNumber      = "$disk"
+                FirmwareType    = $CurrentFirmwareType
+                OSDriveLetter   = $drv
+                RecoveryPartition = "$createRecovery"
+                RecoverySize    = "$(Get-FileSizeReadable $recoverySize)"
+            }
             Update-BootstrapStatus -Message "Partitioning disk..." -Detail "Creating layout on disk $disk" -Step $uiStep -Progress $pct
             Initialize-TargetDisk -DiskNumber $disk -FirmwareType $CurrentFirmwareType -OSDriveLetter $drv `
                 -CreateRecoveryPartition:$createRecovery -RecoveryPartitionSize $recoverySize -Confirm:$false
@@ -305,6 +319,7 @@ function Invoke-TaskSequenceStep {
         'ImportAutopilot' {
             $tag   = if ($p -and $p.PSObject.Properties['groupTag']  -and $p.groupTag)  { $p.groupTag }  else { '' }
             $email = if ($p -and $p.PSObject.Properties['userEmail'] -and $p.userEmail) { $p.userEmail } else { '' }
+            Write-Info "Autopilot import -- GroupTag: '$tag', UserEmail: '$email'"
             Update-BootstrapStatus -Message "Importing Autopilot device..." -Detail "Registering device in Windows Autopilot" -Step $uiStep -Progress $pct
             Invoke-AutopilotImport -GroupTag $tag -UserEmail $email
         }
@@ -313,12 +328,19 @@ function Invoke-TaskSequenceStep {
             $ed   = if ($p -and $p.PSObject.Properties['edition']       -and $p.edition)       { $p.edition }       else { 'Professional' }
             $lang = if ($p -and $p.PSObject.Properties['language']      -and $p.language)      { $p.language }      else { 'en-us' }
             $arch = if ($p -and $p.PSObject.Properties['architecture']  -and $p.architecture)  { $p.architecture }  else { 'x64' }
+            Write-Data -Label 'Image Download' -Data @{
+                Edition      = $ed
+                Language     = $lang
+                Architecture = $arch
+                ImageUrl     = $(if ($url) { $url } else { '(auto-detect ESD)' })
+            }
             Update-BootstrapStatus -Message "Downloading Windows image..." -Detail "Fetching $ed $lang $arch" -Step $uiStep -Progress $pct
             $script:TsImagePath = Get-WindowsImageSource `
                 -ImageUrl $url -Edition $ed -Language $lang -Architecture $arch `
                 -FirmwareType $CurrentFirmwareType -ScratchDir $CurrentScratchDir `
                 -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch `
                 -DownloadCommand $dlCmd
+            Write-Info "Image resolved: $($script:TsImagePath)"
         }
         'ApplyImage' {
             $ed   = if ($p -and $p.PSObject.Properties['edition']       -and $p.edition)       { $p.edition }       else { 'Professional' }
@@ -326,6 +348,7 @@ function Invoke-TaskSequenceStep {
             $arch = if ($p -and $p.PSObject.Properties['architecture']  -and $p.architecture)  { $p.architecture }  else { 'x64' }
             if (-not $script:TsImagePath) {
                 $url = if ($p -and $p.PSObject.Properties['imageUrl'] -and $p.imageUrl) { $p.imageUrl } else { '' }
+                Write-Info "No cached image path -- downloading image for ApplyImage step"
                 Update-BootstrapStatus -Message "Downloading Windows image..." -Detail "Fetching $ed $lang $arch" -Step $uiStep -Progress $pct
                 $script:TsImagePath = Get-WindowsImageSource `
                     -ImageUrl $url -Edition $ed -Language $lang -Architecture $arch `
@@ -333,15 +356,18 @@ function Invoke-TaskSequenceStep {
                     -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch `
                     -DownloadCommand $dlCmd
             }
+            Write-Info "Applying image: $($script:TsImagePath) (edition: $ed)"
             Update-BootstrapStatus -Message "Applying Windows image..." -Detail "Expanding Windows files" -Step $uiStep -Progress $pct
             Install-WindowsImage -ImagePath $script:TsImagePath -Edition $ed -OSDriveLetter $CurrentOSDrive -ScratchDir $CurrentScratchDir
         }
         'SetBootloader' {
+            Write-Info "Configuring bootloader: $CurrentFirmwareType on disk $CurrentDiskNumber"
             Update-BootstrapStatus -Message "Configuring bootloader..." -Detail "Writing BCD store" -Step $uiStep -Progress $pct
             Set-Bootloader -OSDriveLetter $CurrentOSDrive -FirmwareType $CurrentFirmwareType -DiskNumber $CurrentDiskNumber
         }
         'InjectDrivers' {
             $dp = if ($p -and $p.PSObject.Properties['driverPath'] -and $p.driverPath) { $p.driverPath } else { '' }
+            Write-Info "Driver path: $(if ($dp) { $dp } else { '(none specified)' })"
             Update-BootstrapStatus -Message "Injecting drivers..." -Detail "Adding drivers" -Step $uiStep -Progress $pct
             Add-Driver -DriverPath $dp -OSDriveLetter $CurrentOSDrive
         }
@@ -496,6 +522,23 @@ if (-not $PSBoundParameters.ContainsKey('FirmwareType')) {
     $FirmwareType = Get-FirmwareType
 }
 
+Write-Section 'Nova Imaging Engine Initializing'
+Write-Data -Label 'Engine Configuration' -Data @{
+    GitHubUser    = $GitHubUser
+    GitHubRepo    = $GitHubRepo
+    GitHubBranch  = $GitHubBranch
+    FirmwareType  = $FirmwareType
+    TargetDisk    = $TargetDiskNumber
+    OSDrive       = $OSDrive
+    ScratchDir    = $ScratchDir
+    TaskSequence  = $TaskSequencePath
+    DryRun        = "$DryRun"
+    ModulesRoot   = $script:ModulesRoot
+}
+Write-Detail "PowerShell version: $($PSVersionTable.PSVersion)"
+Write-Detail "Computer name: $($env:COMPUTERNAME)"
+Write-Detail "OS: $([System.Environment]::OSVersion.VersionString)"
+
 $stepName = ''
 $script:DeploymentStartTime = Get-Date
 $script:CompletedStepCount  = 0
@@ -505,6 +548,8 @@ try {
     # Read the step list from the JSON task sequence file and execute
     # each enabled step in the order defined by the editor.
     $ts = Read-TaskSequence -Path $TaskSequencePath
+    Write-Info "Task sequence loaded: $($ts.name)"
+    Write-Detail "Schema version: $(if ($ts.PSObject.Properties['schemaVersion']) { $ts.schemaVersion } else { '1.0' })"
 
     if ($DryRun) {
         Invoke-DryRunValidation -TaskSequence $ts -ScratchDir $ScratchDir -OSDrive $OSDrive -FirmwareType $FirmwareType -DiskNumber $TargetDiskNumber
@@ -516,7 +561,9 @@ try {
     New-ScratchDirectory -Path $ScratchDir
 
     $enabledSteps = @($ts.steps | Where-Object { $_.enabled -ne $false })
-    Write-Step "Executing $($enabledSteps.Count) enabled steps"
+    $disabledCount = @($ts.steps | Where-Object { $_.enabled -eq $false }).Count
+    Write-Section "Task Sequence Execution"
+    Write-Step "Executing $($enabledSteps.Count) enabled steps ($disabledCount disabled/skipped)"
 
     # Inter-step state: DownloadImage stores the resolved image path for
     # ApplyImage to consume.  ComputerName and locale settings are synced
@@ -528,9 +575,11 @@ try {
     for ($i = 0; $i -lt $enabledSteps.Count; $i++) {
         $s = $enabledSteps[$i]
         $stepName = $s.name
+        $stepStartTime = Get-Date
 
         # Evaluate step condition (if any) before execution
         if ($s.PSObject.Properties['condition'] -and $s.condition -and $s.condition.type) {
+            Write-Detail "Evaluating condition for step '$($s.name)': type=$($s.condition.type)"
             if (-not (Test-StepCondition -Condition $s.condition)) {
                 Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type)) -- condition not met, skipping"
                 continue
@@ -538,6 +587,10 @@ try {
         }
 
         Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type))"
+        Write-Detail "Step parameters: $(if ($s.parameters) { ($s.parameters | ConvertTo-Json -Compress -Depth 3) } else { 'none' })"
+        if ($s.PSObject.Properties['continueOnError'] -and $s.continueOnError) {
+            Write-Detail "continueOnError is enabled for this step"
+        }
 
         # Update active deployment report so the Monitoring dashboard can
         # display in-progress status for this device.
@@ -550,7 +603,7 @@ try {
                 -ScratchDir $ScratchDir `
                 -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
         } catch {
-            Write-Verbose "Non-blocking: active deployment report update failed for step '$($s.name)': $_"
+            Write-Detail "Non-blocking: active deployment report update failed for step '$($s.name)': $_"
         }
 
         # After PartitionDisk, redirect scratch to OS drive
@@ -561,6 +614,7 @@ try {
                 -CurrentDiskNumber $TargetDiskNumber
             $ScratchDir = Join-Path "${OSDrive}:" 'Nova'
             New-ScratchDirectory -Path $ScratchDir
+            Write-Detail "Scratch directory redirected to OS drive: $ScratchDir"
         } else {
             try {
                 Invoke-TaskSequenceStep -Step $s -Index ($i+1) -TotalSteps $enabledSteps.Count `
@@ -575,32 +629,46 @@ try {
                 }
             }
         }
+        $stepDuration = (Get-Date) - $stepStartTime
+        Write-Info "Step '$($s.name)' completed in $([math]::Round($stepDuration.TotalSeconds, 1))s"
         $script:CompletedStepCount = $i + 1
     }
 
     # ── Deployment reporting & alerting ─────────────────────────────
+    Write-Section 'Deployment Complete'
     $elapsed   = (Get-Date) - $script:DeploymentStartTime
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
+    Write-Data -Label 'Deployment Summary' -Data @{
+        Status         = 'Success'
+        TaskSequence   = $tsName
+        StepsCompleted = "$($enabledSteps.Count) / $($enabledSteps.Count)"
+        Duration       = $durString
+        ComputerName   = "$($env:COMPUTERNAME)"
+        OSDrive        = "${OSDrive}:"
+    }
 
     # Clear active deployment file -- device is no longer deploying
     try { Update-ActiveDeploymentReport -Clear -ScratchDir $ScratchDir -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch }
-    catch { Write-Warning "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
+    catch { Write-Detail "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
 
     Save-DeploymentReport -Status 'success' -TaskSequence $tsName `
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count `
         -StartTime $script:DeploymentStartTime `
         -ScratchDir $ScratchDir `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
+    Write-Detail 'Deployment report saved'
 
     # Record asset inventory for fleet tracking
     Save-AssetInventory -TaskSequence $tsName -ComputerName $env:COMPUTERNAME -ReportDir $ScratchDir `
         -ScratchDir $ScratchDir `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
+    Write-Detail 'Asset inventory recorded'
 
     Send-DeploymentAlert -Status 'success' -TaskSequence $tsName `
         -Duration $durString `
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
+    Write-Detail 'Deployment alert sent'
 
     Update-BootstrapStatus -Message 'Imaging complete -- rebooting...' -Detail 'Windows installation finished successfully' -Step 4 -Progress 100 -Done
 
@@ -619,6 +687,9 @@ try {
         Remove-Item $ScratchDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 
+    # Finalize Nova file logging before exporting logs to OS drive
+    Stop-NovaLog
+
     # Export WinPE logs to OS drive for post-reboot troubleshooting
     Export-DeploymentLogs -OSDriveLetter $OSDrive -EngineLogPath $script:EngineLogPath
 
@@ -627,7 +698,9 @@ try {
     Restart-Computer -Force
 
 } catch {
+    Write-Section 'Deployment Failed'
     Write-Fail "Nova imaging failed at step '$stepName': $_"
+    Write-Detail "Stack trace: $($_.ScriptStackTrace)"
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
     Write-Host ''
 
@@ -637,9 +710,18 @@ try {
     $elapsed   = (Get-Date) - $script:DeploymentStartTime
     $durString = '{0}m {1}s' -f [math]::Floor($elapsed.TotalMinutes), $elapsed.Seconds
 
+    Write-Data -Label 'Failure Details' -Data @{
+        Status         = 'Failed'
+        TaskSequence   = $tsName
+        FailedStep     = $stepName
+        StepsCompleted = "$($script:CompletedStepCount) / $totalSteps"
+        Duration       = $durString
+        Error          = "$_"
+    }
+
     # Clear active deployment file -- device is no longer deploying
     try { Update-ActiveDeploymentReport -Clear -ScratchDir $ScratchDir -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch }
-    catch { Write-Warning "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
+    catch { Write-Detail "Non-blocking: failed to clear active deployment report for '$($env:COMPUTERNAME)': $_" }
 
     Save-DeploymentReport -Status 'failed' -TaskSequence $tsName `
         -StepsCompleted $script:CompletedStepCount -StepsTotal $totalSteps `
@@ -658,6 +740,9 @@ try {
     # failure instead of staying stuck at the last progress state.
     Update-BootstrapStatus -Message "Imaging failed at step '$stepName'" `
         -Detail "$_" -Step 4
+
+    # Finalize Nova file logging before exporting
+    Stop-NovaLog
 
     # Export logs even on failure for troubleshooting
     try { Export-DeploymentLogs -OSDriveLetter $OSDrive -EngineLogPath $script:EngineLogPath } catch { $null = $_ }

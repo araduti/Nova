@@ -255,6 +255,21 @@ Import-Module "$script:ModulesRoot\Nova.BCD"         -Force -ErrorAction Stop
 Import-Module "$script:ModulesRoot\Nova.CloudImage"  -Force -ErrorAction Stop
 # Trigger.ps1 uses the default prefixes (  [>], [+], [!], [X])
 
+# ── Nova file logging ───────────────────────────────────────────────────────
+# Start structured file logging for the build phase.
+Start-NovaLog -Path (Join-Path $WorkDir 'Nova-Build.log')
+Write-Section 'Nova Trigger -- Build Phase'
+Write-Data -Label 'Build Parameters' -Data @{
+    GitHubUser   = $GitHubUser
+    GitHubRepo   = $GitHubRepo
+    GitHubBranch = $GitHubBranch
+    WorkDir      = $WorkDir
+    NoReboot     = "$NoReboot"
+    AcceptDefaults = "$AcceptDefaults"
+}
+Write-Detail "PowerShell version: $($PSVersionTable.PSVersion)"
+Write-Detail "OS: $([System.Environment]::OSVersion.VersionString)"
+
 # Confirm-FileIntegrity is now provided by the Nova.Integrity module.
 # Get-WinPEArchitecture is now provided by the Nova.Platform module.
 
@@ -379,6 +394,7 @@ function Build-WinPE {
         $wimSourceToDelete = $_ISOWinREPath   # clean up after Copy-WinPEFile
     } else {
         # ── First attempt: try the machine's local WinRE ─────────────────────────
+        Write-Section 'Locating WinRE Base Image'
         Write-Step 'Locating WinRE.wim to use as base image (built-in WiFi drivers)...'
         $localWinRE  = Get-WinREPath
         $usingWinRE  = $false
@@ -450,7 +466,10 @@ function Build-WinPE {
     }
 
     # ── 2. Mount ─────────────────────────────────────────────────────────────
+    Write-Section 'Mounting Boot Image'
     Write-Step 'Mounting boot.wim...'
+    Write-Detail "Image path: $($paths.BootWim)"
+    Write-Detail "Mount directory: $($paths.MountDir)"
     $null = Mount-WindowsImage -ImagePath $paths.BootWim -Index 1 -Path $paths.MountDir
     Write-Success 'boot.wim mounted.'
 
@@ -462,6 +481,7 @@ function Build-WinPE {
         }
 
         # ── 4. Inject optional components ────────────────────────────────────
+        Write-Section 'Injecting WinPE Components'
         $pkgRoot = Join-Path $ADKRoot `
             "Assessment and Deployment Kit\Windows Preinstallation Environment\$Architecture\WinPE_OCs"
 
@@ -696,6 +716,7 @@ function Build-WinPE {
         }
 
         # ── 5. Download scripts and modules, then verify integrity ────────────
+        Write-Section 'Staging Scripts and Modules'
         # Download ALL files first, then load the manifest last to minimise the
         # window for CDN split-brain (file vs manifest out of sync).  If any
         # hash check fails, retry once after a short delay to handle propagation.
@@ -970,6 +991,7 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\nova-start.cmd
     }
 
     # ── 7. Commit & unmount ───────────────────────────────────────────────────
+    Write-Section 'Finalizing Boot Image'
     Write-Step 'Committing and unmounting image...'
     $null = Dismount-WindowsImage -Path $paths.MountDir -Save
     Write-Success 'Image committed and unmounted.'
@@ -1042,19 +1064,25 @@ Write-Host @"
 
 try {
     # ── 0. M365 authentication gate ──────────────────────────────────────────
+    Write-Section 'Authentication'
+    Write-Info 'Checking M365 authentication requirements...'
     $authResult = Invoke-M365Auth `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
     if (-not $authResult.Authenticated) {
         Write-Fail 'Authentication is required. Exiting.'
         exit 1
     }
+    Write-Success 'Authentication passed'
     if ($authResult.GraphAccessToken) {
         $script:GraphAccessToken = $authResult.GraphAccessToken
+        Write-Detail 'Graph access token acquired'
     }
 
     # ── 1. Detect architecture ────────────────────────────────────────────────
+    Write-Section 'System Detection'
     $arch = Get-WinPEArchitecture
     Write-Step "Host architecture: $arch"
+    Write-Detail "Firmware type: $(Get-FirmwareType)"
 
     # ── 1b. Check for a pre-built cloud boot image ──────────────────────────
     Write-Step 'Checking for pre-built boot image on GitHub...'
@@ -1259,13 +1287,17 @@ try {
         }
 
         # ── 3. BCD ────────────────────────────────────────────────────────────
+        Write-Section 'Creating BCD Boot Entry'
+        Write-Info 'Creating ramdisk BCD entry for WinPE boot'
         New-BCDRamdiskEntry `
             -BootWim    $paths.BootWim `
             -RamdiskDir $script:RamdiskDir `
             -MediaDir   $paths.MediaDir
     }
 
+    Write-Section 'Build Complete'
     Write-Host "`n  [Nova] All done -- system is primed for cloud boot." -ForegroundColor Green
+    Stop-NovaLog
 
     if (-not $NoReboot) {
         Write-Host '  [Nova] Press Ctrl+C to cancel reboot.' -ForegroundColor Yellow
@@ -1281,8 +1313,11 @@ try {
     }
 
 } catch {
+    Write-Section 'Build Failed'
     Write-Fail "Fatal: $_"
+    Write-Detail "Stack trace: $($_.ScriptStackTrace)"
     Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
+    Stop-NovaLog
     exit 1
 }
 

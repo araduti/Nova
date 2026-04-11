@@ -568,6 +568,7 @@ function Export-DeploymentLogs {
             'X:\Nova-Bootstrap.log',
             'X:\Nova-Engine.log',
             'X:\Nova-Auth.log',
+            'X:\Nova-Detailed.log',
             'X:\Nova-Status.json'
         )
         foreach ($src in $logFiles) {
