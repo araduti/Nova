@@ -2,28 +2,35 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-    --bg:           #1a1a2e;
-    --surface:      #16213e;
-    --surface-alt:  #1a2744;
-    --border:       #2a3a5c;
-    --text:         #e0e0e0;
-    --text-muted:   #7b8da6;
-    --accent:       #0f7ae5;
-    --accent-hover: #339af0;
-    --accent-glow:  rgba(15, 122, 229, 0.25);
-    --danger:       #e03e3e;
-    --danger-hover: #f03e3e;
-    --success:      #2b8a3e;
-    --warning:      #f59f00;
-    --header-h:     48px;
-    --panel-header: 40px;
+    --bg:           #12162b;
+    --surface:      #181d35;
+    --surface-alt:  #1e2545;
+    --surface-card: rgba(255, 255, 255, 0.03);
+    --border:       #2a3558;
+    --border-subtle:#222a48;
+    --text:         #dce2ee;
+    --text-muted:   #7889a8;
+    --text-label:   #8ea0bf;
+    --accent:       #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-glow:  rgba(59, 130, 246, 0.20);
+    --accent-soft:  rgba(59, 130, 246, 0.08);
+    --danger:       #ef4444;
+    --danger-hover: #f87171;
+    --success:      #22c55e;
+    --warning:      #f59e0b;
+    --header-h:     50px;
+    --panel-header: 42px;
     --font:         'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
     --mono:         'Cascadia Code', 'Consolas', monospace;
-    --radius:       6px;
-    --radius-lg:    10px;
-    --shadow-sm:    0 1px 3px rgba(0,0,0,0.3);
-    --shadow-md:    0 4px 12px rgba(0,0,0,0.4);
-    --transition:   0.15s ease;
+    --radius:       8px;
+    --radius-lg:    12px;
+    --radius-sm:    5px;
+    --shadow-sm:    0 1px 3px rgba(0,0,0,0.25);
+    --shadow-md:    0 4px 16px rgba(0,0,0,0.35);
+    --shadow-lg:    0 8px 32px rgba(0,0,0,0.4);
+    --transition:   0.18s ease;
+    --transition-fast: 0.1s ease;
 }
 
 html, body {
@@ -33,6 +40,8 @@ html, body {
     color: var(--text);
     background: var(--bg);
     overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
 /* ── Toolbar ──────────────────────────────────────────────────────── */
@@ -41,15 +50,15 @@ html, body {
     align-items: center;
     justify-content: space-between;
     height: var(--header-h);
-    padding: 0 16px;
-    background: linear-gradient(135deg, #0d1b3e 0%, #162447 100%);
+    padding: 0 18px;
+    background: linear-gradient(180deg, #151a32 0%, #121630 100%);
     border-bottom: 1px solid var(--border);
     user-select: none;
-    box-shadow: var(--shadow-sm);
+    box-shadow: 0 1px 8px rgba(0,0,0,0.25);
     position: relative;
     z-index: 10;
 }
-.toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 8px; }
+.toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 6px; }
 .logo {
     font-weight: 700;
     font-size: 15px;
@@ -66,14 +75,14 @@ html, body {
     height: 26px;
     width: auto;
 }
-.toolbar-sep { width: 1px; height: 22px; background: var(--border); margin: 0 8px; }
+.toolbar-sep { width: 1px; height: 22px; background: var(--border-subtle); margin: 0 6px; }
 .ts-name {
     font-size: 13px;
     color: var(--text);
     background: transparent;
     border: 1px solid transparent;
     border-radius: var(--radius);
-    padding: 4px 10px;
+    padding: 5px 10px;
     max-width: 360px;
     overflow: hidden;
     white-space: nowrap;
@@ -85,18 +94,20 @@ html, body {
 .tb-btn {
     background: transparent;
     border: 1px solid transparent;
-    color: var(--text);
+    color: var(--text-muted);
     font: inherit;
-    padding: 5px 12px;
+    font-size: 12px;
+    padding: 6px 12px;
     border-radius: var(--radius);
     cursor: pointer;
     white-space: nowrap;
     transition: all var(--transition);
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
 }
 .tb-btn:hover { background: var(--surface-alt); border-color: var(--border); color: #fff; }
+.tb-btn:active { transform: scale(0.97); }
 .tb-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* ── Main layout ──────────────────────────────────────────────────── */
@@ -107,7 +118,7 @@ html, body {
 
 /* ── Step list panel (left) ───────────────────────────────────────── */
 .step-list-panel {
-    width: 340px;
+    width: 320px;
     min-width: 260px;
     border-right: 1px solid var(--border);
     display: flex;
@@ -119,36 +130,36 @@ html, body {
     align-items: center;
     justify-content: space-between;
     height: var(--panel-header);
-    padding: 0 12px;
+    padding: 0 14px;
     font-weight: 600;
-    font-size: 11px;
+    font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.8px;
     color: var(--text-muted);
     border-bottom: 1px solid var(--border);
     user-select: none;
-    background: rgba(0,0,0,0.15);
+    background: rgba(0,0,0,0.12);
 }
 .panel-actions { display: flex; align-items: center; gap: 2px; }
-.panel-sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+.panel-sep { width: 1px; height: 16px; background: var(--border-subtle); margin: 0 4px; }
 
 /* ── Step search/filter ────────────────────────────────────────────── */
 .step-search-wrap {
-    padding: 6px 8px 4px;
+    padding: 8px 10px 6px;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
 }
 .step-search-input {
     width: 100%;
-    padding: 6px 10px;
-    background: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--border);
+    padding: 7px 12px;
+    background: rgba(0, 0, 0, 0.18);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
     color: var(--text);
     font-size: 12px;
     font-family: var(--font);
     outline: none;
-    transition: border-color var(--transition);
+    transition: border-color var(--transition), box-shadow var(--transition);
     box-sizing: border-box;
 }
 .step-search-input:focus {
@@ -157,16 +168,16 @@ html, body {
 }
 .step-search-input::placeholder {
     color: var(--text-muted);
-    opacity: 0.6;
+    opacity: 0.5;
 }
 
 /* ── Multi-select step highlight ───────────────────────────────────── */
 .step-item.multi-selected {
-    background: rgba(15, 122, 229, 0.10);
-    border-left-color: rgba(15, 122, 229, 0.4);
+    background: rgba(59, 130, 246, 0.08);
+    border-left-color: rgba(59, 130, 246, 0.35);
 }
 .step-item.multi-selected .step-number {
-    background: rgba(15, 122, 229, 0.3);
+    background: rgba(59, 130, 246, 0.25);
     color: var(--text);
 }
 
@@ -175,14 +186,15 @@ html, body {
     display: flex; align-items: center; justify-content: center;
     background: transparent;
     border: 1px solid transparent;
-    color: var(--text);
+    color: var(--text-muted);
     font-size: 14px;
-    border-radius: var(--radius);
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all var(--transition);
 }
 .icon-btn:hover { background: var(--surface-alt); border-color: var(--border); color: #fff; }
-.icon-btn.danger:hover { color: var(--danger); border-color: rgba(224,62,62,0.3); background: rgba(224,62,62,0.1); }
+.icon-btn:active { transform: scale(0.92); }
+.icon-btn.danger:hover { color: var(--danger); border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.08); }
 
 /* ── Step list ─────────────────────────────────────────────────────── */
 .step-list {
@@ -195,7 +207,7 @@ html, body {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 8px 10px;
+    padding: 9px 10px;
     cursor: pointer;
     border-left: 3px solid transparent;
     border-radius: 0 var(--radius) var(--radius) 0;
@@ -203,10 +215,11 @@ html, body {
     transition: all var(--transition);
     margin-bottom: 2px;
 }
-.step-item:hover { background: var(--surface-alt); }
+.step-item:hover { background: rgba(255,255,255,0.03); }
 .step-item.selected {
     background: var(--accent-glow);
     border-left-color: var(--accent);
+    box-shadow: inset 0 0 0 1px rgba(59,130,246,0.1);
 }
 .step-item.drag-over {
     border-top: 2px solid var(--accent);
@@ -214,9 +227,9 @@ html, body {
 .step-item .step-number {
     width: 24px; height: 24px;
     display: flex; align-items: center; justify-content: center;
-    background: var(--surface-alt);
+    background: rgba(255,255,255,0.05);
     border-radius: 50%;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     color: var(--text-muted);
     flex-shrink: 0;
@@ -225,7 +238,7 @@ html, body {
 .step-item.selected .step-number {
     background: var(--accent);
     color: #fff;
-    box-shadow: 0 0 8px var(--accent-glow);
+    box-shadow: 0 0 10px var(--accent-glow);
 }
 .step-item .step-info { flex: 1; min-width: 0; }
 .step-item .step-info .step-title {
@@ -234,18 +247,20 @@ html, body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1.3;
 }
 .step-item.selected .step-info .step-title { color: #fff; }
 .step-item .step-info .step-type-label {
     font-size: 11px;
     color: var(--text-muted);
+    line-height: 1.3;
 }
 .step-item .step-toggle {
     width: 18px; height: 18px;
     flex-shrink: 0;
     opacity: 0.6;
 }
-.step-item.disabled { opacity: 0.4; }
+.step-item.disabled { opacity: 0.35; }
 .step-item.disabled .step-title { text-decoration: line-through; }
 
 .step-drag-handle {
@@ -265,44 +280,45 @@ html, body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px; height: 22px;
-    border-radius: 5px;
-    font-size: 11px;
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    font-size: 10px;
     flex-shrink: 0;
     color: #fff;
     font-weight: 700;
+    letter-spacing: -0.3px;
 }
-.step-badge[data-type="PartitionDisk"]   { background: #e67700; }
-.step-badge[data-type="DownloadImage"]   { background: #1971c2; }
-.step-badge[data-type="ApplyImage"]      { background: #2f9e44; }
-.step-badge[data-type="SetBootloader"]   { background: #7048e8; }
-.step-badge[data-type="InjectDrivers"]   { background: #c2255c; }
-.step-badge[data-type="InjectOemDrivers"]{ background: #e8590c; }
-.step-badge[data-type="ApplyAutopilot"]  { background: #0c8599; }
-.step-badge[data-type="StageCCMSetup"]   { background: #5f3dc4; }
-.step-badge[data-type="CustomizeOOBE"]   { background: #d6336c; }
-.step-badge[data-type="RunPostScripts"]  { background: #5c940d; }
-.step-badge[data-type="SetComputerName"] { background: #1098ad; }
-.step-badge[data-type="SetRegionalSettings"]{ background: #ae3ec9; }
-.step-badge[data-type="ImportAutopilot"] { background: #2b8a3e; }
+.step-badge[data-type="PartitionDisk"]   { background: #d97706; }
+.step-badge[data-type="DownloadImage"]   { background: #2563eb; }
+.step-badge[data-type="ApplyImage"]      { background: #16a34a; }
+.step-badge[data-type="SetBootloader"]   { background: #7c3aed; }
+.step-badge[data-type="InjectDrivers"]   { background: #db2777; }
+.step-badge[data-type="InjectOemDrivers"]{ background: #ea580c; }
+.step-badge[data-type="ApplyAutopilot"]  { background: #0891b2; }
+.step-badge[data-type="StageCCMSetup"]   { background: #6d28d9; }
+.step-badge[data-type="CustomizeOOBE"]   { background: #e11d48; }
+.step-badge[data-type="RunPostScripts"]  { background: #65a30d; }
+.step-badge[data-type="SetComputerName"] { background: #0d9488; }
+.step-badge[data-type="SetRegionalSettings"]{ background: #a855f7; }
+.step-badge[data-type="ImportAutopilot"] { background: #059669; }
 
 /* ── Step group headers ───────────────────────────────────────────── */
 .step-group-header {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 10px;
-    margin-top: 6px;
+    padding: 7px 10px;
+    margin-top: 8px;
     margin-bottom: 2px;
     cursor: pointer;
     user-select: none;
     border-radius: var(--radius);
-    background: rgba(15, 122, 229, 0.06);
+    background: var(--accent-soft);
     border-left: 3px solid var(--accent);
     transition: background var(--transition);
 }
 .step-group-header:first-child { margin-top: 0; }
-.step-group-header:hover { background: rgba(15, 122, 229, 0.12); }
+.step-group-header:hover { background: rgba(59, 130, 246, 0.12); }
 .step-group-header.drag-over { border-top: 2px solid var(--accent); }
 .group-chevron {
     font-size: 9px;
@@ -316,8 +332,8 @@ html, body {
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--accent);
+    letter-spacing: 0.7px;
+    color: var(--accent-hover);
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -328,9 +344,10 @@ html, body {
     font-size: 10px;
     color: var(--text-muted);
     background: rgba(0, 0, 0, 0.2);
-    padding: 1px 7px;
+    padding: 2px 8px;
     border-radius: 10px;
     flex-shrink: 0;
+    font-weight: 600;
 }
 .step-item.in-group {
     padding-left: 24px;
@@ -339,7 +356,7 @@ html, body {
 /* ── Properties panel (right) ─────────────────────────────────────── */
 .properties-panel {
     flex: 1;
-    padding: 24px 28px;
+    padding: 28px 32px;
     overflow-y: auto;
     background: var(--bg);
 }
@@ -351,99 +368,135 @@ html, body {
     height: 100%;
     color: var(--text-muted);
     text-align: center;
-    gap: 12px;
+    gap: 16px;
 }
 .props-empty-icon {
-    font-size: 48px;
-    opacity: 0.3;
+    font-size: 56px;
+    opacity: 0.2;
 }
-.props-empty p { max-width: 300px; line-height: 1.6; }
-.props-editor { max-width: 660px; }
+.props-empty p { max-width: 300px; line-height: 1.7; font-size: 13px; }
+.props-editor { max-width: 680px; }
 
-.prop-group { margin-bottom: 16px; }
+.prop-group { margin-bottom: 18px; }
 .prop-group label {
     display: block;
     font-size: 11px;
     font-weight: 600;
-    color: var(--text-muted);
-    margin-bottom: 5px;
+    color: var(--text-label);
+    margin-bottom: 6px;
     text-transform: uppercase;
-    letter-spacing: 0.6px;
+    letter-spacing: 0.5px;
 }
 .prop-group input[type="text"],
 .prop-group textarea,
 .prop-group select {
     width: 100%;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
     color: var(--text);
     font: inherit;
-    padding: 8px 12px;
+    padding: 9px 12px;
     outline: none;
-    transition: border-color var(--transition), box-shadow var(--transition);
+    transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
+}
+.prop-group input[type="text"]:hover,
+.prop-group textarea:hover,
+.prop-group select:hover {
+    border-color: var(--border);
 }
 .prop-group input[type="text"]:focus,
 .prop-group textarea:focus,
 .prop-group select:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--accent-glow);
+    background: var(--surface-alt);
 }
 .prop-group textarea { resize: vertical; }
 
 .prop-row { display: flex; gap: 24px; align-items: center; }
 .cb-label {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     font-size: 13px;
     cursor: pointer;
     color: var(--text);
     transition: color var(--transition);
+    padding: 4px 0;
 }
 .cb-label:hover { color: #fff; }
-.cb-label input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
+.cb-label input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 36px;
+    height: 20px;
+    background: var(--border);
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    transition: background var(--transition);
+    flex-shrink: 0;
+}
+.cb-label input[type="checkbox"]::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform var(--transition);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.cb-label input[type="checkbox"]:checked {
+    background: var(--accent);
+}
+.cb-label input[type="checkbox"]:checked::after {
+    transform: translateX(16px);
+}
 
 hr {
     border: none;
-    border-top: 1px solid var(--border);
-    margin: 20px 0 16px;
+    border-top: 1px solid var(--border-subtle);
+    margin: 24px 0 20px;
 }
 h3 {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.8px;
     color: var(--accent);
-    margin-bottom: 14px;
+    margin-bottom: 16px;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
 h3::before {
     content: '';
     display: inline-block;
     width: 3px;
-    height: 14px;
+    height: 16px;
     background: var(--accent);
     border-radius: 2px;
 }
 
 /* ── Dynamic parameter fields ──────────────────────────────────────── */
-.param-field { margin-bottom: 14px; }
+.param-field { margin-bottom: 16px; }
 .param-field label {
     display: block;
     font-size: 12px;
-    color: var(--text-muted);
-    margin-bottom: 4px;
+    color: var(--text-label);
+    margin-bottom: 5px;
     font-weight: 500;
 }
 /* Section heading inside parameters */
 .param-field-heading {
-    margin-top: 18px;
-    margin-bottom: 8px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--border);
+    margin-top: 22px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
 }
 .param-field-heading:first-child { margin-top: 0; }
 .param-heading-text {
@@ -451,51 +504,55 @@ h3::before {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
-    color: var(--accent);
+    color: var(--accent-hover);
 }
 .param-field input[type="text"],
 .param-field input[type="number"],
 .param-field select {
     width: 100%;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
     color: var(--text);
     font: inherit;
-    padding: 8px 12px;
+    padding: 9px 12px;
     outline: none;
-    transition: border-color var(--transition), box-shadow var(--transition);
+    transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
 }
+.param-field input:hover,
+.param-field select:hover { border-color: var(--border); }
 .param-field input:focus,
-.param-field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.param-field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); background: var(--surface-alt); }
 .param-field .param-hint {
     font-size: 11px;
     color: var(--text-muted);
-    margin-top: 3px;
+    margin-top: 4px;
+    line-height: 1.4;
 }
 .param-field-array textarea {
     width: 100%;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
     color: var(--text);
     font: inherit;
     font-family: var(--mono);
     font-size: 12px;
-    padding: 8px 12px;
+    padding: 9px 12px;
     outline: none;
     resize: vertical;
     min-height: 60px;
-    transition: border-color var(--transition), box-shadow var(--transition);
+    transition: border-color var(--transition), box-shadow var(--transition), background var(--transition);
 }
-.param-field-array textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.param-field-array textarea:hover { border-color: var(--border); }
+.param-field-array textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); background: var(--surface-alt); }
 
 /* ── XML editor field ──────────────────────────────────────────────── */
 .param-field-xml {
-    background: rgba(0,0,0,0.15);
-    border: 1px solid var(--border);
+    background: rgba(0,0,0,0.12);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
-    padding: 12px;
+    padding: 14px;
     margin-top: 4px;
 }
 .param-field-xml label {
@@ -525,14 +582,14 @@ h3::before {
     margin: 8px 0;
 }
 .xml-tb-btn {
-    padding: 4px 10px;
+    padding: 5px 12px;
     font-size: 11px;
     font-family: inherit;
     font-weight: 500;
     color: var(--text-muted);
-    background: rgba(0,0,0,0.2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    background: rgba(0,0,0,0.18);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all var(--transition);
 }
@@ -545,10 +602,10 @@ h3::before {
 /* ── XML editor body (line numbers + textarea) ─────────────────────── */
 .xml-editor-body {
     display: flex;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
     overflow: hidden;
-    background: #0d1520;
+    background: #0c1320;
     transition: border-color var(--transition), box-shadow var(--transition);
 }
 .xml-editor-body:focus-within {
@@ -558,7 +615,7 @@ h3::before {
 .xml-line-numbers {
     width: 40px;
     min-width: 40px;
-    background: rgba(0,0,0,0.3);
+    background: rgba(0,0,0,0.25);
     color: var(--text-muted);
     font-family: var(--mono);
     font-size: 12px;
@@ -567,12 +624,12 @@ h3::before {
     text-align: right;
     user-select: none;
     overflow: hidden;
-    border-right: 1px solid var(--border);
+    border-right: 1px solid var(--border-subtle);
     white-space: pre;
 }
 .param-field-xml textarea {
     width: 100%;
-    background: #0d1520;
+    background: #0c1320;
     border: none;
     border-radius: 0;
     color: #a8d8a8;
@@ -597,17 +654,17 @@ h3::before {
     min-height: 16px;
     font-family: var(--mono);
 }
-.xml-validation.xml-valid { color: #4caf50; }
-.xml-validation.xml-invalid { color: #e03e3e; }
+.xml-validation.xml-valid { color: var(--success); }
+.xml-validation.xml-invalid { color: var(--danger); }
 
 /* ── Visual / XML view toggle ──────────────────────────────────────── */
 .xml-view-toggle {
     display: flex;
     gap: 2px;
     margin: 8px 0;
-    background: rgba(0,0,0,0.2);
+    background: rgba(0,0,0,0.18);
     border-radius: var(--radius);
-    padding: 2px;
+    padding: 3px;
     width: fit-content;
 }
 .xml-view-btn {
@@ -618,7 +675,7 @@ h3::before {
     color: var(--text-muted);
     background: transparent;
     border: 1px solid transparent;
-    border-radius: calc(var(--radius) - 1px);
+    border-radius: calc(var(--radius) - 2px);
     cursor: pointer;
     transition: all var(--transition);
     letter-spacing: 0.3px;
@@ -628,7 +685,7 @@ h3::before {
     color: #fff;
     background: var(--accent);
     border-color: var(--accent);
-    box-shadow: 0 1px 4px rgba(15, 122, 229, 0.35);
+    box-shadow: 0 1px 6px rgba(59, 130, 246, 0.3);
 }
 
 /* ── Visual Unattend Builder ───────────────────────────────────────── */
@@ -636,8 +693,8 @@ h3::before {
     margin-top: 4px;
 }
 .vub-section {
-    background: rgba(0,0,0,0.12);
-    border: 1px solid var(--border);
+    background: rgba(0,0,0,0.10);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
     padding: 14px;
     margin-bottom: 10px;
@@ -679,16 +736,40 @@ h3::before {
 .vub-cb-label {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     font-size: 13px;
     color: var(--text);
     cursor: pointer;
 }
 .vub-cb-label input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 36px;
+    height: 20px;
+    background: var(--border);
+    border-radius: 10px;
+    position: relative;
+    cursor: pointer;
+    transition: background var(--transition);
+    flex-shrink: 0;
+}
+.vub-cb-label input[type="checkbox"]::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
     width: 16px;
     height: 16px;
-    accent-color: var(--accent);
-    cursor: pointer;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform var(--transition);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.vub-cb-label input[type="checkbox"]:checked {
+    background: var(--accent);
+}
+.vub-cb-label input[type="checkbox"]:checked::after {
+    transform: translateX(16px);
 }
 .vub-label {
     display: block;
@@ -701,9 +782,9 @@ h3::before {
 }
 .vub-field select {
     width: 100%;
-    padding: 6px 10px;
+    padding: 7px 10px;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
     color: var(--text);
     font-size: 13px;
@@ -763,8 +844,9 @@ h3::before {
 .dialog-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.6);
-    backdrop-filter: blur(4px);
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -778,10 +860,10 @@ h3::before {
     width: 440px;
     max-height: 80vh;
     overflow-y: auto;
-    box-shadow: 0 12px 48px rgba(0,0,0,0.6);
+    box-shadow: var(--shadow-lg);
 }
-.dialog h2 { font-size: 17px; margin-bottom: 8px; color: #fff; }
-.dialog p { color: var(--text-muted); margin-bottom: 16px; font-size: 13px; }
+.dialog h2 { font-size: 18px; margin-bottom: 8px; color: #fff; font-weight: 600; }
+.dialog p { color: var(--text-muted); margin-bottom: 16px; font-size: 13px; line-height: 1.5; }
 
 .step-type-list { list-style: none; }
 .step-type-list li {
@@ -792,16 +874,17 @@ h3::before {
     transition: all var(--transition);
     border: 1px solid transparent;
 }
-.step-type-list li:hover { background: var(--surface-alt); border-color: var(--border); }
+.step-type-list li:hover { background: rgba(255,255,255,0.03); border-color: var(--border-subtle); }
 .step-type-list li.selected { background: var(--accent-glow); border-color: var(--accent); }
 .step-type-list li .st-name { font-weight: 600; font-size: 13px; }
-.step-type-list li .st-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.step-type-list li .st-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
 
-.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
 .btn {
-    padding: 7px 18px;
+    padding: 8px 20px;
     border-radius: var(--radius);
     font: inherit;
+    font-size: 13px;
     cursor: pointer;
     border: 1px solid var(--border);
     background: var(--surface-alt);
@@ -809,8 +892,9 @@ h3::before {
     transition: all var(--transition);
 }
 .btn:hover { background: var(--border); color: #fff; }
+.btn:active { transform: scale(0.97); }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-.btn-primary:hover { background: var(--accent-hover); box-shadow: 0 0 12px var(--accent-glow); }
+.btn-primary:hover { background: var(--accent-hover); box-shadow: 0 0 14px var(--accent-glow); }
 .btn-primary:disabled { opacity: 0.4; cursor: default; box-shadow: none; }
 
 /* ── Device Code Dialog ───────────────────────────────────────────── */
@@ -819,8 +903,8 @@ h3::before {
     align-items: center;
     justify-content: center;
     gap: 12px;
-    background: rgba(0,0,0,0.25);
-    border: 1px solid var(--border);
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
     padding: 14px 18px;
     margin-top: 4px;
@@ -839,13 +923,13 @@ h3::before {
     font-size: 12px;
     color: var(--text-muted);
 }
-.device-code-error { color: #e03e3e; }
+.device-code-error { color: var(--danger); }
 
 /* ── Scrollbar ─────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar { width: 7px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
 
 /* ── Selection ─────────────────────────────────────────────────────── */
 ::selection {
@@ -890,13 +974,13 @@ h3::before {
 .tb-btn.dirty::after {
     content: '';
     position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 8px;
-    height: 8px;
+    top: 3px;
+    right: 3px;
+    width: 7px;
+    height: 7px;
     background: var(--warning);
     border-radius: 50%;
-    box-shadow: 0 0 6px var(--warning);
+    box-shadow: 0 0 8px var(--warning);
 }
 
 /* ── Step validation warning icon ──────────────────────────────────── */
@@ -910,16 +994,16 @@ h3::before {
 
 /* ── Validation warnings in properties panel ───────────────────────── */
 .validation-warnings {
-    background: rgba(245, 159, 0, 0.08);
-    border: 1px solid rgba(245, 159, 0, 0.25);
+    background: rgba(245, 158, 11, 0.06);
+    border: 1px solid rgba(245, 158, 11, 0.2);
     border-radius: var(--radius);
     padding: 10px 14px;
-    margin-bottom: 14px;
+    margin-bottom: 16px;
 }
 .validation-warning-item {
     font-size: 12px;
     color: var(--warning);
-    padding: 2px 0;
+    padding: 3px 0;
     line-height: 1.5;
 }
 
@@ -935,24 +1019,25 @@ h3::before {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 6px;
+    margin-bottom: 8px;
 }
 .param-header h3 { margin-bottom: 0; }
 
 .json-toggle-btn {
     background: transparent;
     color: var(--text-muted);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 3px 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 4px 10px;
     font-size: 11px;
     font-family: var(--mono);
     cursor: pointer;
-    transition: color var(--transition), border-color var(--transition);
+    transition: all var(--transition);
 }
 .json-toggle-btn:hover {
     color: var(--accent);
     border-color: var(--accent);
+    background: var(--accent-soft);
 }
 
 /* ── JSON raw editor ───────────────────────────────────────────────── */
@@ -961,9 +1046,9 @@ h3::before {
 }
 .json-raw-textarea {
     width: 100%;
-    background: #0d1b3e;
+    background: #0c1320;
     color: var(--text);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
     padding: 12px;
     font-family: var(--mono);
@@ -981,65 +1066,65 @@ h3::before {
     color: var(--warning);
     font-size: 12px;
     margin-top: 6px;
-    padding: 6px 10px;
-    background: rgba(245, 159, 0, 0.08);
-    border: 1px solid rgba(245, 159, 0, 0.25);
+    padding: 8px 12px;
+    background: rgba(245, 158, 11, 0.06);
+    border: 1px solid rgba(245, 158, 11, 0.2);
     border-radius: var(--radius);
 }
 
 /* ── Condition section ─────────────────────────────────────────────── */
 .condition-section {
-    background: rgba(15, 122, 229, 0.06);
-    border: 1px solid rgba(15, 122, 229, 0.18);
+    background: var(--accent-soft);
+    border: 1px solid rgba(59, 130, 246, 0.15);
     border-radius: var(--radius-lg);
-    padding: 14px 16px;
-    margin-bottom: 16px;
+    padding: 16px 18px;
+    margin-bottom: 18px;
 }
 .condition-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
 }
 .condition-header-label {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.6px;
-    color: var(--accent);
+    color: var(--accent-hover);
 }
 .condition-remove-btn {
-    width: 22px; height: 22px;
+    width: 24px; height: 24px;
     display: flex; align-items: center; justify-content: center;
     background: transparent;
     border: 1px solid transparent;
     color: var(--text-muted);
     font-size: 12px;
-    border-radius: var(--radius);
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition: all var(--transition);
 }
 .condition-remove-btn:hover {
     color: var(--danger);
-    border-color: rgba(224, 62, 62, 0.3);
-    background: rgba(224, 62, 62, 0.1);
+    border-color: rgba(239, 68, 68, 0.3);
+    background: rgba(239, 68, 68, 0.08);
 }
-.condition-body { display: flex; flex-direction: column; gap: 10px; }
-.condition-field { display: flex; flex-direction: column; gap: 3px; }
+.condition-body { display: flex; flex-direction: column; gap: 12px; }
+.condition-field { display: flex; flex-direction: column; gap: 4px; }
 .condition-field label {
     font-size: 11px;
     font-weight: 500;
-    color: var(--text-muted);
+    color: var(--text-label);
 }
 .condition-field input[type="text"],
 .condition-field select {
     width: 100%;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
     color: var(--text);
     font: inherit;
-    padding: 7px 10px;
+    padding: 8px 10px;
     outline: none;
     transition: border-color var(--transition), box-shadow var(--transition);
 }
@@ -1051,14 +1136,14 @@ h3::before {
 .condition-field .cond-hint {
     font-size: 10px;
     color: var(--text-muted);
-    margin-top: 1px;
+    margin-top: 2px;
 }
 .btn-add-condition {
     display: flex;
     align-items: center;
     gap: 6px;
     width: 100%;
-    padding: 8px 14px;
+    padding: 10px 14px;
     font-size: 12px;
     font-family: inherit;
     font-weight: 500;
@@ -1068,12 +1153,12 @@ h3::before {
     border-radius: var(--radius);
     cursor: pointer;
     transition: all var(--transition);
-    margin-bottom: 16px;
+    margin-bottom: 18px;
 }
 .btn-add-condition:hover {
     color: var(--accent);
     border-color: var(--accent);
-    background: rgba(15, 122, 229, 0.06);
+    background: var(--accent-soft);
 }
 
 /* ── Step condition indicator icon in step list ────────────────────── */
@@ -1099,18 +1184,18 @@ h3::before {
     margin-bottom: 14px;
 }
 .vr-summary-pass {
-    background: rgba(43, 138, 62, 0.12);
-    border: 1px solid rgba(43, 138, 62, 0.3);
-    color: #4caf50;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.25);
+    color: var(--success);
 }
 .vr-summary-warning {
-    background: rgba(245, 159, 0, 0.08);
-    border: 1px solid rgba(245, 159, 0, 0.25);
+    background: rgba(245, 158, 11, 0.06);
+    border: 1px solid rgba(245, 158, 11, 0.2);
     color: var(--warning);
 }
 .vr-summary-error {
-    background: rgba(224, 62, 62, 0.08);
-    border: 1px solid rgba(224, 62, 62, 0.25);
+    background: rgba(239, 68, 68, 0.06);
+    border: 1px solid rgba(239, 68, 68, 0.2);
     color: var(--danger);
 }
 .vr-list {
@@ -1130,16 +1215,16 @@ h3::before {
     line-height: 1.5;
 }
 .vr-item.vr-error {
-    background: rgba(224, 62, 62, 0.06);
-    color: #f06;
+    background: rgba(239, 68, 68, 0.05);
+    color: var(--danger);
 }
 .vr-item.vr-warning {
-    background: rgba(245, 159, 0, 0.06);
+    background: rgba(245, 158, 11, 0.05);
     color: var(--warning);
 }
 .vr-item.vr-pass {
-    background: rgba(43, 138, 62, 0.08);
-    color: #4caf50;
+    background: rgba(34, 197, 94, 0.06);
+    color: var(--success);
 }
 .vr-icon {
     flex-shrink: 0;
@@ -1160,7 +1245,7 @@ h3::before {
     gap: 8px;
     margin-bottom: 14px;
     padding-bottom: 12px;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
 }
 .vub-template-label {
     font-size: 11px;
@@ -1172,9 +1257,9 @@ h3::before {
 }
 .vub-template-select {
     flex: 1;
-    padding: 5px 10px;
+    padding: 6px 10px;
     background: var(--surface);
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-subtle);
     border-radius: var(--radius);
     color: var(--text);
     font-size: 12px;
@@ -1196,8 +1281,8 @@ h3::before {
     font-weight: 500;
     color: var(--text-muted);
     text-decoration: none;
-    padding: 3px 8px;
-    border-radius: var(--radius);
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
     border: 1px solid transparent;
     transition: all var(--transition);
     margin-left: auto;
@@ -1205,8 +1290,8 @@ h3::before {
 }
 .help-link:hover {
     color: var(--accent);
-    border-color: var(--border);
-    background: var(--surface-alt);
+    border-color: var(--border-subtle);
+    background: var(--accent-soft);
 }
 
 /* ── Dialog tabs ───────────────────────────────────────────────────── */
@@ -1214,8 +1299,8 @@ h3::before {
 .dialog-tabs {
     display: flex;
     gap: 2px;
-    margin-bottom: 14px;
-    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border-subtle);
     padding-bottom: 0;
 }
 .dialog-tab {
@@ -1285,12 +1370,18 @@ h3::before {
 .assign-input {
     flex: 1;
     min-width: 160px;
-    padding: 6px 10px;
-    border-radius: 4px;
-    border: 1px solid var(--border);
-    background: var(--bg-input);
+    padding: 7px 10px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-subtle);
+    background: var(--surface);
     color: var(--text);
     font-size: 13px;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+.assign-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 .assign-ts-path {
@@ -1313,7 +1404,7 @@ h3::before {
     text-align: left;
     padding: 8px 10px;
     border-bottom: 2px solid var(--border);
-    color: var(--text-muted);
+    color: var(--text-label);
     font-weight: 600;
     font-size: 11px;
     text-transform: uppercase;
@@ -1337,12 +1428,12 @@ h3::before {
     cursor: pointer;
     font-size: 16px;
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
 }
 
 .btn-remove-assign:hover {
-    color: #ff5252;
-    background: rgba(255,82,82,0.1);
+    color: var(--danger);
+    background: rgba(239,68,68,0.08);
 }
 
 .no-assignments {
