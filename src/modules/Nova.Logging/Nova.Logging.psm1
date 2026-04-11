@@ -58,7 +58,7 @@ function Write-NovaLogFile {
     try {
         $Line | Out-File -FilePath $script:LogFilePath -Append -Encoding utf8 -Force
     } catch {
-        # Silently ignore -- logging must never break the caller
+        Write-Debug "Nova.Logging: failed to write log line: $_"
     }
 }
 
