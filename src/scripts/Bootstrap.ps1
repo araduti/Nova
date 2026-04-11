@@ -21,6 +21,7 @@ param(
     [string]$GitHubRepo   = 'Nova',
     [ValidateNotNullOrEmpty()]
     [string]$GitHubBranch = 'main',
+    [string]$ProxyBaseUrl = '',
     [ValidateRange(1, [int]::MaxValue)]
     [int]$MaxWaitSeconds  = 300
 )
@@ -28,7 +29,54 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 # Referenced in nested functions via closure (Resolve-LocaleStrings, Show-WinPEConfiguration, etc.)
-$null = $GitHubUser, $GitHubRepo, $GitHubBranch, $MaxWaitSeconds
+$null = $GitHubUser, $GitHubRepo, $GitHubBranch, $ProxyBaseUrl, $MaxWaitSeconds
+
+# Content-proxy state (populated after authentication).
+$script:ProxyBaseUrl  = $null
+$script:ProxyHeaders  = $null
+
+function Get-RepoFileUrl {
+    <#
+    .SYNOPSIS  Returns the URL for a repo-relative file path.
+    .DESCRIPTION
+        When the content proxy is configured, returns the proxy URL with auth.
+        Otherwise returns the public raw.githubusercontent.com URL.
+    .OUTPUTS  [hashtable] with 'Url' and 'Headers' keys.
+    #>
+    param([Parameter(Mandatory)][string]$RelativePath)
+    if ($script:ProxyBaseUrl -and $script:ProxyHeaders) {
+        return @{
+            Url     = "$($script:ProxyBaseUrl)/api/repo/$RelativePath"
+            Headers = $script:ProxyHeaders
+        }
+    }
+    return @{
+        Url     = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/$RelativePath"
+        Headers = $null
+    }
+}
+
+function New-RepoWebClient {
+    <#
+    .SYNOPSIS  Creates a WebClient pre-configured for repo downloads.
+    .DESCRIPTION
+        Returns a System.Net.WebClient with headers set for either
+        proxy-authenticated or public GitHub access.
+    #>
+    [CmdletBinding()]
+    param([switch]$NoCache)
+    $wc = New-Object System.Net.WebClient
+    if ($script:ProxyHeaders) {
+        foreach ($key in $script:ProxyHeaders.Keys) {
+            $wc.Headers.Add($key, $script:ProxyHeaders[$key])
+        }
+    }
+    if ($NoCache) {
+        $wc.Headers.Add('Cache-Control', 'no-cache')
+        $wc.Headers.Add('Pragma', 'no-cache')
+    }
+    return $wc
+}
 
 # ── Shell path───────────────────────────────────────────────────────────────
 # Resolved once at startup so WinPE's fixed X:\ path is used reliably.
@@ -187,11 +235,16 @@ $script:Lang = 'EN'
 function Import-LocaleJson {
     param([string]$LangCode)
     $code = $LangCode.ToLower()
-    $url  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/locale/$code.json"
+    $info = Get-RepoFileUrl -RelativePath "config/locale/$code.json"
     try {
-        $wc   = New-Object System.Net.WebClient
+        $wc = New-Object System.Net.WebClient
+        if ($info.Headers) {
+            foreach ($key in $info.Headers.Keys) {
+                $wc.Headers.Add($key, $info.Headers[$key])
+            }
+        }
         try {
-            $raw  = $wc.DownloadString($url)
+            $raw = $wc.DownloadString($info.Url)
         } finally {
             $wc.Dispose()
         }
@@ -202,7 +255,7 @@ function Import-LocaleJson {
         }
         return $ht
     } catch {
-        Write-Verbose "Failed to download locale $code from $url -- $_"
+        Write-Verbose "Failed to download locale $code from $($info.Url) -- $_"
         return $null
     }
 }
@@ -730,9 +783,14 @@ function Show-ConfigurationMenu {
     $productsXml = Join-Path $scratchPath 'products.xml'
 
     try {
-        $productsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/products.xml"
-        $wc   = New-Object System.Net.WebClient
-        $task = $wc.DownloadFileTaskAsync($productsUrl, $productsXml)
+        $productsInfo = Get-RepoFileUrl -RelativePath 'resources/products.xml'
+        $wc = New-Object System.Net.WebClient
+        if ($productsInfo.Headers) {
+            foreach ($key in $productsInfo.Headers.Keys) {
+                $wc.Headers.Add($key, $productsInfo.Headers[$key])
+            }
+        }
+        $task = $wc.DownloadFileTaskAsync($productsInfo.Url, $productsXml)
         while (-not $task.IsCompleted) {
             [System.Windows.Forms.Application]::DoEvents()
             Start-Sleep -Milliseconds 100
@@ -809,9 +867,14 @@ function Show-ConfigurationMenu {
     try {
         $tsPath = Join-Path $scratchPath 'tasksequence.json'
         if (-not (Test-Path $tsPath)) {
-            $tsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/task-sequence/default.json"
+            $tsInfo = Get-RepoFileUrl -RelativePath 'resources/task-sequence/default.json'
             $wc2 = New-Object System.Net.WebClient
-            $wc2.DownloadFile($tsUrl, $tsPath)
+            if ($tsInfo.Headers) {
+                foreach ($key in $tsInfo.Headers.Keys) {
+                    $wc2.Headers.Add($key, $tsInfo.Headers[$key])
+                }
+            }
+            $wc2.DownloadFile($tsInfo.Url, $tsPath)
         }
         if (Test-Path $tsPath) {
             $tsJson = Get-Content $tsPath -Raw | ConvertFrom-Json
@@ -1011,6 +1074,20 @@ function Invoke-BootstrapM365Auth {
         $script:AuthConfig = $result.AuthConfig
     }
 
+    # ── Configure content proxy (private repo support) ───────────────────
+    if (-not $ProxyBaseUrl -and $script:AuthConfig -and
+        $script:AuthConfig.PSObject.Properties['githubOAuthProxy'] -and
+        $script:AuthConfig.githubOAuthProxy) {
+        $ProxyBaseUrl = $script:AuthConfig.githubOAuthProxy
+    }
+    if ($ProxyBaseUrl -and $script:GraphAccessToken) {
+        $script:ProxyBaseUrl = $ProxyBaseUrl.TrimEnd('/')
+        $script:ProxyHeaders = @{
+            'Authorization' = "Bearer $($script:GraphAccessToken)"
+        }
+        Write-Detail "Content proxy configured: $script:ProxyBaseUrl"
+    }
+
     return $result.Authenticated
 }
 #endregion
@@ -1120,16 +1197,14 @@ function ProceedToEngine {
                         if (-not $tsFile -or $tsFile -notmatch '\.json$') {
                             Write-AuthLog "Invalid task sequence filename: '$tsFile' -- skipping"
                         } else {
-                            $assignedTsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/task-sequence/$tsFile"
+                            $tsInfo = Get-RepoFileUrl -RelativePath "resources/task-sequence/$tsFile"
                             $assignedTsDir = 'X:\Nova'
                             if (-not (Test-Path $assignedTsDir)) {
                                 $null = New-Item -ItemType Directory -Path $assignedTsDir -Force
                             }
                             $assignedTsPath = Join-Path $assignedTsDir 'tasksequence.json'
-                            $tsWc = New-Object System.Net.WebClient
-                            $tsWc.Headers.Add('Cache-Control', 'no-cache')
-                            $tsWc.Headers.Add('Pragma', 'no-cache')
-                            $tsWc.DownloadFile($assignedTsUrl, $assignedTsPath)
+                            $tsWc = New-RepoWebClient -NoCache
+                            $tsWc.DownloadFile($tsInfo.Url, $assignedTsPath)
                             $script:AssignedTaskSequence = $assignedTsPath
                             Write-AuthLog "Assigned task sequence downloaded to $assignedTsPath"
                         }
@@ -1170,14 +1245,12 @@ function ProceedToEngine {
         $localNova = Join-Path $env:SystemRoot 'System32\Nova.ps1'
         if (-not (Test-Path $localNova)) {
             Write-Info "Pre-staged Nova.ps1 not found -- downloading from GitHub"
-            $url    = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/src/scripts/Nova.ps1"
+            $novaInfo = Get-RepoFileUrl -RelativePath 'src/scripts/Nova.ps1'
+            $url    = $novaInfo.Url
             $localNova = 'X:\Nova.ps1'
             Write-Detail "Download URL: $url"
             Write-Status ($S.Download -f 0)
-            $web = New-Object System.Net.WebClient
-            # Add cache-busting headers to avoid WinINet serving stale content
-            $web.Headers.Add('Cache-Control', 'no-cache')
-            $web.Headers.Add('Pragma', 'no-cache')
+            $web = New-RepoWebClient -NoCache
             $web.add_DownloadProgressChanged({
                 param($eventSender, $e)
                 $null = $eventSender  # Required by .NET delegate signature
@@ -1195,8 +1268,14 @@ function ProceedToEngine {
             # Loading the manifest AFTER the download minimises the CDN
             # propagation window.  If the hash mismatches, we retry once
             # after a short delay to handle CDN propagation delays.
+            $hashesInfo = Get-RepoFileUrl -RelativePath 'config/hashes.json'
             $noCacheHeaders = @{ 'Cache-Control' = 'no-cache'; 'Pragma' = 'no-cache' }
-            $hashesUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/hashes.json"
+            if ($hashesInfo.Headers) {
+                foreach ($key in $hashesInfo.Headers.Keys) {
+                    $noCacheHeaders[$key] = $hashesInfo.Headers[$key]
+                }
+            }
+            $hashesUrl = $hashesInfo.Url
 
             for ($attempt = 1; $attempt -le 2; $attempt++) {
                 try {

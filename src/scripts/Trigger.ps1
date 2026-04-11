@@ -854,10 +854,17 @@ function Build-WinPE {
         }
 
         # ── 5e. Verify script integrity (with CDN retry) ─────────────────────
-        Confirm-FileIntegrity -Path $bootstrapDest -RelativeName 'src/scripts/Bootstrap.ps1' `
-            -HashesJson $hashesJson -RetryOnMismatch -NoCacheHeaders $script:NoCacheHeaders
-        Confirm-FileIntegrity -Path $novaDest -RelativeName 'src/scripts/Nova.ps1' `
-            -HashesJson $hashesJson -RetryOnMismatch -NoCacheHeaders $script:NoCacheHeaders
+        $integrityParams = @{
+            HashesJson      = $hashesJson
+            RetryOnMismatch = $true
+            NoCacheHeaders  = $script:NoCacheHeaders
+        }
+        if ($script:ProxyBaseUrl -and $script:ProxyHeaders) {
+            $integrityParams['ProxyBaseUrl']  = $script:ProxyBaseUrl
+            $integrityParams['ProxyHeaders']  = $script:ProxyHeaders
+        }
+        Confirm-FileIntegrity -Path $bootstrapDest -RelativeName 'src/scripts/Bootstrap.ps1' @integrityParams
+        Confirm-FileIntegrity -Path $novaDest -RelativeName 'src/scripts/Nova.ps1' @integrityParams
 
         # ── 5f. Verify module integrity (iex scenario) ────────────────────────
         if (-not ($modulesSrc -and (Test-Path $modulesSrc))) {
@@ -867,8 +874,7 @@ function Build-WinPE {
                     $modFile = Join-Path $modulesDest "$mod\$mod$ext"
                     $relName = "src/modules/$mod/$mod$ext"
                     if (Test-Path $modFile) {
-                        Confirm-FileIntegrity -Path $modFile -RelativeName $relName `
-                            -HashesJson $hashesJson -RetryOnMismatch -NoCacheHeaders $script:NoCacheHeaders
+                        Confirm-FileIntegrity -Path $modFile -RelativeName $relName @integrityParams
                     }
                 }
             }
