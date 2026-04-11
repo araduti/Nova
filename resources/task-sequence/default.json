@@ -1,6 +1,221 @@
 {
-  "name": "New Task Sequence",
+  "name": "1",
+  "schemaVersion": "1.0",
   "version": "1.0",
-  "description": "",
-  "steps": []
+  "description": "Standard cloud-native Windows deployment via Nova",
+  "steps": [
+    {
+      "id": "set-computer-name",
+      "name": "Set Computer Name",
+      "type": "SetComputerName",
+      "enabled": true,
+      "description": "Configure the Windows computer name with naming rules",
+      "continueOnError": true,
+      "group": "Configuration",
+      "parameters": {
+        "computerName": "",
+        "namingSource": "serialNumber",
+        "prefix": "NOVA-",
+        "suffix": "",
+        "randomDigitCount": 4,
+        "maxLength": 15
+      }
+    },
+    {
+      "id": "set-regional-settings",
+      "name": "Set Regional Settings",
+      "type": "SetRegionalSettings",
+      "enabled": true,
+      "description": "Configure region, keyboard layout, and display language",
+      "continueOnError": true,
+      "group": "Configuration",
+      "parameters": {
+        "inputLocale": "",
+        "systemLocale": "",
+        "userLocale": "",
+        "uiLanguage": ""
+      }
+    },
+    {
+      "id": "partition-disk",
+      "name": "Partition Disk 1",
+      "type": "PartitionDisk",
+      "enabled": true,
+      "description": "Create GPT (UEFI) or MBR (BIOS) layout on the target drive",
+      "continueOnError": false,
+      "group": "Disk & Image",
+      "parameters": {
+        "diskNumber": 0,
+        "osDriveLetter": "C"
+      }
+    },
+    {
+      "id": "download-image",
+      "name": "Download Windows Image",
+      "type": "DownloadImage",
+      "enabled": false,
+      "description": "Fetch the Windows ESD/WIM from Microsoft CDN or a custom URL",
+      "continueOnError": false,
+      "group": "Disk & Image",
+      "parameters": {
+        "imageUrl": "",
+        "edition": "Professional",
+        "language": "en-us",
+        "architecture": "x64"
+      }
+    },
+    {
+      "id": "apply-image",
+      "name": "Apply Windows Image",
+      "type": "ApplyImage",
+      "enabled": true,
+      "description": "Expand the Windows image onto the target partition",
+      "continueOnError": false,
+      "group": "Disk & Image",
+      "parameters": {
+        "edition": "Professional"
+      }
+    },
+    {
+      "id": "set-bootloader",
+      "name": "Configure Bootloader",
+      "type": "SetBootloader",
+      "enabled": true,
+      "description": "Write BCD store and EFI/MBR boot entries",
+      "continueOnError": false,
+      "group": "Disk & Image",
+      "parameters": {}
+    },
+    {
+      "id": "inject-drivers",
+      "name": "Inject Drivers",
+      "type": "InjectDrivers",
+      "enabled": true,
+      "description": "Add network and storage drivers from a local or network path",
+      "continueOnError": true,
+      "group": "Drivers",
+      "parameters": {
+        "driverPath": ""
+      }
+    },
+    {
+      "id": "inject-oem-drivers",
+      "name": "Inject OEM Drivers",
+      "type": "InjectOemDrivers",
+      "enabled": false,
+      "description": "Auto-detect manufacturer (Dell/HP/Lenovo) and fetch latest drivers",
+      "continueOnError": true,
+      "group": "Drivers",
+      "parameters": {}
+    },
+    {
+      "id": "import-autopilot",
+      "name": "Import Autopilot Device",
+      "type": "ImportAutopilot",
+      "enabled": true,
+      "description": "Register this device in Windows Autopilot via Microsoft Graph API",
+      "continueOnError": true,
+      "group": "Provisioning",
+      "parameters": {
+        "groupTag": "SE-SH",
+        "userEmail": ""
+      }
+    },
+    {
+      "id": "apply-autopilot",
+      "name": "Apply Autopilot Configuration",
+      "type": "ApplyAutopilot",
+      "enabled": true,
+      "description": "Embed the Autopilot/Intune provisioning profile",
+      "continueOnError": true,
+      "group": "Provisioning",
+      "parameters": {
+        "jsonUrl": "",
+        "jsonPath": ""
+      }
+    },
+    {
+      "id": "stage-ccmsetup",
+      "name": "Stage ConfigMgr Setup",
+      "type": "StageCCMSetup",
+      "enabled": true,
+      "description": "Stage ccmsetup.exe for first-boot ConfigMgr enrollment",
+      "continueOnError": true,
+      "group": "Provisioning",
+      "parameters": {
+        "ccmSetupUrl": ""
+      }
+    },
+    {
+      "id": "customize-oobe",
+      "name": "Customize OOBE",
+      "type": "CustomizeOOBE",
+      "enabled": true,
+      "description": "Apply unattend.xml for out-of-box experience customization",
+      "continueOnError": true,
+      "group": "Finalization",
+      "parameters": {
+        "unattendSource": "default",
+        "unattendContent": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<unattend xmlns=\"urn:schemas-microsoft-com:unattend\">\n  <settings pass=\"oobeSystem\">\n    <component xmlns:wcm=\"http://schemas.microsoft.com/WMIConfig/2002/State\" name=\"Microsoft-Windows-Shell-Setup\" processorArchitecture=\"amd64\" publicKeyToken=\"31bf3856ad364e35\" language=\"neutral\" versionScope=\"nonSxS\">\n      <OOBE>\n        <HideEULAPage>true</HideEULAPage>\n        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>\n        <HideOnlineAccountScreens>false</HideOnlineAccountScreens>\n        <HideWirelessSetupInOOBE>false</HideWirelessSetupInOOBE>\n        <ProtectYourPC>3</ProtectYourPC>\n        <SkipMachineOOBE>false</SkipMachineOOBE>\n        <SkipUserOOBE>false</SkipUserOOBE>\n      </OOBE>\n    </component>\n  </settings>\n</unattend>",
+        "unattendUrl": "",
+        "unattendPath": ""
+      }
+    },
+    {
+      "id": "enable-bitlocker",
+      "name": "Enable BitLocker",
+      "type": "EnableBitLocker",
+      "enabled": false,
+      "description": "Enable BitLocker drive encryption with TPM protector on first boot",
+      "continueOnError": true,
+      "group": "Finalization",
+      "parameters": {
+        "encryptionMethod": "XtsAes256",
+        "skipHardwareTest": false
+      }
+    },
+    {
+      "id": "install-application",
+      "name": "Install Application",
+      "type": "InstallApplication",
+      "enabled": false,
+      "description": "Stage application installer for first-boot execution (Winget, MSI/EXE, or script)",
+      "continueOnError": true,
+      "group": "Finalization",
+      "parameters": {
+        "installMode": "url",
+        "packageId": "",
+        "installerUrl": "",
+        "silentArgs": "/qn /norestart",
+        "scriptUrl": ""
+      }
+    },
+    {
+      "id": "windows-update",
+      "name": "Windows Update",
+      "type": "WindowsUpdate",
+      "enabled": false,
+      "description": "Stage critical and security updates for installation on first boot",
+      "continueOnError": true,
+      "group": "Finalization",
+      "parameters": {
+        "categories": [
+          "SecurityUpdates",
+          "CriticalUpdates"
+        ]
+      }
+    },
+    {
+      "id": "run-post-scripts",
+      "name": "Run Post-Provisioning Scripts",
+      "type": "RunPostScripts",
+      "enabled": true,
+      "description": "Download and stage PowerShell scripts for first-boot execution",
+      "continueOnError": true,
+      "group": "Finalization",
+      "parameters": {
+        "scriptUrls": []
+      }
+    }
+  ]
 }
