@@ -5,7 +5,7 @@
 .DESCRIPTION
     Provides OAuth2 Authorization Code Flow with PKCE for authenticating
     OSD operators.  Both environments use Edge --app mode:
-      1. Trigger.ps1 (full Windows): Edge --app with system browser fallback
+      1. Trigger.ps1 (full Windows): Edge --app mode
       2. Bootstrap.ps1 (WinPE kiosk): Edge --app mode (always available in boot image)
     Also includes token refresh.
 #>
@@ -19,17 +19,307 @@ function _HasProp {
 }
 
 
+#region ── Shared Edge --app Auth Helper ────────────────────────────────────────────
+# Both Invoke-M365DeviceCodeAuth (full Windows) and Invoke-KioskM365Auth
+# (WinPE kiosk) delegate to this private function for the interactive
+# Edge --app OAuth2 Authorization Code + PKCE flow.
+
+function _EdgeAppAuth {
+    <#
+    .SYNOPSIS  Authenticate via Edge --app popup (Auth Code + PKCE).
+    .DESCRIPTION
+        Generates PKCE codes, starts a localhost HTTP listener, launches Edge
+        in --app mode pointing at the Azure AD authorization endpoint, waits
+        for the redirect callback, and exchanges the authorization code for
+        tokens.
+
+        Used by both Invoke-M365DeviceCodeAuth (full Windows) and
+        Invoke-KioskM365Auth (WinPE kiosk).  Environment differences are
+        handled through parameters:
+          - ExtraEdgeArgs: WinPE passes GPU-related flags.
+          - EdgeExitGracePeriod: full Windows allows a grace period because
+            Edge may hand off window creation to an existing process.
+          - WaitForDns: WinPE waits for DNS readiness after WiFi connects.
+    .PARAMETER ClientId
+        Azure AD application (client) ID.
+    .PARAMETER Scope
+        OAuth 2.0 scopes to request (space-separated).
+    .PARAMETER EdgeExePath
+        Full path to msedge.exe.
+    .PARAMETER EdgeDataDir
+        Temporary directory for Edge user-data-dir (avoids conflicts).
+    .PARAMETER ExtraEdgeArgs
+        Additional command-line arguments for Edge (e.g. WinPE GPU flags).
+    .PARAMETER TimeoutMinutes
+        How long to wait for the user to complete sign-in.
+    .PARAMETER EdgeExitGracePeriod
+        Seconds to wait before treating an exited Edge process as user
+        cancellation.  On full Windows, Edge may hand off window creation
+        to an already-running browser process, causing the initial process
+        to exit immediately.  Set to 0 in WinPE where Edge is the sole instance.
+    .PARAMETER WaitForDns
+        When set, waits for DNS resolution of login.microsoftonline.com
+        before launching Edge.  Useful in WinPE where the network stack
+        may not be fully ready.
+    .PARAMETER WriteLog
+        Scriptblock for writing auth log entries.
+    .PARAMETER UpdateUi
+        Scriptblock for updating the HTML UI.
+    .PARAMETER CheckCancelled
+        Scriptblock that returns $true when auth has been cancelled.
+    .PARAMETER DoEvents
+        Scriptblock that pumps the WinForms message loop.
+    .OUTPUTS
+        [hashtable] with keys:
+          Success          [bool]   $true if auth succeeded.
+          GraphAccessToken [string] Microsoft Graph access token, or $null.
+          RefreshToken     [string] Refresh token, or $null.
+          ExpiresAt        [datetime] Token expiration time, or $null.
+    #>
+    [OutputType([hashtable])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ClientId,
+        [string]$Scope = 'openid profile',
+        [Parameter(Mandatory)]
+        [string]$EdgeExePath,
+        [Parameter(Mandatory)]
+        [string]$EdgeDataDir,
+        [string[]]$ExtraEdgeArgs = @(),
+        [int]$TimeoutMinutes = 2,
+        [int]$EdgeExitGracePeriod = 0,
+        [switch]$WaitForDns,
+        [scriptblock]$WriteLog,
+        [scriptblock]$UpdateUi,
+        [scriptblock]$CheckCancelled,
+        [scriptblock]$DoEvents
+    )
+
+    $fail = @{ Success = $false; GraphAccessToken = $null; RefreshToken = $null; ExpiresAt = $null }
+
+    # ── Verify Edge binary exists ───────────────────────────────────────────
+    if (-not (Test-Path $EdgeExePath)) {
+        if ($WriteLog) { & $WriteLog "Edge not found at $EdgeExePath -- cannot open auth window." }
+        return $fail
+    }
+
+    if ($WriteLog) { & $WriteLog "Edge app auth starting" }
+
+    # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────────
+    $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $bytes = New-Object byte[] 32
+    $rng.GetBytes($bytes)
+    $codeVerifier  = [Convert]::ToBase64String($bytes) -replace '\+','-' -replace '/','_' -replace '='
+
+    $sha256        = [System.Security.Cryptography.SHA256]::Create()
+    $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
+    $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
+
+    # ── Start a temporary localhost HTTP listener ───────────────────────────────
+    $listener    = New-Object System.Net.HttpListener
+    $redirectUri = $null
+    foreach ($attempt in 1..5) {
+        $port        = Get-Random -Minimum 49152 -Maximum 65535
+        $redirectUri = "http://localhost:$port/"
+        $listener.Prefixes.Clear()
+        $listener.Prefixes.Add($redirectUri)
+        try {
+            $listener.Start()
+            if ($WriteLog) { & $WriteLog "HTTP listener started on port $port" }
+            break
+        } catch {
+            if ($WriteLog) { & $WriteLog "Listener port $port failed (attempt $attempt of 5): $_" }
+            if ($attempt -eq 5) {
+                if ($WriteLog) { & $WriteLog "Could not start HTTP listener after $attempt attempts." }
+                return $fail
+            }
+        }
+    }
+
+    $authCode  = $null
+    $authError = $null
+    $edgeProc  = $null
+
+    try {
+
+    # ── Build the authorize URL ───────────────────────────────────────────
+    $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
+        "client_id=$([uri]::EscapeDataString($ClientId))" +
+        '&response_type=code' +
+        "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
+        "&scope=$([uri]::EscapeDataString($Scope))" +
+        "&code_challenge=$codeChallenge" +
+        '&code_challenge_method=S256' +
+        '&prompt=select_account'
+
+    # ── Optionally wait for DNS readiness ──────────────────────────────────────
+    if ($WaitForDns) {
+        $loginHost = 'login.microsoftonline.com'
+        $dnsReady  = $false
+        for ($dnsAttempt = 1; $dnsAttempt -le 10; $dnsAttempt++) {
+            try {
+                $null = [System.Net.Dns]::GetHostAddresses($loginHost)
+                $dnsReady = $true
+                break
+            } catch {
+                if ($WriteLog) { & $WriteLog "DNS lookup for $loginHost failed (attempt $dnsAttempt of 10)" }
+                Start-Sleep -Milliseconds 500
+            }
+        }
+        if (-not $dnsReady) {
+            if ($WriteLog) { & $WriteLog "Cannot resolve $loginHost -- proceeding anyway" }
+        }
+    }
+
+    # ── Launch Edge in --app mode ──────────────────────────────────────────
+    if ($WriteLog) { & $WriteLog "Launching Edge --app for auth popup" }
+    $edgeArgs = @(
+        "--app=$authorizeUrl",
+        "--user-data-dir=$EdgeDataDir",
+        '--window-size=520,700',
+        '--no-first-run',
+        '--disable-fre',
+        '--disable-features=msWebOOBE,PasswordManager',
+        '--password-store=basic',
+        '--disable-save-password-bubble'
+    ) + $ExtraEdgeArgs
+    $edgeProc = Start-Process -FilePath $EdgeExePath -ArgumentList $edgeArgs -PassThru
+    $edgeLaunchTime = [datetime]::UtcNow
+
+    if ($UpdateUi) { & $UpdateUi @{ AuthInProgress = $true } }
+
+    # ── Wait for the redirect callback ──────────────────────────────────────
+    $asyncResult = $listener.BeginGetContext($null, $null)
+    $timeout   = [datetime]::UtcNow.AddMinutes($TimeoutMinutes)
+    $cancelled = $false
+
+    while (-not $authCode -and -not $authError `
+           -and -not $cancelled -and [datetime]::UtcNow -lt $timeout) {
+
+        if ($CheckCancelled) { $cancelled = (& $CheckCancelled) -eq $true }
+
+        if ($edgeProc -and $edgeProc.HasExited) {
+            if ($EdgeExitGracePeriod -gt 0) {
+                # Full Windows: Edge may hand off to an existing browser
+                # process, causing the initial process to exit immediately.
+                # Only treat as cancellation after the grace period.
+                if (([datetime]::UtcNow - $edgeLaunchTime).TotalSeconds -gt $EdgeExitGracePeriod) {
+                    if ($WriteLog) { & $WriteLog "Edge auth window was closed by user (after grace period)." }
+                    $cancelled = $true
+                    break
+                }
+            } else {
+                if ($WriteLog) { & $WriteLog "Edge auth window was closed by user." }
+                $cancelled = $true
+                break
+            }
+        }
+
+        if ($asyncResult.IsCompleted -or $asyncResult.AsyncWaitHandle.WaitOne(0)) {
+            try {
+                $context = $listener.EndGetContext($asyncResult)
+
+                foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
+                    $kv = $pair.Split('=', 2)
+                    if ($kv.Count -eq 2) {
+                        if ($kv[0] -eq 'code')  { $authCode  = [uri]::UnescapeDataString($kv[1]) }
+                        if ($kv[0] -eq 'error') { $authError = [uri]::UnescapeDataString($kv[1]) }
+                    }
+                }
+
+                # Send a response page that shows result and closes.
+                $html = if ($authCode) {
+                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
+                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
+                    '<div style="text-align:center"><h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
+                    '<p>This window will close automatically...</p></div>' +
+                    '<script>setTimeout(function(){window.close()},1500)</script></body></html>'
+                } else {
+                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
+                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
+                    '<div style="text-align:center"><h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
+                    '<p>This window will close automatically...</p></div>' +
+                    '<script>setTimeout(function(){window.close()},2500)</script></body></html>'
+                }
+                $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
+                $context.Response.ContentType     = 'text/html; charset=utf-8'
+                $context.Response.ContentLength64 = $buf.Length
+                $context.Response.OutputStream.Write($buf, 0, $buf.Length)
+                $context.Response.OutputStream.Close()
+            } catch {
+                if ($WriteLog) { & $WriteLog "Listener callback error: $_" }
+            }
+        }
+
+        if ($DoEvents) { & $DoEvents }
+        Start-Sleep -Milliseconds 200
+    }
+
+    } finally {
+        # ── Clean up: stop listener and kill the Edge --app process ──────────────
+        try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
+
+        if ($edgeProc -and -not $edgeProc.HasExited) {
+            if ($WriteLog) { & $WriteLog "Closing Edge auth window (PID $($edgeProc.Id))" }
+            try { $edgeProc.Kill() } catch { $null = $_ }
+        }
+        # Remove stale lock files so the auth data dir can be reused.
+        try { Remove-Item (Join-Path $EdgeDataDir 'lockfile')      -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+        try { Remove-Item (Join-Path $EdgeDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+
+        if ($UpdateUi) { & $UpdateUi @{ ClearAuth = $true } }
+    }
+
+    if ($cancelled -or -not $authCode) {
+        $codeStatus = if ($authCode) { 'present' } else { 'missing' }
+        if ($WriteLog) { & $WriteLog "Edge app auth ended without auth code. Cancelled=$cancelled, AuthCode=$codeStatus" }
+        if ($authError -and $WriteLog) {
+            & $WriteLog "Auth error: $authError"
+        }
+        return $fail
+    }
+
+    # ── Exchange authorization code for tokens ────────────────────────────────
+    $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
+    try {
+        $body = "client_id=$([uri]::EscapeDataString($ClientId))" +
+                "&scope=$([uri]::EscapeDataString($Scope))" +
+                "&code=$([uri]::EscapeDataString($authCode))" +
+                "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
+                '&grant_type=authorization_code' +
+                "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+        $raw = $wc.UploadString($tokenUrl, 'POST', $body)
+        $tokenResponse = $raw | ConvertFrom-Json
+        if ((_HasProp $tokenResponse 'id_token') -and $tokenResponse.id_token) {
+            $graphToken   = if ((_HasProp $tokenResponse 'access_token')  -and $tokenResponse.access_token)  { $tokenResponse.access_token }  else { $null }
+            $refreshToken = if ((_HasProp $tokenResponse 'refresh_token') -and $tokenResponse.refresh_token) { $tokenResponse.refresh_token } else { $null }
+            $expiresIn    = if ((_HasProp $tokenResponse 'expires_in')    -and $tokenResponse.expires_in)    { [int]$tokenResponse.expires_in } else { 3600 }
+            $expiresAt    = (Get-Date).AddSeconds($expiresIn)
+            if ($WriteLog) { & $WriteLog "Edge app auth succeeded -- token obtained." }
+            return @{ Success = $true; GraphAccessToken = $graphToken; RefreshToken = $refreshToken; ExpiresAt = $expiresAt }
+        }
+    } catch {
+        if ($WriteLog) { & $WriteLog "Token exchange failed: $_" }
+    }
+
+    return $fail
+}
+
+#endregion
+
+
 function Invoke-M365DeviceCodeAuth {
     <#
-    .SYNOPSIS  Authenticate the operator via Edge --app or system browser sign-in.
+    .SYNOPSIS  Authenticate the operator via Edge --app sign-in.
     .DESCRIPTION
         Downloads config/auth.json from the GitHub repository.  When
         requireAuth is true and a clientId is configured, the function
         launches Edge in --app mode for an interactive Azure AD sign-in
         using the Authorization Code Flow with PKCE.  A temporary
         localhost HTTP listener captures the redirect.
-        If Edge is not available, the function falls back to opening the
-        default system browser with the same localhost listener.
         Tenant restrictions are enforced at the Entra ID app registration
         level -- only tenants explicitly allowed in the app's
         "Supported account types" configuration can complete sign-in.
@@ -53,7 +343,7 @@ function Invoke-M365DeviceCodeAuth {
         [string] $GitHubBranch = 'main'
     )
 
-    # ── Fetch auth configuration from the repository ────────────────────────
+    # ── Fetch auth configuration from the repository ────────────────────────────
     $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/auth.json"
     $authConfig    = $null
     try {
@@ -77,62 +367,16 @@ function Invoke-M365DeviceCodeAuth {
 
     $clientId = $authConfig.clientId
 
-    # ── Build scope string ──────────────────────────────────────────────────
+    # ── Build scope string ────────────────────────────────────────────────
     $scope = 'openid profile'
     if ((_HasProp $authConfig 'graphScopes') -and $authConfig.graphScopes) {
         $trimmed = ($authConfig.graphScopes).Trim()
         if ($trimmed) { $scope = "openid profile $trimmed" }
     }
 
-    # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────
     Write-Step 'Signing in with Microsoft 365...'
 
-    $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $bytes = New-Object byte[] 32
-    $rng.GetBytes($bytes)
-    $codeVerifier  = [Convert]::ToBase64String($bytes) -replace '\+','-' -replace '/','_' -replace '='
-
-    $sha256        = [System.Security.Cryptography.SHA256]::Create()
-    $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
-    $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
-
-    # ── Start a temporary localhost HTTP listener ───────────────────────────
-    $listener    = New-Object System.Net.HttpListener
-    $redirectUri = $null
-    foreach ($attempt in 1..5) {
-        $port        = Get-Random -Minimum 49152 -Maximum 65535
-        $redirectUri = "http://localhost:$port/"
-        $listener.Prefixes.Clear()
-        $listener.Prefixes.Add($redirectUri)
-        try {
-            $listener.Start()
-            break
-        } catch {
-            if ($attempt -eq 5) {
-                Write-Fail "Could not start local HTTP listener after $attempt attempts: $_"
-                return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
-            }
-        }
-    }
-
-    $code      = $null
-    $authError = $null
-    $edgeProc  = $null
-    $edgeAuthDataDir = Join-Path $env:TEMP 'Nova-EdgeAuth'
-
-    try {
-
-    # ── Build the authorize URL ─────────────────────────────────────────────
-    $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
-        "client_id=$([uri]::EscapeDataString($clientId))" +
-        '&response_type=code' +
-        "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-        "&scope=$([uri]::EscapeDataString($scope))" +
-        "&code_challenge=$codeChallenge" +
-        '&code_challenge_method=S256' +
-        '&prompt=select_account'
-
-    # ── Find Edge and launch in --app mode ──────────────────────────────────
+    # ── Find Edge ──────────────────────────────────────────────────────────
     $edgePath = $null
     foreach ($candidate in @(
         "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
@@ -144,122 +388,35 @@ function Invoke-M365DeviceCodeAuth {
         }
     }
 
-    if ($edgePath) {
-        $edgeAuthArgs = @(
-            "--app=$authorizeUrl",
-            "--user-data-dir=$edgeAuthDataDir",
-            '--window-size=520,700',
-            '--no-first-run',
-            '--disable-fre',
-            '--disable-features=msWebOOBE,PasswordManager',
-            '--password-store=basic',
-            '--disable-save-password-bubble'
-        )
-        $edgeProc = Start-Process -FilePath $edgePath -ArgumentList $edgeAuthArgs -PassThru
-    } else {
-        # Fallback: open default system browser.
-        Write-Host ''
-        Write-Host '  A browser window will open for sign-in.' -ForegroundColor White
-        Write-Host '  Complete the sign-in in your browser.'    -ForegroundColor Gray
-        Write-Host ''
-        Start-Process $authorizeUrl
-    }
-
-    # ── Wait for the redirect callback ──────────────────────────────────────
-    $asyncResult = $listener.BeginGetContext($null, $null)
-    $timeout = [datetime]::UtcNow.AddMinutes(2)
-
-    while (-not $code -and -not $authError -and [datetime]::UtcNow -lt $timeout) {
-        # NOTE: We intentionally do NOT break on $edgeProc.HasExited here.
-        # On full Windows, Edge hands off --app windows to an already-running
-        # browser process, causing $edgeProc to exit almost immediately.
-        # The user is still completing sign-in in the surviving Edge window.
-        # We rely solely on the 2-minute timeout as the cancellation mechanism.
-
-        if ($asyncResult.IsCompleted -or $asyncResult.AsyncWaitHandle.WaitOne(0)) {
-            try {
-                $context = $listener.EndGetContext($asyncResult)
-
-                foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
-                    $kv = $pair.Split('=', 2)
-                    if ($kv.Count -eq 2) {
-                        if ($kv[0] -eq 'code')  { $code      = [uri]::UnescapeDataString($kv[1]) }
-                        if ($kv[0] -eq 'error') { $authError = [uri]::UnescapeDataString($kv[1]) }
-                    }
-                }
-
-                # Send a response page.
-                $html = if ($code) {
-                    '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
-                    '<h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
-                    '<p>You can close this window and return to Nova.</p>' +
-                    '<script>setTimeout(function(){window.close()},2000)</script></body></html>'
-                } else {
-                    '<html><body style="font-family:Segoe UI,sans-serif;text-align:center;padding:60px">' +
-                    '<h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
-                    '<p>Please close this window and try again.</p></body></html>'
-                }
-                $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
-                $context.Response.ContentType     = 'text/html; charset=utf-8'
-                $context.Response.ContentLength64 = $buf.Length
-                $context.Response.OutputStream.Write($buf, 0, $buf.Length)
-                $context.Response.OutputStream.Close()
-            } catch { $null = $_ }
-        }
-
-        Start-Sleep -Milliseconds 200
-    }
-
-    } finally {
-        # ── Clean up: stop listener and kill Edge --app process ──────────────
-        try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
-
-        if ($edgeProc -and -not $edgeProc.HasExited) {
-            try { $edgeProc.Kill() } catch { $null = $_ }
-        }
-        # Remove stale lock files so the auth data dir can be reused.
-        try { Remove-Item (Join-Path $edgeAuthDataDir 'lockfile')      -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
-        try { Remove-Item (Join-Path $edgeAuthDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
-    }
-
-    if (-not $code) {
-        $msg = if ($authError) { "Sign-in was not completed: $authError" } else { 'Sign-in was not completed.' }
-        Write-Fail $msg
+    if (-not $edgePath) {
+        Write-Fail 'Microsoft Edge is required but was not found.'
         return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
     }
 
-    # ── Exchange authorization code for tokens ──────────────────────────────
-    $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
-    try {
-        $body = "client_id=$([uri]::EscapeDataString($clientId))" +
-                "&scope=$([uri]::EscapeDataString($scope))" +
-                "&code=$([uri]::EscapeDataString($code))" +
-                "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-                '&grant_type=authorization_code' +
-                "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-        $raw = $wc.UploadString($tokenUrl, 'POST', $body)
-        $tokenResponse = $raw | ConvertFrom-Json
-        if ((_HasProp $tokenResponse 'id_token') -and $tokenResponse.id_token) {
-            $graphToken   = if ((_HasProp $tokenResponse 'access_token')  -and $tokenResponse.access_token)  { $tokenResponse.access_token }  else { $null }
-            $refreshToken = if ((_HasProp $tokenResponse 'refresh_token') -and $tokenResponse.refresh_token) { $tokenResponse.refresh_token } else { $null }
-            $expiresIn    = if ((_HasProp $tokenResponse 'expires_in')    -and $tokenResponse.expires_in)    { [int]$tokenResponse.expires_in } else { 3600 }
-            $expiresAt    = (Get-Date).AddSeconds($expiresIn)
-            Write-Success 'Identity verified.'
-            return @{
-                Authenticated    = $true
-                GraphAccessToken = $graphToken
-                RefreshToken     = $refreshToken
-                ExpiresAt        = $expiresAt
-                AuthConfig       = $authConfig
-            }
+    # ── Delegate to shared Edge --app auth helper ──────────────────────────────
+    $edgeAuthDataDir = Join-Path $env:TEMP 'Nova-EdgeAuth'
+    $writeLog = { param([string]$m) Write-Verbose $m }
+
+    $edgeResult = _EdgeAppAuth `
+        -ClientId $clientId -Scope $scope `
+        -EdgeExePath $edgePath `
+        -EdgeDataDir $edgeAuthDataDir `
+        -TimeoutMinutes 2 `
+        -EdgeExitGracePeriod 15 `
+        -WriteLog $writeLog
+
+    if ($edgeResult.Success) {
+        Write-Success 'Identity verified.'
+        return @{
+            Authenticated    = $true
+            GraphAccessToken = $edgeResult.GraphAccessToken
+            RefreshToken     = $edgeResult.RefreshToken
+            ExpiresAt        = $edgeResult.ExpiresAt
+            AuthConfig       = $authConfig
         }
-    } catch {
-        Write-Verbose "Token exchange failed: $_"
     }
 
-    Write-Fail 'Token exchange failed.'
+    Write-Fail 'Sign-in was not completed.'
     return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
 }
 
@@ -322,279 +479,6 @@ function Update-M365Token {
     return $null
 }
 
-#region ── WinPE Kiosk Auth ────────────────────────────────────────────────────
-# Used by Bootstrap.ps1 inside the WinPE kiosk environment.
-# Edge is always present in the WinPE boot image, so the only interactive
-# auth method is Edge --app mode (Auth Code + PKCE).
-# _KioskEdgeAuth is a private helper; Invoke-KioskM365Auth is the public
-# orchestrator that accepts scriptblock callbacks for UI decoupling.
-
-function _KioskEdgeAuth {
-    <#
-    .SYNOPSIS  Authenticate the operator via Edge --app popup (Auth Code + PKCE).
-    .DESCRIPTION
-        Launches Microsoft Edge in --app mode as a separate process, pointing at
-        the Azure AD authorization endpoint.  This opens a clean, chromeless
-        browser window dedicated to the login flow -- independent of the kiosk
-        UI running in Edge --kiosk mode.
-
-        A temporary localhost HTTP listener captures the redirect carrying the
-        authorization code, then exchanges it for tokens using PKCE.
-        After authentication completes (or fails), the Edge --app process is
-        terminated automatically.
-
-        WinPE-safe -- uses the same msedge.exe binary already staged in the
-        boot image.
-    .PARAMETER ClientId
-        Azure AD application (client) ID.
-    .PARAMETER Scope
-        OAuth 2.0 scopes to request (space-separated).
-    .PARAMETER EdgeExePath
-        Full path to msedge.exe.  Defaults to the WinPE staging path.
-    .PARAMETER WriteLog
-        Scriptblock for writing auth log entries.  Called with a single string argument.
-    .PARAMETER UpdateUi
-        Scriptblock for updating the HTML UI.  Called with a hashtable of parameters.
-    .PARAMETER CheckCancelled
-        Scriptblock that returns $true when auth has been cancelled (e.g. via /cancelauth HTTP API).
-    .PARAMETER DoEvents
-        Scriptblock that pumps the WinForms message loop.
-    .OUTPUTS
-        [hashtable] with keys:
-          Success          [bool]   $true if auth succeeded.
-          GraphAccessToken [string] Microsoft Graph access token, or $null.
-    #>
-    [OutputType([hashtable])]
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [string]$ClientId,
-        [string]$Scope = 'openid profile',
-        [string]$EdgeExePath = 'X:\WebView2\Edge\msedge.exe',
-        [scriptblock]$WriteLog,
-        [scriptblock]$UpdateUi,
-        [scriptblock]$CheckCancelled,
-        [scriptblock]$DoEvents
-    )
-
-    $fail = @{ Success = $false; GraphAccessToken = $null }
-
-    # ── Verify Edge binary exists ───────────────────────────────────────────
-    if (-not (Test-Path $EdgeExePath)) {
-        if ($WriteLog) { & $WriteLog "Edge not found at $EdgeExePath -- cannot open auth window." }
-        return $fail
-    }
-
-    # ── Log environment diagnostics ─────────────────────────────────────────
-    if ($WriteLog) { & $WriteLog "Edge app auth starting" }
-
-    # ── PKCE code verifier and challenge (RFC 7636) ─────────────────────────
-    $rng   = [System.Security.Cryptography.RandomNumberGenerator]::Create()
-    $bytes = New-Object byte[] 32
-    $rng.GetBytes($bytes)
-    $codeVerifier  = [Convert]::ToBase64String($bytes) -replace '\+','-' -replace '/','_' -replace '='
-
-    $sha256        = [System.Security.Cryptography.SHA256]::Create()
-    $challengeHash = $sha256.ComputeHash([System.Text.Encoding]::ASCII.GetBytes($codeVerifier))
-    $codeChallenge = [Convert]::ToBase64String($challengeHash) -replace '\+','-' -replace '/','_' -replace '='
-
-    # ── Start a temporary localhost HTTP listener ───────────────────────────
-    $listener    = New-Object System.Net.HttpListener
-    $redirectUri = $null
-    foreach ($attempt in 1..5) {
-        $port        = Get-Random -Minimum 49152 -Maximum 65535
-        $redirectUri = "http://localhost:$port/"
-        $listener.Prefixes.Clear()
-        $listener.Prefixes.Add($redirectUri)
-        try {
-            $listener.Start()
-            if ($WriteLog) { & $WriteLog "HTTP listener started on port $port" }
-            break
-        } catch {
-            if ($WriteLog) { & $WriteLog "Listener port $port failed (attempt $attempt of 5): $_" }
-            if ($attempt -eq 5) {
-                if ($WriteLog) { & $WriteLog "Could not start HTTP listener after $attempt attempts." }
-                return $fail
-            }
-        }
-    }
-
-    $authCode  = $null
-    $authError = $null
-    $edgeProc  = $null
-
-    try {
-
-    # ── Build the authorize URL ─────────────────────────────────────────────
-    $authorizeUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/authorize?' +
-        "client_id=$([uri]::EscapeDataString($ClientId))" +
-        '&response_type=code' +
-        "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-        "&scope=$([uri]::EscapeDataString($Scope))" +
-        "&code_challenge=$codeChallenge" +
-        '&code_challenge_method=S256' +
-        '&prompt=select_account'
-
-    # ── Wait for the login endpoint to be reachable ────────────────────────
-    # In WinPE the DNS/network stack may not be fully ready immediately
-    # after WiFi connects.  Navigating too early causes a brief "page
-    # cannot be displayed" error before the real login page loads.
-    $loginHost = 'login.microsoftonline.com'
-    $dnsReady  = $false
-    for ($dnsAttempt = 1; $dnsAttempt -le 10; $dnsAttempt++) {
-        try {
-            $null = [System.Net.Dns]::GetHostAddresses($loginHost)
-            $dnsReady = $true
-            break
-        } catch {
-            if ($WriteLog) { & $WriteLog "DNS lookup for $loginHost failed (attempt $dnsAttempt of 10)" }
-            Start-Sleep -Milliseconds 500
-        }
-    }
-    if (-not $dnsReady) {
-        if ($WriteLog) { & $WriteLog "Cannot resolve $loginHost -- proceeding anyway" }
-    }
-
-    # ── Launch Edge in --app mode for the login window ──────────────────────
-    # --app opens a chromeless window (no tabs, no address bar) ideal for
-    # a sign-in form.  A separate user-data-dir avoids conflicts with
-    # the kiosk Edge instance.
-    if ($WriteLog) { & $WriteLog "Launching Edge --app for auth popup" }
-    $edgeAuthDataDir = 'X:\Temp\EdgeAuth'
-    $edgeAuthArgs = @(
-        "--app=$authorizeUrl",
-        '--allow-run-as-system',
-        "--user-data-dir=$edgeAuthDataDir",
-        '--window-size=520,700',
-        '--disable-gpu',
-        '--disable-gpu-compositing',
-        '--disable-direct-composition',
-        '--use-angle=swiftshader',
-        '--enable-unsafe-swiftshader',
-        '--in-process-gpu',
-        '--no-first-run',
-        '--disable-fre',
-        '--disable-features=msWebOOBE,PasswordManager',
-        '--password-store=basic',
-        '--disable-save-password-bubble'
-    )
-    $edgeProc = Start-Process -FilePath $EdgeExePath -ArgumentList $edgeAuthArgs -PassThru
-
-    # Notify the UI that auth is in progress (but no URL -- the Edge
-    # --app window handles the login page directly).
-    if ($UpdateUi) { & $UpdateUi @{ AuthInProgress = $true } }
-
-    # ── Wait for the redirect callback ──────────────────────────────────────
-    $asyncResult = $listener.BeginGetContext($null, $null)
-
-    # 5-minute timeout -- Azure AD sessions are valid for 10 minutes,
-    # 5 minutes gives enough time without leaving the kiosk unattended.
-    $timeout = [datetime]::UtcNow.AddMinutes(5)
-    $cancelled = $false
-
-    while (-not $authCode -and -not $authError `
-           -and -not $cancelled -and [datetime]::UtcNow -lt $timeout) {
-
-        if ($CheckCancelled) { $cancelled = (& $CheckCancelled) -eq $true }
-
-        # If the user closed the Edge window, treat as cancellation.
-        if ($edgeProc -and $edgeProc.HasExited) {
-            if ($WriteLog) { & $WriteLog "Edge auth window was closed by user." }
-            $cancelled = $true
-            break
-        }
-
-        if ($asyncResult.IsCompleted -or $asyncResult.AsyncWaitHandle.WaitOne(0)) {
-            try {
-                $context = $listener.EndGetContext($asyncResult)
-
-                # Parse authorization code (or error) from the query string.
-                foreach ($pair in $context.Request.Url.Query.TrimStart('?').Split('&')) {
-                    $kv = $pair.Split('=', 2)
-                    if ($kv.Count -eq 2) {
-                        if ($kv[0] -eq 'code')  { $authCode  = [uri]::UnescapeDataString($kv[1]) }
-                        if ($kv[0] -eq 'error') { $authError = [uri]::UnescapeDataString($kv[1]) }
-                    }
-                }
-
-                # Send a response page that shows result and closes.
-                $html = if ($authCode) {
-                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
-                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
-                    '<div style="text-align:center"><h2 style="color:#107c10">&#10004; Sign-in complete</h2>' +
-                    '<p>This window will close automatically...</p></div>' +
-                    '<script>setTimeout(function(){window.close()},1500)</script></body></html>'
-                } else {
-                    '<html><body style="background:#1a1a2e;color:#e0e0e0;font-family:Segoe UI,sans-serif;' +
-                    'display:flex;align-items:center;justify-content:center;height:100vh;margin:0">' +
-                    '<div style="text-align:center"><h2 style="color:#d13438">&#10008; Sign-in failed</h2>' +
-                    '<p>This window will close automatically...</p></div>' +
-                    '<script>setTimeout(function(){window.close()},2500)</script></body></html>'
-                }
-                $buf = [System.Text.Encoding]::UTF8.GetBytes($html)
-                $context.Response.ContentType     = 'text/html; charset=utf-8'
-                $context.Response.ContentLength64 = $buf.Length
-                $context.Response.OutputStream.Write($buf, 0, $buf.Length)
-                $context.Response.OutputStream.Close()
-            } catch {
-                if ($WriteLog) { & $WriteLog "Listener callback error: $_" }
-            }
-        }
-
-        if ($DoEvents) { & $DoEvents }
-        Start-Sleep -Milliseconds 200
-    }
-
-    } finally {
-        # ── Clean up: stop listener and kill the Edge --app process ──────────
-        try { $listener.Stop(); $listener.Close() } catch { $null = $_ }
-
-        if ($edgeProc -and -not $edgeProc.HasExited) {
-            if ($WriteLog) { & $WriteLog "Closing Edge auth window (PID $($edgeProc.Id))" }
-            try { $edgeProc.Kill() } catch { $null = $_ }
-        }
-        # Remove stale lock files so the auth data dir can be reused
-        try { Remove-Item (Join-Path $edgeAuthDataDir 'lockfile')     -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
-        try { Remove-Item (Join-Path $edgeAuthDataDir 'SingletonLock') -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
-
-        # Clear auth-in-progress signal
-        if ($UpdateUi) { & $UpdateUi @{ ClearAuth = $true } }
-    }
-
-    if ($cancelled -or -not $authCode) {
-        $codeStatus = if ($authCode) { 'present' } else { 'missing' }
-        if ($WriteLog) { & $WriteLog "Edge app auth ended without auth code. Cancelled=$cancelled, AuthCode=$codeStatus" }
-        if ($authError -and $WriteLog) {
-            & $WriteLog "Auth error: $authError"
-        }
-        return $fail
-    }
-
-    # ── Exchange authorization code for tokens ──────────────────────────────
-    $tokenUrl = 'https://login.microsoftonline.com/organizations/oauth2/v2.0/token'
-    try {
-        $body = "client_id=$([uri]::EscapeDataString($ClientId))" +
-                "&scope=$([uri]::EscapeDataString($Scope))" +
-                "&code=$([uri]::EscapeDataString($authCode))" +
-                "&redirect_uri=$([uri]::EscapeDataString($redirectUri))" +
-                '&grant_type=authorization_code' +
-                "&code_verifier=$([uri]::EscapeDataString($codeVerifier))"
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add('Content-Type', 'application/x-www-form-urlencoded')
-        $raw = $wc.UploadString($tokenUrl, 'POST', $body)
-        $tokenResponse = $raw | ConvertFrom-Json
-        if ((_HasProp $tokenResponse 'id_token') -and $tokenResponse.id_token) {
-            $graphToken = if ((_HasProp $tokenResponse 'access_token') -and $tokenResponse.access_token) { $tokenResponse.access_token } else { $null }
-            if ($WriteLog) { & $WriteLog "Edge app auth succeeded -- token obtained." }
-            return @{ Success = $true; GraphAccessToken = $graphToken }
-        }
-    } catch {
-        if ($WriteLog) { & $WriteLog "Token exchange failed: $_" }
-    }
-
-    return $fail
-}
-
 function Invoke-KioskM365Auth {
     <#
     .SYNOPSIS  Authenticate the operator via M365 (Edge --app popup with Auth Code + PKCE).
@@ -640,7 +524,7 @@ function Invoke-KioskM365Auth {
 
     $skip = @{ Authenticated = $true; GraphAccessToken = $null; AuthConfig = $null }
 
-    # ── Fetch auth configuration from the repository ────────────────────────
+    # ── Fetch auth configuration from the repository ────────────────────────────
     $authConfigUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/auth.json"
     $authConfig    = $null
     try {
@@ -666,7 +550,7 @@ function Invoke-KioskM365Auth {
 
     $clientId = $authConfig.clientId
 
-    # ── Build scope string ──────────────────────────────────────────────────
+    # ── Build scope string ────────────────────────────────────────────────
     $scope = 'openid profile'
     if ((_HasProp $authConfig 'graphScopes') -and $authConfig.graphScopes) {
         $trimmed = ($authConfig.graphScopes).Trim()
@@ -676,12 +560,27 @@ function Invoke-KioskM365Auth {
     if ($WriteStatus) { & $WriteStatus 'Signing in with Microsoft 365...' 'Cyan' }
     if ($DoEvents) { & $DoEvents }
 
-    # ── Authenticate via Edge --app popup ──────────────────────────────────
+    # ── Delegate to shared Edge --app auth helper ──────────────────────────────
+    $winPeEdgeArgs = @(
+        '--allow-run-as-system',
+        '--disable-gpu',
+        '--disable-gpu-compositing',
+        '--disable-direct-composition',
+        '--use-angle=swiftshader',
+        '--enable-unsafe-swiftshader',
+        '--in-process-gpu'
+    )
+
     $edgeResult = @{ Success = $false; GraphAccessToken = $null }
     try {
-        $edgeResult = _KioskEdgeAuth `
+        $edgeResult = _EdgeAppAuth `
             -ClientId $clientId -Scope $scope `
             -EdgeExePath $EdgeExePath `
+            -EdgeDataDir 'X:\Temp\EdgeAuth' `
+            -ExtraEdgeArgs $winPeEdgeArgs `
+            -TimeoutMinutes 5 `
+            -EdgeExitGracePeriod 0 `
+            -WaitForDns `
             -WriteLog $WriteLog -UpdateUi $UpdateUi `
             -CheckCancelled $CheckCancelled -DoEvents $DoEvents
     } catch {
@@ -700,8 +599,6 @@ function Invoke-KioskM365Auth {
     return @{ Authenticated = $false; GraphAccessToken = $null; AuthConfig = $authConfig }
 }
 
-#endregion
-
 Export-ModuleMember -Function @(
     'Invoke-M365DeviceCodeAuth'
     'Update-M365Token'
@@ -709,10 +606,10 @@ Export-ModuleMember -Function @(
 )
 
 # SIG # Begin signature block
-# MII9dgYJKoZIhvcNAQcCoII9ZzCCPWMCAQExDzANBglghkgBZQMEAgEFADB5Bgor
+# MII9cwYJKoZIhvcNAQcCoII9ZDCCPWACAQExDzANBglghkgBZQMEAgEFADB5Bgor
 # BgEEAYI3AgEEoGswaTA0BgorBgEEAYI3AgEeMCYCAwEAAAQQH8w7YFlLCE63JNLG
-# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCA+3isSHIEGy6tw
-# 7HFzUUHOrebX581wfHPbLUDE5DL1faCCIjgwggXMMIIDtKADAgECAhBUmNLR1FsZ
+# KX7zUQIBAAIBAAIBAAIBAAIBADAxMA0GCWCGSAFlAwQCAQUABCDTAQAVy7snhm4Q
+# XmuGo6im0XTK90HcW0cdLB6QXQe48aCCIjgwggXMMIIDtKADAgECAhBUmNLR1FsZ
 # lUgTecgRwIeZMA0GCSqGSIb3DQEBDAUAMHcxCzAJBgNVBAYTAlVTMR4wHAYDVQQK
 # ExVNaWNyb3NvZnQgQ29ycG9yYXRpb24xSDBGBgNVBAMTP01pY3Jvc29mdCBJZGVu
 # dGl0eSBWZXJpZmljYXRpb24gUm9vdCBDZXJ0aWZpY2F0ZSBBdXRob3JpdHkgMjAy
@@ -895,27 +792,27 @@ Export-ModuleMember -Function @(
 # UfMwxCCX3mccFgx6UsQeRSdVVVNSyALQe6PT12418xon2iDGE81OGCreLzDcMAZn
 # rUAx4XQLUz6ZTl65yPUiOh3k7Yww94lDf+8oG2oZmDh5O1Qe38E+M3vhKwmzIeoB
 # 1dVLlz4i3IpaDcR+iuGjH2TdaC1ZOmBXiCRKJLj4DT2uhJ04ji+tHD6n58vhavFI
-# rmcxghqUMIIakAIBATBxMFoxCzAJBgNVBAYTAlVTMR4wHAYDVQQKExVNaWNyb3Nv
+# rmcxghqRMIIajQIBATBxMFoxCzAJBgNVBAYTAlVTMR4wHAYDVQQKExVNaWNyb3Nv
 # ZnQgQ29ycG9yYXRpb24xKzApBgNVBAMTIk1pY3Jvc29mdCBJRCBWZXJpZmllZCBD
 # UyBBT0MgQ0EgMDQCEzMAAAsliaF5N+X1X2YAAAAACyUwDQYJYIZIAWUDBAIBBQCg
 # XjAQBgorBgEEAYI3AgEMMQIwADAZBgkqhkiG9w0BCQMxDAYKKwYBBAGCNwIBBDAv
-# BgkqhkiG9w0BCQQxIgQgO2HGTq3tH5jrXM9SyRBPyQPjy/WCg8zAg0Awc2ZaD7ww
-# DQYJKoZIhvcNAQEBBQAEggGAZX+zpLNMA0rG+4YGlfOr/KZp6xRXmtHfWOasACxc
-# CSyON9XyfpgUAjDQ+2A7NMOUzNLz2avVMXa/xKizbdJpY8Zg64JeH0aSbDSBlnWi
-# MT+SYZIUjUapZ+uB//GiX7Msl6uvwbkf1RKA/9RHk/axjGmo3Dsn6sV0k5wNqwve
-# ZVsr3TuzByjSOVQXd/FIuMJUAIzE2H0RbvR8NgRVnNQLtqPEpsUoLwUx5KOOPFUv
-# 6o+AHuPtLEQWaOQoWBs8lkgZEKTM/wPhYhCjjEBIeivbxUi1du67YsTsiODtlO8x
-# JClRRUa+1Jzrkf7DRkW0PP/GNuy6CaGouB2mobkpvgIt6Y3ScpD3syatMWLLO5Rw
-# ijxx/k9iKmZz/LKki1GM6POfqkhqRoCc5ToL4nx3cVK1cHdAoRSOW5OyIiPxcYuS
-# 6T1jCxYQrXCnaFgqFyeQgrkpuH0kHWU5x8cd/zNTix/XEE1vekgXqRq2JKHmJaZL
-# WHGAITk9tGvbQqjBY/gywmVyoYIYFDCCGBAGCisGAQQBgjcDAwExghgAMIIX/AYJ
-# KoZIhvcNAQcCoIIX7TCCF+kCAQMxDzANBglghkgBZQMEAgEFADCCAWIGCyqGSIb3
+# BgkqhkiG9w0BCQQxIgQgJojYkXvr2Gj2MK1lJh2b5FTAuI8/RRCK9zJK4RJaNWgw
+# DQYJKoZIhvcNAQEBBQAEggGAqDAerUYSqP2xNju3LouArJGJ6sOcog9bljrDid1p
+# xpM8bENF3oRTIjuJNyQ72sIYniNpwbR7KLzpavqsBCkSdhyiP7KPr9mRPVZLfeZQ
+# GGJuNKOJJ8JXt+pN0nvSK15gJfEsNjjLOx5TKo3oobZHIL5ggX0dDPcFhccKt4HH
+# 1OcKm/xsF/ewqFNQZ2WT2BvhiLLGbRar8eyCYO1ieqVhWiAc25iVSF9PAxauxQyT
+# 3WFrqzLyCfJ/KnHlIqrMesBp0nqdKKOHi2pyP0nQweNU5sK0zAWbvfeLrCtBapp9
+# cB2va3iALh5S3YkHcATk0qfazaGYZZ5Im3PvHNZU8kV8ONXg24DEAAiDAcgaYrn0
+# 62Us2dZV++UIGtkI7rQ/2k3Tvitwkgnm8VlojDy66v+YWX0UpDNxrl5JD6HuAeZq
+# Sp9d8tUX/lt3zwPBo0F34SZQxbO2YCKA00hmZC8yByzVNAQ++tUnW58s9jjsKwd3
+# /MjBjnfIinKuyEbG8i+A7eGQoYIYETCCGA0GCisGAQQBgjcDAwExghf9MIIX+QYJ
+# KoZIhvcNAQcCoIIX6jCCF+YCAQMxDzANBglghkgBZQMEAgEFADCCAWIGCyqGSIb3
 # DQEJEAEEoIIBUQSCAU0wggFJAgEBBgorBgEEAYRZCgMBMDEwDQYJYIZIAWUDBAIB
-# BQAEINt/seokq8uSpwN6z289JJRPd6tKIzLecJ3m1272FtJEAgZp1AaDXCQYEzIw
-# MjYwNDEwMjMyMDM0LjcwNFowBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMw
+# BQAEINzqzi17/tPrwGkcB78YXoVWORByogo3RWHt9ZUaIKEdAgZpwnLT8D0YEzIw
+# MjYwNDEwMjM1ODQwLjM2OFowBIACAfSggeGkgd4wgdsxCzAJBgNVBAYTAlVTMRMw
 # EQYDVQQIEwpXYXNoaW5ndG9uMRAwDgYDVQQHEwdSZWRtb25kMR4wHAYDVQQKExVN
 # aWNyb3NvZnQgQ29ycG9yYXRpb24xJTAjBgNVBAsTHE1pY3Jvc29mdCBBbWVyaWNh
-# IE9wZXJhdGlvbnMxJzAlBgNVBAsTHm5TaGllbGQgVFNTIEVTTjo3ODAwLTA1RTAt
+# IE9wZXJhdGlvbnMxJzAlBgNVBAsTHm5TaGllbGQgVFNTIEVTTjo3RDAwLTA1RTAt
 # RDk0NzE1MDMGA1UEAxMsTWljcm9zb2Z0IFB1YmxpYyBSU0EgVGltZSBTdGFtcGlu
 # ZyBBdXRob3JpdHmggg8hMIIHgjCCBWqgAwIBAgITMwAAAAXlzw//Zi7JhwAAAAAA
 # BTANBgkqhkiG9w0BAQwFADB3MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9z
@@ -957,28 +854,28 @@ Export-ModuleMember -Function @(
 # PKNMN+SZDWycU5ODIRfyoGl59BsXR/HpRGtiJquOYGmvA/pk5vC1lcnbeMrcWD/2
 # 6ozePQ/TWfNXKBOmkFpvPE8CH+EeGGWzqTCjdAsno2jzTeNSxlx3glDGJgcdz5D/
 # AAxw9Sdgq/+rY7jjgs7X6fqPTXPmaCAJKVHAP19oEjJIBwD1LyHbaEgBxFCogYSO
-# iUIr0Xqcr1nJfiWG2GwYe6ZoAF1bMIIHlzCCBX+gAwIBAgITMwAAAFck05XgounJ
-# MQAAAAAAVzANBgkqhkiG9w0BAQwFADBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMV
+# iUIr0Xqcr1nJfiWG2GwYe6ZoAF1bMIIHlzCCBX+gAwIBAgITMwAAAFXZ3WkmKPn4
+# 4gAAAAAAVTANBgkqhkiG9w0BAQwFADBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMV
 # TWljcm9zb2Z0IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGlj
-# IFJTQSBUaW1lc3RhbXBpbmcgQ0EgMjAyMDAeFw0yNTEwMjMyMDQ2NTNaFw0yNjEw
-# MjIyMDQ2NTNaMIHbMQswCQYDVQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQ
+# IFJTQSBUaW1lc3RhbXBpbmcgQ0EgMjAyMDAeFw0yNTEwMjMyMDQ2NDlaFw0yNjEw
+# MjIyMDQ2NDlaMIHbMQswCQYDVQQGEwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQ
 # MA4GA1UEBxMHUmVkbW9uZDEeMBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9u
 # MSUwIwYDVQQLExxNaWNyb3NvZnQgQW1lcmljYSBPcGVyYXRpb25zMScwJQYDVQQL
-# Ex5uU2hpZWxkIFRTUyBFU046NzgwMC0wNUUwLUQ5NDcxNTAzBgNVBAMTLE1pY3Jv
+# Ex5uU2hpZWxkIFRTUyBFU046N0QwMC0wNUUwLUQ5NDcxNTAzBgNVBAMTLE1pY3Jv
 # c29mdCBQdWJsaWMgUlNBIFRpbWUgU3RhbXBpbmcgQXV0aG9yaXR5MIICIjANBgkq
-# hkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAsWylCpMIfbizJLY1kPXO2cmX2HRWvRbA
-# meKSZ5ex7/jCymdV7Eap+Ic2iqRtWDkKKe5gL6JV80wtn5C2qHJLPxUYFKNG3UkH
-# kAI21MoCN+YWnhT8K/YuPib6+6970jdbeFKIiZMWwd5hnpX9J3jeteuEdXbp/DfF
-# BK15JuD3JOzWuF2suQCPgqYjQPk/gpq+3KCKtXJRbXSCSJ9YtITU2IHwmfdE7l2P
-# fZ154w041po+fDeTj0gJOzcV/Jv56Q0M+w19jAKo/I5PEzrLV1IPQnmP4or1X4Rb
-# JXk8ONXyOOfXOxK2VLpNxgklK1yAezbFP2uzqihaXkW1h9GQLGENKESnezwgdRaL
-# NNaYtm8AT/pZHYJ35mZVqkZdMIckpQHJk/F1fSLyDKeKtH4TC4cc3ESKUMgItq07
-# ZZm74JCsfhmrQ1ijVNDi1Sln+QBamgC7WviZbkQnceQRq9DY+6hANwOrasAZUiVr
-# 2kPuj1jHDOXzUG4O9QTK70P/oXSqZAN1oTv3UfF8JTGmAxg+l1ZPOz50MY96HBDw
-# /3bI/wBGNvLk6fLVnrxGN5B5unF/lYvjjWbIUdyBPVQnPOKXu08SRHbY19M1HoWX
-# 6PNZv+vzSeqVeWWHKdKjC3GjVjbbGpi+JLbiyaKRSwEqo49tJLvu69cQ7dWsbksa
-# i4TURnVj2mMCAwEAAaOCAcswggHHMB0GA1UdDgQWBBSOg8leLTUOAglIZ+bjXpiD
-# 7RKSpzAfBgNVHSMEGDAWgBRraSg6NS9IY0DPe9ivSek+2T3bITBsBgNVHR8EZTBj
+# hkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAvbkfkh5ZSLP0MCUWafaw/KZoVZu9iQx8
+# r5JwhZvdrUi86UjCCFQONjQanrIxGF9hRGIZLQZ50gHrLC+4fpUEJff5t04VwByW
+# C2/bWOuk6NmaTh9JpPZDcGzNR95QlryjfEjtl+gxj12zNPEdADPplVfzt8cYRWFB
+# x/Fbfch08k6P9p7jX2q1jFPbUxWYJ+xOyGC1aKhDGY5b+8wL39v6qC0HFIx/v3y+
+# bep+aEXooK8VoeWK+szfaFjXo8YTcvQ8UL4szu9HFTuZNv6vvoJ7Ju+o5aTj51sp
+# h+0+FXW38TlL/rDBd5ia79jskLtOeHbDjkbljilwzegcxv9i49F05ZrS/5ELZCCY
+# 1VaqO7EOLKVaxxdAO5oy1vb0Bx0ZRVX1mxFjYzay2EC051k6yGJHm58y1oe2IKRa
+# /SM1+BTGse6vHNi5Q2d5ZnoR9AOAUDDwJIIqRI4rZz2MSinh11WrXTG9urF2uoyd
+# 5Ve+8hxes9ABeP2PYQKlXYTAxvdaeanDTQ/vwmnM+yTcWzrVm84Z38XVFw4G7p/Z
+# NZ2nscvv6uru2AevXcyV1t8ha7iWmhhgTWBNBrViuDlc3iPvOz2SVPbPeqhyY/NX
+# wNZCAgc2H5pOztu6MwQxDIjte3XM/FkKBxHofS2abNT/0HG+xZtFqUJDaxgbJa6l
+# N1zh7spjuQ8CAwEAAaOCAcswggHHMB0GA1UdDgQWBBRWBF8QbdwIA/DIv6nJFsrB
+# 16xltjAfBgNVHSMEGDAWgBRraSg6NS9IY0DPe9ivSek+2T3bITBsBgNVHR8EZTBj
 # MGGgX6BdhltodHRwOi8vd3d3Lm1pY3Jvc29mdC5jb20vcGtpb3BzL2NybC9NaWNy
 # b3NvZnQlMjBQdWJsaWMlMjBSU0ElMjBUaW1lc3RhbXBpbmclMjBDQSUyMDIwMjAu
 # Y3JsMHkGCCsGAQUFBwEBBG0wazBpBggrBgEFBQcwAoZdaHR0cDovL3d3dy5taWNy
@@ -987,54 +884,54 @@ Export-ModuleMember -Function @(
 # VR0lAQH/BAwwCgYIKwYBBQUHAwgwDgYDVR0PAQH/BAQDAgeAMGYGA1UdIARfMF0w
 # UQYMKwYBBAGCN0yDfQEBMEEwPwYIKwYBBQUHAgEWM2h0dHA6Ly93d3cubWljcm9z
 # b2Z0LmNvbS9wa2lvcHMvRG9jcy9SZXBvc2l0b3J5Lmh0bTAIBgZngQwBBAIwDQYJ
-# KoZIhvcNAQEMBQADggIBAHJ1wHY86Zk5SUBDPY25d/u9YJVaaNa71uxjX4cyO/XJ
-# 4uPENCSOwkRTnNogPLxTD0Fg3z4TFf/2T/0IFSxdtWVtTjhzrn+WLInzeRawUhTC
-# FVrPBJKEWVshm+Ig7/nB7JbJN88+ltImBbL5kT1StBLfG6UksAcDbNSQww90CUXh
-# GueBxlnSvjkAX1ohiN16y1bB2s0rvQx8Csepl2CuBefTfDrMGzW/tzNx5YaK2D8O
-# WweqTWZcGlJO4YjZNI83cTrQghfHl/8AXOHj8cWL3wEFltQQs2xeRYAb3Kdnl7oI
-# WKKXWaBYJY5P3QPsiC+DTMp7ejdYKTrb396f3gr+wL/Ms5/Z3vIWZPJJv18qNw40
-# fUNveRnwzMQnx8dM2bGuXXQZ5y7P8aXT4HJMo349qZtn4XQwiUE/DDp++MUL0kgj
-# vd/Deo7Xr371PFPPYb4TboZhjV1x9+wCHDoOpNCBt+VuXU78ytJdKzQ1Jv2cEP1F
-# 9H9/wSLsMDUvWME7u9mGElOPDZPMVr8AuBEuLdbTSEdaLwsZBplzxLBcgxhZ/Cs3
-# 0yBhuE3QhqT1YDZ2pa56RexPA2SasPcToT6gJgJ6E06BmZ2zQTNvWOjs5XQqHbYu
-# XcoeDcwe2UaC7EDOGD8GmLE9LiqtQsuQCM7v7I2xR+sPZT2Ax/85HjIkM+3MzTK1
-# MYIHRjCCB0ICAQEweDBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0
+# KoZIhvcNAQEMBQADggIBAFIe4ZJUe9qUKcWeWypchB58fXE/ZIWv2D5XP5/k/tB7
+# LCN9BvmNSVKZ3VeclQM978wfEvuvdMQSUv6Y20boIM8DK1K1IU9cP21MG0ExiHxa
+# qjrikf2qbfrXIip4Ef3v2bNYKQxCxN3Sczp1SX0H7uqK2L5OhfDEiXf15iou5hh+
+# EPaaqp49czNQpJDOR/vfJghUc/qcslDPhoCZpZx8b2ODvywGQNXwqlbsmCS24uGm
+# EkQ3UH5JUeN6c91yasVchS78riMrm6R9ZpAiO5pfNKMGU2MLm1A3pp098DcbFTAc
+# 95Hh6Qvkh//28F/Xe2bMFb6DL7Sw0ZO95v0gv0ZTyJfxS/LCxfraeEII9FSFOKAM
+# Ep1zNFSs2ue0GGjBt9yEEMUwvxq9ExFz0aZzYm8ivJfffpIVDnX/+rVRTYcxIkQy
+# FYslIhYlWF9SjCw5r49qakjMRNh8W9O7aaoolSVZleQZjGt0K8JzMlyp6hp2lbW6
+# XqRx2cOHbbxJDxmENzohGUziI13lI2g2Bf5qibfC4bKNRpJo9lbE8HUbY0qJiE8u
+# 3SU8eDQaySPXOEhJjxRCQwwOvejYmBG5P7CckQNBSnnl12+FKRKgPoj0Mv+z5OMh
+# j9z2MtpbnHLAkep0odQClEyyCG/uR5tK5rW6mZH5Oq56UWS0NI6NV1JGS7Jri6jF
+# MYIHQzCCBz8CAQEweDBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0
 # IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1l
-# c3RhbXBpbmcgQ0EgMjAyMAITMwAAAFck05XgounJMQAAAAAAVzANBglghkgBZQME
-# AgEFAKCCBJ8wEQYLKoZIhvcNAQkQAg8xAgUAMBoGCSqGSIb3DQEJAzENBgsqhkiG
-# 9w0BCRABBDAcBgkqhkiG9w0BCQUxDxcNMjYwNDEwMjMyMDM0WjAvBgkqhkiG9w0B
-# CQQxIgQgWXsEClwhqLukTceNQv7r36mkG9VyYXOEHqC06/to1WswgbkGCyqGSIb3
-# DQEJEAIvMYGpMIGmMIGjMIGgBCD1PJ9ktQVuTGWIbKLO4f1VUOlUU29ARCEpDZmF
-# THjbUjB8MGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0IENv
+# c3RhbXBpbmcgQ0EgMjAyMAITMwAAAFXZ3WkmKPn44gAAAAAAVTANBglghkgBZQME
+# AgEFAKCCBJwwEQYLKoZIhvcNAQkQAg8xAgUAMBoGCSqGSIb3DQEJAzENBgsqhkiG
+# 9w0BCRABBDAcBgkqhkiG9w0BCQUxDxcNMjYwNDEwMjM1ODQwWjAvBgkqhkiG9w0B
+# CQQxIgQgy5yHdsP/iyX2/MyL/nL72jXT48iQAtwJ/Pze1S6qv5owgbkGCyqGSIb3
+# DQEJEAIvMYGpMIGmMIGjMIGgBCDYuTyXZIZiu799/v4PaqsmeSzBxh0rqkYq7sYY
+# avj+zTB8MGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0IENv
 # cnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1lc3Rh
-# bXBpbmcgQ0EgMjAyMAITMwAAAFck05XgounJMQAAAAAAVzCCA2EGCyqGSIb3DQEJ
-# EAISMYIDUDCCA0yhggNIMIIDRDCCAiwCAQEwggEJoYHhpIHeMIHbMQswCQYDVQQG
+# bXBpbmcgQ0EgMjAyMAITMwAAAFXZ3WkmKPn44gAAAAAAVTCCA14GCyqGSIb3DQEJ
+# EAISMYIDTTCCA0mhggNFMIIDQTCCAikCAQEwggEJoYHhpIHeMIHbMQswCQYDVQQG
 # EwJVUzETMBEGA1UECBMKV2FzaGluZ3RvbjEQMA4GA1UEBxMHUmVkbW9uZDEeMBwG
 # A1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMSUwIwYDVQQLExxNaWNyb3NvZnQg
-# QW1lcmljYSBPcGVyYXRpb25zMScwJQYDVQQLEx5uU2hpZWxkIFRTUyBFU046Nzgw
+# QW1lcmljYSBPcGVyYXRpb25zMScwJQYDVQQLEx5uU2hpZWxkIFRTUyBFU046N0Qw
 # MC0wNUUwLUQ5NDcxNTAzBgNVBAMTLE1pY3Jvc29mdCBQdWJsaWMgUlNBIFRpbWUg
-# U3RhbXBpbmcgQXV0aG9yaXR5oiMKAQEwBwYFKw4DAhoDFQD9LzE5nEJRAUE2Ss3x
-# aKKPXHnLw6BnMGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0
+# U3RhbXBpbmcgQXV0aG9yaXR5oiMKAQEwBwYFKw4DAhoDFQAdO1QBgmW/tuBZV5EG
+# jhfsV4cN6qBnMGWkYzBhMQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0
 # IENvcnBvcmF0aW9uMTIwMAYDVQQDEylNaWNyb3NvZnQgUHVibGljIFJTQSBUaW1l
-# c3RhbXBpbmcgQ0EgMjAyMDANBgkqhkiG9w0BAQsFAAIFAO2DyvwwIhgPMjAyNjA0
-# MTAxOTE2MTJaGA8yMDI2MDQxMTE5MTYxMlowdzA9BgorBgEEAYRZCgQBMS8wLTAK
-# AgUA7YPK/AIBADAKAgEAAgIJAQIB/zAHAgEAAgISgTAKAgUA7YUcfAIBADA2Bgor
-# BgEEAYRZCgQCMSgwJjAMBgorBgEEAYRZCgMCoAowCAIBAAIDB6EgoQowCAIBAAID
-# AYagMA0GCSqGSIb3DQEBCwUAA4IBAQCywPzwah4UupivkBOuLTCjA91L6itQGfWk
-# tN+ZUReFHjTDmi9/gbxPl26tG0yabWVyomEOMBCacy8K86LYMQgNqsLk2L3Ikz9Z
-# BSR1lHe/mS2+rlfSZymfwz1a4XPBvFTyheBro71GWQpZ56lPrs8vIaPxO692DplK
-# XppBdxirTjit9KfNyeCToQACmWOoZmR5xh57+yekjrRhHrVuCn7KVTympWmgS1Dw
-# XopQoMrHWRyslf4Iv1TaXoZWp6TpaercwDMTCdGXa+vgaSMPQvijxc9Hc+Qc0ABW
-# Sdrbjj2HXsH18T3L8RvucgR+2+BD+dB7kP93s9I75u6b5jdvIqAxMA0GCSqGSIb3
-# DQEBAQUABIICAKA33vDzzmtA1S23QkNn4DYS0zWRTKiAXBTowloh2mHe2kPL8Dpx
-# lOBUuUMPaTlPGD8S/Ypf3uwiufWqODPTkwq4hTMS4JX5qfckhj0l0ITz+hxS7a33
-# eDKTUzYDsnmbCzkuyyCHwtyyjCyK6o+gu17Jdd+H8nLVmdgNnJ11WqcuKw+qVIzv
-# EUvyk2bvC+Hva3SFl1mU4acpZfrqs3/AHj+o+6sh0fP1hrXITZn/wpU/xOdFH+vg
-# CY3LBpQz7j8MHl4ajBN0t8tYjMD4EFrcE5dxe8YYcOmA/df4Qa+mswdUsupgy0wn
-# C6amgQyWcBLXqGCy0JXQWZ+ab3Sfrk+kWytzhWPGHv1cNroCWa3yrIZSulUnzKme
-# JhZ1tKe7YQ7uxguD/nOEO0AnCap+PHU6NTbF8GWgXivWSjhuu4AwNC/FcA/eH3Rn
-# h6Tdck+eaWhL7m2EJmVeizUCkpFwzIY1rAJbPp3zBnm285n69tMUMb+zjTcuveom
-# 6JYhub0FUqDLyk9OdqVSZV+gyjZXtkQxVy14upJVLEY6SpbedgJ2hyxiJMBrhThw
-# 3jaWiFIrAgRUXrqZJGmVW6sgIDD3aqKt3V8TGhgNbn0x70NcXs6ti89NwrGlsVF1
-# tx67dXkQLpm5tCv7XLd7YZTVZppBXWIDRhOKFuuux/mfv1/l59uOflw8
+# c3RhbXBpbmcgQ0EgMjAyMDANBgkqhkiG9w0BAQsFAAIFAO2EA10wIhgPMjAyNjA0
+# MTAyMzE2NDVaGA8yMDI2MDQxMTIzMTY0NVowdDA6BgorBgEEAYRZCgQBMSwwKjAK
+# AgUA7YQDXQIBADAHAgEAAgIyfjAHAgEAAgIScTAKAgUA7YVU3QIBADA2BgorBgEE
+# AYRZCgQCMSgwJjAMBgorBgEEAYRZCgMCoAowCAIBAAIDB6EgoQowCAIBAAIDAYag
+# MA0GCSqGSIb3DQEBCwUAA4IBAQCu/vpNczVO+VXSFf7pGWOLa2oft9vrEPA4krtG
+# JDiniZhKn5tKpBPiXMqqgPWE3Ciqaz09HHUxWs+1slMWsWux/MJ6rXMPcoPpaRmn
+# 2BONx1iqYmFFLIRzOX9VFLOXSnRfqcHKpUrALm6Wb7Edfj1NbWUuEWNoYOq6w8bY
+# X0k2nGoLQTnN9LYEJCTfG3QccA5wA8/7TPB+jqvcqLYPdPgE1sgYojyP8fQVQqzA
+# gSupP7K5WeaKvy0/B7lOJfNB2PBdGfkasrxu6B6+nbUE5qXsDtUQW4px09ZWJ3cE
+# Jy36eReSz7FnB7Rjxj+4kChjU8jrCU1bk/ALbDj2D/j9WybvMA0GCSqGSIb3DQEB
+# AQUABIICAHRImWZxYLW0dodBkZ6YtBkBVxfgn/ae9EBQbae7R3k18fej7wkGCvwA
+# f8cpemMTV6+TItqAZWW86SbBe7aIQLGGfyY1VjRrTCkio3gucmd0+KrrBJTLqIfX
+# 3PZhi9n7cqLunm/FpVCSMwb8xTZhHsYWJuuCL1rOgqRaESLKL9XwiSfpYRRxBRAp
+# FMBrBXM9I4ujInyw+f07GMXLPudThuZhkX/nmv3EpRfJUMJz4ImY0p0AdhMmdnnb
+# 9otjEjztcSNT1s5ShmZfoT8zBAxRZA5VjgGLC+p/xNq6aMXcajcQS3CymMEcP4C7
+# 6che0dsHMe3Xmed0b1MuKxfTxdaZHC/KcJ3x6SHE66wP5Y5qTXoF0IJ4cSRNKtAQ
+# MoGNzs03XOOC1bfeuiQOJ3PMmVQuUQxW91yagFY14LcvFl25Gavs6Rd0yPu5mZ6R
+# lleCiQ6o7IZrC128eh2IcVIPbogwJCj1hJytGhL8JqpAtI7gfCb7+tLOlWuwwiYd
+# xxjVS83Armub8wynl/Z7lNhiQ1ORfkKHLxN5MFaY2REV6Si4R3bF3hDBsFCqlMeL
+# fjf3FEGuO5j9CdZX7Nx4QvlkG3ZA9KOP+7+Fs0LQ3MBAfRhoNRtFqynDPr52QXFC
+# YgrviAbr/oJQPSiQNcU7RK2S/GVHCpJ++ywjJrBu0N+FDiT1Sn4F
 # SIG # End signature block
