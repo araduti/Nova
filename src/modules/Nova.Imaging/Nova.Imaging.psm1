@@ -186,7 +186,7 @@ function Get-WindowsImageSource {
     try {
         $stepName = 'Download ESD catalog'
         Write-Step 'Reading Windows ESD catalog from repository...'
-        $productsUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/products.xml"
+        $productsUrl  = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/products.xml"
         $productsPath = Join-Path $ScratchDir 'products.xml'
         if ($DownloadCommand) {
             & $DownloadCommand -Uri $productsUrl -OutFile $productsPath -Description 'Fetching Windows ESD catalog'
