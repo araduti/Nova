@@ -1,11 +1,11 @@
 ﻿@{
     RootModule        = 'Nova.Logging.psm1'
-    ModuleVersion     = '1.0.0'
+    ModuleVersion     = '2.0.0'
     GUID              = '19027ff3-98ac-405d-b482-70593fbc416d'
     Author            = 'Nova Contributors'
     CompanyName       = 'Ampliosoft'
     Copyright         = '(c) 2026 Ampliosoft. All rights reserved.'
-    Description       = 'Colour-coded console logging functions for Nova deployment scripts.'
+    Description       = 'Timestamped, colour-coded console and file logging functions for Nova deployment scripts with WinPE log viewer.'
     PowerShellVersion = '5.1'
     RequiredModules   = @()
     FunctionsToExport = @(
@@ -14,13 +14,21 @@
         'Write-Success'
         'Write-Warn'
         'Write-Fail'
+        'Write-Info'
+        'Write-Detail'
+        'Write-Section'
+        'Write-Data'
+        'Start-NovaLog'
+        'Stop-NovaLog'
+        'Get-NovaLogPath'
+        'Show-NovaLogViewer'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()
     AliasesToExport    = @()
     PrivateData       = @{
         PSData = @{
-            Tags       = @('Nova', 'Logging', 'Console', 'Deployment')
+            Tags       = @('Nova', 'Logging', 'Console', 'File', 'Deployment', 'WinPE', 'LogViewer')
             LicenseUri = 'https://github.com/araduti/Nova/blob/main/LICENSE'
             ProjectUri = 'https://github.com/araduti/Nova'
         }
