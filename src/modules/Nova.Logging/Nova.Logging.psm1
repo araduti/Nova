@@ -3,15 +3,26 @@
     Shared logging module for Nova scripts.
 
 .DESCRIPTION
-    Provides colour-coded console output functions used by Nova.ps1, Bootstrap.ps1,
-    and Trigger.ps1.  Prefixes are configurable via Set-NovaLogPrefix so each
-    script can retain its own visual identity while sharing a single implementation.
+    Provides colour-coded, timestamped console and file logging functions used
+    by Nova.ps1, Bootstrap.ps1, and Trigger.ps1.  Prefixes are configurable
+    via Set-NovaLogPrefix so each script can retain its own visual identity
+    while sharing a single implementation.
+
+    Every log entry is prefixed with a timestamp ([yyyy-MM-dd HH:mm:ss]) and
+    optionally written to a log file when file logging is enabled via
+    Start-NovaLog.
 
     Default prefixes (Trigger style):
-        Write-Step    →  "  [>] …"   Cyan
-        Write-Success →  "  [+] …"   Green
-        Write-Warn    →  "  [!] …"   Yellow
-        Write-Fail    →  "  [X] …"   Red
+        Write-Step    --  "  [>] ..."   Cyan
+        Write-Success --  "  [+] ..."   Green
+        Write-Warn    --  "  [!] ..."   Yellow
+        Write-Fail    --  "  [X] ..."   Red
+
+    Additional log levels:
+        Write-Info    --  "  [i] ..."   White     (informational detail)
+        Write-Detail  --  "  [.] ..."   DarkGray  (verbose/debug data)
+        Write-Section --  "=== ... ===" Magenta   (phase/section headers)
+        Write-Data    --  key=value     Gray      (structured data logging)
 #>
 
 Set-StrictMode -Version Latest
@@ -21,14 +32,109 @@ $script:StepPrefix    = '  [>]'
 $script:SuccessPrefix = '  [+]'
 $script:WarnPrefix    = '  [!]'
 $script:FailPrefix    = '  [X]'
+$script:InfoPrefix    = '  [i]'
+$script:DetailPrefix  = '  [.]'
+
+# ── File logging state ─────────────────────────────────────────────────────
+$script:LogFilePath   = ''
+$script:LogFileActive = $false
+
+# ── Private helpers ────────────────────────────────────────────────────────
+
+function Get-NovaTimestamp {
+    <# Returns a formatted timestamp string for log entries. #>
+    return (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+}
+
+function Write-NovaLogFile {
+    <#
+    .SYNOPSIS  Appends a plain-text (no colour codes) line to the active log file.
+    .DESCRIPTION
+        Only writes when file logging has been enabled via Start-NovaLog.
+        Errors are silently suppressed so logging never breaks the caller.
+    #>
+    param([string]$Line)
+    if (-not $script:LogFileActive -or -not $script:LogFilePath) { return }
+    try {
+        $Line | Out-File -FilePath $script:LogFilePath -Append -Encoding utf8 -Force
+    } catch {
+        # Silently ignore -- logging must never break the caller
+    }
+}
+
+# ── Public Functions ───────────────────────────────────────────────────────
+
+function Start-NovaLog {
+    <#
+    .SYNOPSIS  Enables file logging to the specified path.
+    .DESCRIPTION
+        Once called, all Write-Step / Write-Success / Write-Warn / Write-Fail /
+        Write-Info / Write-Detail / Write-Section / Write-Data calls will also
+        append timestamped plain-text entries to the log file.  The file is
+        created if it does not exist.  Call Stop-NovaLog to finalize.
+    .PARAMETER Path
+        Full path to the log file.  Parent directory is created if missing.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Setting in-memory module state and creating a log file -- benign side-effect')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path
+    )
+    $parentDir = Split-Path $Path -Parent
+    if ($parentDir -and -not (Test-Path $parentDir)) {
+        $null = New-Item -ItemType Directory -Path $parentDir -Force -ErrorAction SilentlyContinue
+    }
+    $script:LogFilePath   = $Path
+    $script:LogFileActive = $true
+    $ts = Get-NovaTimestamp
+    Write-NovaLogFile "[$ts] ── Nova log started ──"
+    Write-NovaLogFile "[$ts] Log file: $Path"
+    Write-NovaLogFile "[$ts] Host: $($env:COMPUTERNAME)"
+    Write-NovaLogFile "[$ts] User: $($env:USERNAME)"
+    Write-NovaLogFile "[$ts] PS Version: $($PSVersionTable.PSVersion)"
+    Write-NovaLogFile "[$ts] OS: $([System.Environment]::OSVersion.VersionString)"
+}
+
+function Stop-NovaLog {
+    <#
+    .SYNOPSIS  Finalizes file logging and writes a closing entry.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Setting in-memory module state only -- no system side-effects')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param()
+    if ($script:LogFileActive) {
+        $ts = Get-NovaTimestamp
+        Write-NovaLogFile "[$ts] ── Nova log ended ──"
+    }
+    $script:LogFileActive = $false
+}
+
+function Get-NovaLogPath {
+    <#
+    .SYNOPSIS  Returns the path of the active log file, or empty string if logging is not active.
+    #>
+    [OutputType([string])]
+    [CmdletBinding()]
+    param()
+    if ($script:LogFileActive) { return $script:LogFilePath }
+    return ''
+}
 
 function Set-NovaLogPrefix {
     <#
-    .SYNOPSIS  Configures the message prefix used by Write-Step / Success / Warn / Fail.
+    .SYNOPSIS  Configures the message prefix used by Write-Step / Success / Warn / Fail / Info / Detail.
     .PARAMETER Step     Prefix for Write-Step (informational progress).
     .PARAMETER Success  Prefix for Write-Success (completion).
     .PARAMETER Warn     Prefix for Write-Warn (non-fatal warning).
     .PARAMETER Fail     Prefix for Write-Fail (error).
+    .PARAMETER Info     Prefix for Write-Info (informational detail).
+    .PARAMETER Detail   Prefix for Write-Detail (verbose/debug data).
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
         Justification = 'Setting in-memory module state only -- no system side-effects')]
@@ -38,63 +144,364 @@ function Set-NovaLogPrefix {
         [string]$Step,
         [string]$Success,
         [string]$Warn,
-        [string]$Fail
+        [string]$Fail,
+        [string]$Info,
+        [string]$Detail
     )
     if ($PSBoundParameters.ContainsKey('Step'))    { $script:StepPrefix    = $Step    }
     if ($PSBoundParameters.ContainsKey('Success')) { $script:SuccessPrefix = $Success }
     if ($PSBoundParameters.ContainsKey('Warn'))    { $script:WarnPrefix    = $Warn    }
     if ($PSBoundParameters.ContainsKey('Fail'))    { $script:FailPrefix    = $Fail    }
+    if ($PSBoundParameters.ContainsKey('Info'))    { $script:InfoPrefix    = $Info    }
+    if ($PSBoundParameters.ContainsKey('Detail'))  { $script:DetailPrefix  = $Detail  }
 }
 
 function Write-Step {
     <#
-    .SYNOPSIS  Writes a cyan progress message to the console.
+    .SYNOPSIS  Writes a timestamped cyan progress message to the console and log file.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
     [OutputType([void])]
     [CmdletBinding()]
     param([string]$Message)
-    Write-Host "`n$($script:StepPrefix) $Message" -ForegroundColor Cyan
+    $ts = Get-NovaTimestamp
+    Write-Host "`n[$ts] $($script:StepPrefix) $Message" -ForegroundColor Cyan
+    Write-NovaLogFile "[$ts] STEP    $($script:StepPrefix) $Message"
 }
 
 function Write-Success {
     <#
-    .SYNOPSIS  Writes a green success message to the console.
+    .SYNOPSIS  Writes a timestamped green success message to the console and log file.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
     [OutputType([void])]
     [CmdletBinding()]
     param([string]$Message)
-    Write-Host "$($script:SuccessPrefix) $Message" -ForegroundColor Green
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts] $($script:SuccessPrefix) $Message" -ForegroundColor Green
+    Write-NovaLogFile "[$ts] OK      $($script:SuccessPrefix) $Message"
 }
 
 function Write-Warn {
     <#
-    .SYNOPSIS  Writes a yellow warning message to the console.
+    .SYNOPSIS  Writes a timestamped yellow warning message to the console and log file.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
     [OutputType([void])]
     [CmdletBinding()]
     param([string]$Message)
-    Write-Host "$($script:WarnPrefix) $Message" -ForegroundColor Yellow
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts] $($script:WarnPrefix) $Message" -ForegroundColor Yellow
+    Write-NovaLogFile "[$ts] WARN    $($script:WarnPrefix) $Message"
 }
 
 function Write-Fail {
     <#
-    .SYNOPSIS  Writes a red error message to the console.
+    .SYNOPSIS  Writes a timestamped red error message to the console and log file.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
         Justification = 'Intentional coloured console output for operator visibility')]
     [OutputType([void])]
     [CmdletBinding()]
     param([string]$Message)
-    Write-Host "$($script:FailPrefix) $Message" -ForegroundColor Red
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts] $($script:FailPrefix) $Message" -ForegroundColor Red
+    Write-NovaLogFile "[$ts] FAIL    $($script:FailPrefix) $Message"
 }
 
-Export-ModuleMember -Function Set-NovaLogPrefix, Write-Step, Write-Success, Write-Warn, Write-Fail
+function Write-Info {
+    <#
+    .SYNOPSIS  Writes a timestamped informational message to the console and log file.
+    .DESCRIPTION
+        Use for detailed informational output that supplements Write-Step.
+        Renders in white for readability without drawing attention like
+        success/warning/error messages.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Intentional coloured console output for operator visibility')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param([string]$Message)
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts] $($script:InfoPrefix) $Message" -ForegroundColor White
+    Write-NovaLogFile "[$ts] INFO    $($script:InfoPrefix) $Message"
+}
+
+function Write-Detail {
+    <#
+    .SYNOPSIS  Writes a timestamped verbose/debug message to the console and log file.
+    .DESCRIPTION
+        Use for low-level diagnostic data that is useful for troubleshooting
+        but not needed during normal operation.  Renders in DarkGray to be
+        visually subdued.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Intentional coloured console output for operator visibility')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param([string]$Message)
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts] $($script:DetailPrefix) $Message" -ForegroundColor DarkGray
+    Write-NovaLogFile "[$ts] DETAIL  $($script:DetailPrefix) $Message"
+}
+
+function Write-Section {
+    <#
+    .SYNOPSIS  Writes a prominent section header to the console and log file.
+    .DESCRIPTION
+        Use to visually separate major phases of a deployment (e.g., disk
+        partitioning, image download, driver injection).  Renders with a
+        separator line above and below for visibility.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Intentional coloured console output for operator visibility')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param([string]$Title)
+    $ts = Get-NovaTimestamp
+    $separator = '=' * 60
+    Write-Host ''
+    Write-Host "[$ts] $separator" -ForegroundColor Magenta
+    Write-Host "[$ts]   $Title" -ForegroundColor Magenta
+    Write-Host "[$ts] $separator" -ForegroundColor Magenta
+    Write-NovaLogFile ''
+    Write-NovaLogFile "[$ts] $separator"
+    Write-NovaLogFile "[$ts]   $Title"
+    Write-NovaLogFile "[$ts] $separator"
+}
+
+function Write-Data {
+    <#
+    .SYNOPSIS  Writes structured key-value data to the console and log file.
+    .DESCRIPTION
+        Use to log structured information such as configuration values,
+        system properties, or step parameters.  Accepts a hashtable of
+        key-value pairs and formats them as aligned lines.
+    .PARAMETER Label
+        A short label describing the data group (e.g., "Disk Info", "Network").
+    .PARAMETER Data
+        A hashtable (or ordered dictionary) of key-value pairs to log.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Intentional coloured console output for operator visibility')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Label,
+        [Parameter(Mandatory)]
+        [hashtable]$Data
+    )
+    $ts = Get-NovaTimestamp
+    Write-Host "[$ts]   --- $Label ---" -ForegroundColor Gray
+    Write-NovaLogFile "[$ts]   --- $Label ---"
+    foreach ($key in $Data.Keys) {
+        $val = $Data[$key]
+        Write-Host "[$ts]     $key = $val" -ForegroundColor Gray
+        Write-NovaLogFile "[$ts]     $key = $val"
+    }
+}
+
+function Show-NovaLogViewer {
+    <#
+    .SYNOPSIS  Opens a simple WinForms-based log viewer for WinPE.
+    .DESCRIPTION
+        Displays the contents of a Nova log file in a scrollable, resizable
+        window with auto-refresh (tail) capability.  Designed for use in
+        WinPE where GUI text editors are unavailable.
+
+        The viewer colour-codes lines by log level:
+          STEP/[>]  = Cyan     OK/[+]   = Green
+          WARN/[!]  = Yellow   FAIL/[X] = Red
+          INFO/[i]  = Black    DETAIL   = Gray
+
+        Press F5 or click Refresh to reload the file.  The viewer auto-refreshes
+        every 3 seconds when the Auto-Refresh checkbox is enabled.
+    .PARAMETER Path
+        Path to the log file to display.  Defaults to the active log file
+        from Start-NovaLog if not specified.
+    .PARAMETER NonBlocking
+        When set, the viewer is shown non-modally so the calling script
+        continues execution.  Default is modal (blocks until closed).
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Fallback message when WinForms is unavailable')]
+    [OutputType([void])]
+    [CmdletBinding()]
+    param(
+        [string]$Path = '',
+        [switch]$NonBlocking
+    )
+
+    if (-not $Path) {
+        $Path = Get-NovaLogPath
+    }
+    if (-not $Path -or -not (Test-Path $Path)) {
+        Write-Warn "Log file not found: $Path"
+        return
+    }
+
+    # Attempt to load WinForms -- available in WinPE with the .NET component
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+    } catch {
+        Write-Warn "WinForms not available -- cannot show log viewer. View the log file directly: $Path"
+        return
+    }
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Nova Log Viewer - $Path"
+    $form.Size = New-Object System.Drawing.Size(900, 600)
+    $form.StartPosition = 'CenterScreen'
+    $form.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
+
+    # Text box for log content
+    $textBox = New-Object System.Windows.Forms.RichTextBox
+    $textBox.Dock = 'Fill'
+    $textBox.ReadOnly = $true
+    $textBox.BackColor = [System.Drawing.Color]::FromArgb(30, 30, 30)
+    $textBox.ForeColor = [System.Drawing.Color]::White
+    $textBox.Font = New-Object System.Drawing.Font('Consolas', 9)
+    $textBox.WordWrap = $false
+    $textBox.ScrollBars = 'Both'
+
+    # Toolbar panel
+    $toolbar = New-Object System.Windows.Forms.Panel
+    $toolbar.Dock = 'Top'
+    $toolbar.Height = 35
+    $toolbar.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 45)
+
+    $btnRefresh = New-Object System.Windows.Forms.Button
+    $btnRefresh.Text = 'Refresh (F5)'
+    $btnRefresh.Location = New-Object System.Drawing.Point(5, 5)
+    $btnRefresh.Size = New-Object System.Drawing.Size(100, 25)
+    $btnRefresh.FlatStyle = 'Flat'
+    $btnRefresh.ForeColor = [System.Drawing.Color]::White
+    $btnRefresh.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+
+    $chkAutoRefresh = New-Object System.Windows.Forms.CheckBox
+    $chkAutoRefresh.Text = 'Auto-Refresh (3s)'
+    $chkAutoRefresh.Location = New-Object System.Drawing.Point(115, 8)
+    $chkAutoRefresh.ForeColor = [System.Drawing.Color]::White
+    $chkAutoRefresh.BackColor = [System.Drawing.Color]::FromArgb(45, 45, 45)
+    $chkAutoRefresh.AutoSize = $true
+
+    $btnScrollEnd = New-Object System.Windows.Forms.Button
+    $btnScrollEnd.Text = 'Scroll to End'
+    $btnScrollEnd.Location = New-Object System.Drawing.Point(270, 5)
+    $btnScrollEnd.Size = New-Object System.Drawing.Size(100, 25)
+    $btnScrollEnd.FlatStyle = 'Flat'
+    $btnScrollEnd.ForeColor = [System.Drawing.Color]::White
+    $btnScrollEnd.BackColor = [System.Drawing.Color]::FromArgb(60, 60, 60)
+
+    $lblStatus = New-Object System.Windows.Forms.Label
+    $lblStatus.Location = New-Object System.Drawing.Point(380, 8)
+    $lblStatus.AutoSize = $true
+    $lblStatus.ForeColor = [System.Drawing.Color]::LightGray
+
+    $toolbar.Controls.Add($btnRefresh)
+    $toolbar.Controls.Add($chkAutoRefresh)
+    $toolbar.Controls.Add($btnScrollEnd)
+    $toolbar.Controls.Add($lblStatus)
+
+    # Load and colour-code content
+    $loadContent = {
+        param($tb, $filePath, $statusLabel)
+        if (-not (Test-Path $filePath)) { return }
+        $lines = Get-Content $filePath -ErrorAction SilentlyContinue
+        if (-not $lines) { return }
+        $tb.Clear()
+        $tb.SuspendLayout()
+        foreach ($line in $lines) {
+            $colour = [System.Drawing.Color]::White
+            if ($line -match 'STEP|(\[\>\])') {
+                $colour = [System.Drawing.Color]::Cyan
+            } elseif ($line -match 'OK\s|(\[\+\])') {
+                $colour = [System.Drawing.Color]::LightGreen
+            } elseif ($line -match 'WARN|(\[\!\])') {
+                $colour = [System.Drawing.Color]::Yellow
+            } elseif ($line -match 'FAIL|(\[\X\])') {
+                $colour = [System.Drawing.Color]::FromArgb(255, 100, 100)
+            } elseif ($line -match 'INFO|(\[i\])') {
+                $colour = [System.Drawing.Color]::White
+            } elseif ($line -match 'DETAIL|(\[\.\])') {
+                $colour = [System.Drawing.Color]::Gray
+            } elseif ($line -match '====') {
+                $colour = [System.Drawing.Color]::FromArgb(200, 150, 255)
+            }
+            $tb.SelectionStart = $tb.TextLength
+            $tb.SelectionColor = $colour
+            $tb.AppendText("$line`n")
+        }
+        $tb.ResumeLayout()
+        # Scroll to end
+        $tb.SelectionStart = $tb.TextLength
+        $tb.ScrollToCaret()
+        $lineCount = $lines.Count
+        if ($statusLabel) { $statusLabel.Text = "$lineCount lines | $(Get-Date -Format 'HH:mm:ss')" }
+    }
+
+    & $loadContent $textBox $Path $lblStatus
+
+    # Refresh button click
+    $btnRefresh.Add_Click({ & $loadContent $textBox $Path $lblStatus })
+
+    # Scroll-to-end button
+    $btnScrollEnd.Add_Click({
+        $textBox.SelectionStart = $textBox.TextLength
+        $textBox.ScrollToCaret()
+    })
+
+    # F5 key handler
+    $form.KeyPreview = $true
+    $form.Add_KeyDown({
+        if ($_.KeyCode -eq 'F5') {
+            & $loadContent $textBox $Path $lblStatus
+            $_.Handled = $true
+        }
+    })
+
+    # Auto-refresh timer
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = 3000
+    $timer.Add_Tick({
+        if ($chkAutoRefresh.Checked) {
+            & $loadContent $textBox $Path $lblStatus
+        }
+    })
+    $timer.Start()
+
+    $form.Controls.Add($textBox)
+    $form.Controls.Add($toolbar)
+
+    $form.Add_FormClosed({ $timer.Stop(); $timer.Dispose() })
+
+    if ($NonBlocking) {
+        $form.Show()
+    } else {
+        [void]$form.ShowDialog()
+    }
+}
+
+Export-ModuleMember -Function @(
+    'Set-NovaLogPrefix'
+    'Write-Step'
+    'Write-Success'
+    'Write-Warn'
+    'Write-Fail'
+    'Write-Info'
+    'Write-Detail'
+    'Write-Section'
+    'Write-Data'
+    'Start-NovaLog'
+    'Stop-NovaLog'
+    'Get-NovaLogPath'
+    'Show-NovaLogViewer'
+)
 
 # SIG # Begin signature block
 # MII9cwYJKoZIhvcNAQcCoII9ZDCCPWACAQExDzANBglghkgBZQMEAgEFADB5Bgor
