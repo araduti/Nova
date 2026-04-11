@@ -37,6 +37,8 @@ export default defineConfig({
           /* Editor non-module scripts (not processed by Vite) */
           ['src/web/editor/js', 'dist/src/web/editor/js'],
           ['src/web/editor/lib', 'dist/src/web/editor/lib'],
+          /* Shared auth gate (MSAL + login UI) for all pages */
+          ['src/web/auth', 'dist/src/web/auth'],
           /* PowerShell entry point for irm <url> | iex one-liner */
           ['src/scripts/Trigger.ps1', 'dist/Trigger.ps1'],
           /* Custom domain file for GitHub Pages */
