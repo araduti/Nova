@@ -278,9 +278,10 @@ function Invoke-TaskSequenceStep {
     )
 
     $pct = [math]::Min(100, [math]::Round(($Index / $TotalSteps) * 100))
-    # Bootstrap.ps1 UI shows four progress steps (Network / Connect / Sign in /
-    # Deploy).  During the deploy phase all four indicators should stay lit, so
-    # always report Step 4 to keep the first three steps highlighted.
+    # Bootstrap.ps1 UI shows four progress steps (Initialize / Network /
+    # Authenticate / Deploy).  During the deploy phase all four indicators
+    # should stay lit, so always report Step 4 to keep the first three
+    # steps highlighted.
     $uiStep = 4
     $p = $Step.parameters
 
