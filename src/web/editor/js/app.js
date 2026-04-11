@@ -254,6 +254,8 @@ let selectedIndex = -1;
 let selectedIndices = new Set();
 let dragSrcIndex = -1;
 let githubConfig = { owner: '', repo: '', clientId: '', oauthProxy: '' };
+/** MSAL app instance — set during auth init when requireAuth is enabled. */
+var msalInstance = null;
 let dirty = false;
 let autoSaveTimer = null;
 const DRAFT_KEY = 'nova_editor_draft';
@@ -2690,23 +2692,42 @@ function updateBreadcrumb(name) {
 /* ── Assignments Management ────────────────────────────────────────── */
 var assignments = [];
 
-function loadAssignments() {
-    if (!githubConfig.owner || !githubConfig.repo) return Promise.resolve();
-    var url = 'https://api.github.com/repos/' + encodeURIComponent(githubConfig.owner) + '/' + encodeURIComponent(githubConfig.repo) + '/contents/config/assignments.json';
-    return fetch(url, { headers: { 'Accept': 'application/vnd.github.v3+json' } })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (data) {
-            if (data && data.content) {
-                var decoded = atob(data.content.replace(/\n/g, ''));
-                var parsed = JSON.parse(decoded);
-                assignments = parsed.assignments || [];
-                assignmentsSha = data.sha;
-            }
-        })
-        .catch(function () { assignments = []; });
+/**
+ * Acquire an Entra ID access token for Graph API (User.Read) via MSAL.
+ * Returns the token string or null if unavailable.
+ */
+function getEntraAccessToken() {
+    if (!msalInstance) return Promise.resolve(null);
+    var account = msalInstance.getActiveAccount();
+    if (!account) return Promise.resolve(null);
+    return msalInstance.acquireTokenSilent({
+        scopes: ['User.Read'],
+        account: account
+    }).then(function (result) {
+        return result && result.accessToken ? result.accessToken : null;
+    }).catch(function () {
+        return null;
+    });
 }
 
-var assignmentsSha = null;
+function loadAssignments() {
+    if (!githubConfig.oauthProxy) return Promise.resolve();
+    return getEntraAccessToken().then(function (entraToken) {
+        if (!entraToken) return null;
+        return fetch(githubConfig.oauthProxy + '/api/config/assignments', {
+            headers: { 'Authorization': 'Bearer ' + entraToken }
+        });
+    }).then(function (r) {
+        if (!r || !r.ok) return null;
+        return r.json();
+    }).then(function (data) {
+        if (data && data.value && data.value.assignments) {
+            assignments = data.value.assignments;
+        } else {
+            assignments = [];
+        }
+    }).catch(function () { assignments = []; });
+}
 
 function renderAssignments() {
     var tbody = document.getElementById('assignmentsBody');
@@ -2771,12 +2792,10 @@ document.getElementById('btnAddAssignment').addEventListener('click', function (
 });
 
 document.getElementById('btnAssignmentsSave').addEventListener('click', async function () {
-    if (!githubConfig.owner || !githubConfig.repo) {
-        alert('GitHub repository is not configured.');
+    if (!githubConfig.oauthProxy) {
+        alert('OAuth proxy is not configured. Cannot save assignments.');
         return;
     }
-    var token = await getGitHubToken();
-    if (!token) return;
 
     var btn = this;
     var origLabel = btn.innerHTML;
@@ -2784,46 +2803,28 @@ document.getElementById('btnAssignmentsSave').addEventListener('click', async fu
     btn.disabled = true;
 
     try {
+        var entraToken = await getEntraAccessToken();
+        if (!entraToken) {
+            throw new Error('Could not acquire an Entra ID token. Please sign in again.');
+        }
+
         var data = { schemaVersion: '1.0', assignments: assignments };
-        var json = JSON.stringify(data, null, 4) + '\n';
-        var path = 'config/assignments.json';
-        var apiBase = 'https://api.github.com/repos/' + encodeURIComponent(githubConfig.owner) + '/' + encodeURIComponent(githubConfig.repo) + '/contents/' + path;
-        var headers = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github.v3+json' };
+        var json = JSON.stringify(data, null, 4);
 
-        /* Get current SHA */
-        var getResp = await fetch(apiBase, { headers: headers });
-        var sha = null;
-        if (getResp.ok) {
-            var fileData = await getResp.json();
-            sha = fileData.sha;
-        } else if (getResp.status === 401 || getResp.status === 403) {
-            sessionStorage.removeItem('nova_github_token');
-            throw new Error('Invalid or expired GitHub token. Please try saving again.');
-        }
-
-        /* Create or update file */
-        var body = {
-            message: 'Update assignments.json via Nova Editor',
-            content: toBase64(json)
-        };
-        if (sha) body.sha = sha;
-
-        var putResp = await fetch(apiBase, {
+        var putResp = await fetch(githubConfig.oauthProxy + '/api/config/assignments', {
             method: 'PUT',
-            headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
-            body: JSON.stringify(body)
+            headers: {
+                'Authorization': 'Bearer ' + entraToken,
+                'Content-Type': 'application/json'
+            },
+            body: json
         });
-        if (putResp.status === 401 || putResp.status === 403) {
-            sessionStorage.removeItem('nova_github_token');
-            throw new Error('GitHub token lacks write permission. Please try saving again.');
-        }
+
         if (!putResp.ok) {
             var errBody = await putResp.json().catch(function () { return {}; });
-            throw new Error(errBody.message || 'GitHub API error (HTTP ' + putResp.status + ')');
+            throw new Error(errBody.error_description || 'Save failed (HTTP ' + putResp.status + ')');
         }
 
-        var result = await putResp.json();
-        assignmentsSha = result.content ? result.content.sha : null;
         btn.textContent = '\u2705 Saved';
         setTimeout(function () { btn.innerHTML = origLabel; }, 2000);
     } catch (err) {
@@ -2905,6 +2906,7 @@ document.getElementById('btnAssignmentsSave').addEventListener('click', async fu
                 cache: { cacheLocation: 'sessionStorage' }
             };
             const msalApp = new msal.PublicClientApplication(msalConfig);
+            msalInstance = msalApp;
 
             /* MSAL v4+ requires explicit initialisation before any API call. */
             msalApp.initialize().then(() => {
