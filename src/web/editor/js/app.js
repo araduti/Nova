@@ -2687,6 +2687,148 @@ function updateBreadcrumb(name) {
     if (el) el.textContent = name || 'Editor';
 }
 
+/* ── Assignments Management ────────────────────────────────────────── */
+var assignments = [];
+
+function loadAssignments() {
+    if (!githubConfig.owner || !githubConfig.repo) return Promise.resolve();
+    var url = 'https://api.github.com/repos/' + encodeURIComponent(githubConfig.owner) + '/' + encodeURIComponent(githubConfig.repo) + '/contents/config/assignments.json';
+    return fetch(url, { headers: { 'Accept': 'application/vnd.github.v3+json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+            if (data && data.content) {
+                var decoded = atob(data.content.replace(/\n/g, ''));
+                var parsed = JSON.parse(decoded);
+                assignments = parsed.assignments || [];
+                assignmentsSha = data.sha;
+            }
+        })
+        .catch(function () { assignments = []; });
+}
+
+var assignmentsSha = null;
+
+function renderAssignments() {
+    var tbody = document.getElementById('assignmentsBody');
+    var noMsg = document.getElementById('noAssignments');
+    var table = document.getElementById('assignmentsTable');
+    tbody.innerHTML = '';
+    if (assignments.length === 0) {
+        table.classList.add('hidden');
+        noMsg.classList.remove('hidden');
+        return;
+    }
+    table.classList.remove('hidden');
+    noMsg.classList.add('hidden');
+    assignments.forEach(function (a, i) {
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+            '<td><span class="assign-type-badge ' + escapeHtml(a.type) + '">' + escapeHtml(a.type) + '</span></td>' +
+            '<td>' + escapeHtml(a.target) + '</td>' +
+            '<td>' + escapeHtml(a.taskSequence || 'default.json') + '</td>' +
+            '<td><button class="btn-remove-assign" data-idx="' + i + '" title="Remove">&times;</button></td>';
+        tbody.appendChild(tr);
+    });
+    tbody.querySelectorAll('.btn-remove-assign').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var idx = parseInt(this.getAttribute('data-idx'), 10);
+            assignments.splice(idx, 1);
+            renderAssignments();
+        });
+    });
+}
+
+document.getElementById('btnAssignments').addEventListener('click', function () {
+    loadAssignments().then(function () {
+        renderAssignments();
+        document.getElementById('assignmentsDialog').classList.remove('hidden');
+    });
+});
+
+document.getElementById('btnAssignmentsClose').addEventListener('click', function () {
+    document.getElementById('assignmentsDialog').classList.add('hidden');
+});
+
+document.getElementById('btnAddAssignment').addEventListener('click', function () {
+    var typeEl = document.getElementById('assignTargetType');
+    var valueEl = document.getElementById('assignTargetValue');
+    var tsPathEl = document.getElementById('assignTsPath');
+    var type = typeEl.value;
+    var target = valueEl.value.trim();
+    var tsPath = tsPathEl.value.trim() || 'default.json';
+    if (!target) { alert('Please enter a user UPN or group object ID.'); return; }
+    /* Check for duplicate */
+    var exists = assignments.some(function (a) { return a.type === type && a.target === target; });
+    if (exists) { alert('An assignment for this target already exists.'); return; }
+    assignments.push({ type: type, target: target, taskSequence: tsPath });
+    valueEl.value = '';
+    renderAssignments();
+});
+
+document.getElementById('btnAssignmentsSave').addEventListener('click', async function () {
+    if (!githubConfig.owner || !githubConfig.repo) {
+        alert('GitHub repository is not configured.');
+        return;
+    }
+    var token = await getGitHubToken();
+    if (!token) return;
+
+    var btn = this;
+    var origLabel = btn.innerHTML;
+    btn.textContent = '\u23F3 Saving\u2026';
+    btn.disabled = true;
+
+    try {
+        var data = { schemaVersion: '1.0', assignments: assignments };
+        var json = JSON.stringify(data, null, 4) + '\n';
+        var path = 'config/assignments.json';
+        var apiBase = 'https://api.github.com/repos/' + encodeURIComponent(githubConfig.owner) + '/' + encodeURIComponent(githubConfig.repo) + '/contents/' + path;
+        var headers = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github.v3+json' };
+
+        /* Get current SHA */
+        var getResp = await fetch(apiBase, { headers: headers });
+        var sha = null;
+        if (getResp.ok) {
+            var fileData = await getResp.json();
+            sha = fileData.sha;
+        } else if (getResp.status === 401 || getResp.status === 403) {
+            sessionStorage.removeItem('nova_github_token');
+            throw new Error('Invalid or expired GitHub token. Please try saving again.');
+        }
+
+        /* Create or update file */
+        var body = {
+            message: 'Update assignments.json via Nova Editor',
+            content: toBase64(json)
+        };
+        if (sha) body.sha = sha;
+
+        var putResp = await fetch(apiBase, {
+            method: 'PUT',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, headers),
+            body: JSON.stringify(body)
+        });
+        if (putResp.status === 401 || putResp.status === 403) {
+            sessionStorage.removeItem('nova_github_token');
+            throw new Error('GitHub token lacks write permission. Please try saving again.');
+        }
+        if (!putResp.ok) {
+            var errBody = await putResp.json().catch(function () { return {}; });
+            throw new Error(errBody.message || 'GitHub API error (HTTP ' + putResp.status + ')');
+        }
+
+        var result = await putResp.json();
+        assignmentsSha = result.content ? result.content.sha : null;
+        btn.textContent = '\u2705 Saved';
+        setTimeout(function () { btn.innerHTML = origLabel; }, 2000);
+    } catch (err) {
+        alert('Save failed:\n' + err.message);
+        btn.innerHTML = origLabel;
+    } finally {
+        btn.disabled = false;
+    }
+});
+
 /* ── MSAL Authentication Gate ─────────────────────────────────────── */
 (function initAuth() {
     const loginOverlay  = document.getElementById('loginOverlay');

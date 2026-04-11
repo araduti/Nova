@@ -1037,6 +1037,95 @@ function ProceedToEngine {
     }
     $script:S = $Strings[$script:Lang]
 
+    # ── Resolve task sequence assignment ────────────────────────────────────
+    # Download config/assignments.json from GitHub and match the authenticated
+    # user (by UPN) or their Entra group memberships against the assignment
+    # list.  When a match is found the corresponding task sequence file is
+    # downloaded and $script:AssignedTaskSequence is set so that
+    # Show-ConfigurationMenu can skip the default.json download.
+    $script:AssignedTaskSequence = ''
+    if ($script:GraphAccessToken) {
+        try {
+            $assignUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/assignments.json"
+            $wc = New-Object System.Net.WebClient
+            $wc.Headers.Add('Cache-Control', 'no-cache')
+            $wc.Headers.Add('Pragma', 'no-cache')
+            $assignRaw = $wc.DownloadString($assignUrl)
+            $assignData = $assignRaw | ConvertFrom-Json
+            if ($assignData.assignments -and $assignData.assignments.Count -gt 0) {
+                # Get the authenticated user's UPN from Microsoft Graph.
+                $meWc = New-Object System.Net.WebClient
+                $meWc.Headers.Add('Authorization', "Bearer $($script:GraphAccessToken)")
+                $meWc.Headers.Add('Content-Type', 'application/json')
+                $meRaw = $meWc.DownloadString('https://graph.microsoft.com/v1.0/me?$select=userPrincipalName,id')
+                $meData = $meRaw | ConvertFrom-Json
+                $userUpn = if ($meData.userPrincipalName) { $meData.userPrincipalName } else { '' }
+                $userId  = if ($meData.id) { $meData.id } else { '' }
+
+                # Check for a direct user assignment first (match by UPN, case-insensitive).
+                $matched = $null
+                foreach ($a in $assignData.assignments) {
+                    if ($a.type -eq 'user' -and $a.target -and $userUpn) {
+                        if ($a.target.Trim().ToLowerInvariant() -eq $userUpn.Trim().ToLowerInvariant()) {
+                            $matched = $a
+                            break
+                        }
+                    }
+                }
+
+                # If no direct user match, check group assignments.
+                if (-not $matched) {
+                    $groupAssignments = @($assignData.assignments | Where-Object { $_.type -eq 'group' })
+                    if ($groupAssignments.Count -gt 0) {
+                        $groupIds = @($groupAssignments | ForEach-Object { $_.target })
+                        try {
+                            $checkBody = @{ groupIds = $groupIds } | ConvertTo-Json -Compress
+                            $grpWc = New-Object System.Net.WebClient
+                            $grpWc.Headers.Add('Authorization', "Bearer $($script:GraphAccessToken)")
+                            $grpWc.Headers.Add('Content-Type', 'application/json')
+                            $grpRaw = $grpWc.UploadString(
+                                'https://graph.microsoft.com/v1.0/me/checkMemberGroups',
+                                'POST',
+                                $checkBody
+                            )
+                            $grpResult = $grpRaw | ConvertFrom-Json
+                            $memberOf = @()
+                            if ($grpResult.value) { $memberOf = @($grpResult.value) }
+                            foreach ($a in $groupAssignments) {
+                                if ($memberOf -contains $a.target) {
+                                    $matched = $a
+                                    break
+                                }
+                            }
+                        } catch {
+                            Write-AuthLog "Group membership check failed: $_"
+                        }
+                    }
+                }
+
+                if ($matched -and $matched.taskSequence) {
+                    Write-AuthLog "Assignment matched: $($matched.type) '$($matched.target)' -> $($matched.taskSequence)"
+                    # Download the assigned task sequence.
+                    $tsFile = $matched.taskSequence -replace '\\','/'
+                    $assignedTsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/task-sequence/$tsFile"
+                    $assignedTsDir = 'X:\Nova'
+                    if (-not (Test-Path $assignedTsDir)) {
+                        $null = New-Item -ItemType Directory -Path $assignedTsDir -Force
+                    }
+                    $assignedTsPath = Join-Path $assignedTsDir 'tasksequence.json'
+                    $tsWc = New-Object System.Net.WebClient
+                    $tsWc.Headers.Add('Cache-Control', 'no-cache')
+                    $tsWc.Headers.Add('Pragma', 'no-cache')
+                    $tsWc.DownloadFile($assignedTsUrl, $assignedTsPath)
+                    $script:AssignedTaskSequence = $assignedTsPath
+                    Write-AuthLog "Assigned task sequence downloaded to $assignedTsPath"
+                }
+            }
+        } catch {
+            Write-AuthLog "Assignment resolution failed (non-fatal): $_"
+        }
+    }
+
     # Unified configuration dialog: language + all Windows options in one step.
     $config = Show-ConfigurationMenu
     $script:Lang = $config.Language
