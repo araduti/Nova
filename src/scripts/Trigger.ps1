@@ -144,7 +144,7 @@ function Invoke-RepoDownload {
 
     # Public GitHub fallback
     $url = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/$RelativePath"
-    Invoke-WebRequest -Uri $url -OutFile $OutFile -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop
+    Invoke-WebRequest -Uri $url -OutFile $OutFile -UseBasicParsing -Headers $script:NoCacheHeaders -ErrorAction Stop -TimeoutSec 30
 }
 
 function Invoke-RepoRestMethod {

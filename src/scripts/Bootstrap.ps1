@@ -237,12 +237,7 @@ function Import-LocaleJson {
     $code = $LangCode.ToLower()
     $info = Get-RepoFileUrl -RelativePath "config/locale/$code.json"
     try {
-        $wc = New-Object System.Net.WebClient
-        if ($info.Headers) {
-            foreach ($key in $info.Headers.Keys) {
-                $wc.Headers.Add($key, $info.Headers[$key])
-            }
-        }
+        $wc = New-RepoWebClient
         try {
             $raw = $wc.DownloadString($info.Url)
         } finally {
@@ -784,12 +779,7 @@ function Show-ConfigurationMenu {
 
     try {
         $productsInfo = Get-RepoFileUrl -RelativePath 'resources/products.xml'
-        $wc = New-Object System.Net.WebClient
-        if ($productsInfo.Headers) {
-            foreach ($key in $productsInfo.Headers.Keys) {
-                $wc.Headers.Add($key, $productsInfo.Headers[$key])
-            }
-        }
+        $wc = New-RepoWebClient
         $task = $wc.DownloadFileTaskAsync($productsInfo.Url, $productsXml)
         while (-not $task.IsCompleted) {
             [System.Windows.Forms.Application]::DoEvents()
@@ -868,12 +858,7 @@ function Show-ConfigurationMenu {
         $tsPath = Join-Path $scratchPath 'tasksequence.json'
         if (-not (Test-Path $tsPath)) {
             $tsInfo = Get-RepoFileUrl -RelativePath 'resources/task-sequence/default.json'
-            $wc2 = New-Object System.Net.WebClient
-            if ($tsInfo.Headers) {
-                foreach ($key in $tsInfo.Headers.Keys) {
-                    $wc2.Headers.Add($key, $tsInfo.Headers[$key])
-                }
-            }
+            $wc2 = New-RepoWebClient
             $wc2.DownloadFile($tsInfo.Url, $tsPath)
         }
         if (Test-Path $tsPath) {
