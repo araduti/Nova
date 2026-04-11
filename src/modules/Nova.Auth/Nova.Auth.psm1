@@ -201,7 +201,6 @@ function _EdgeAppAuth {
         '--disable-save-password-bubble'
     ) + $ExtraEdgeArgs
     $edgeProc = Start-Process -FilePath $EdgeExePath -ArgumentList $edgeArgs -PassThru
-    $edgeLaunchTime = [datetime]::UtcNow
 
     if ($UpdateUi) { & $UpdateUi @{ AuthInProgress = $true } }
 
