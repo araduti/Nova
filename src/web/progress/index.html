@@ -393,6 +393,27 @@
         }
 
         setInterval(pollStatus, POLL_MS);
+
+        /* ── Renderer keep-alive: force continuous paint cycles to
+         *    prevent the SwiftShader renderer from being terminated
+         *    (Edge Error code 39) during long operations. ────────── */
+        (function keepAlive() {
+            var el = document.querySelector('.spinner-wrap');
+            if (!el) return;
+            var tick = 0;
+            function frame() {
+                /* Wrap at 3600 to avoid unbounded growth (arbitrary cycle length). */
+                tick = (tick + 1) % 3600;
+                /* Direct style mutation is intentional — it forces the compositor
+                   to schedule a repaint every frame, which is the mechanism that
+                   keeps the SwiftShader renderer from being marked idle.  The
+                   sub-pixel translateZ oscillation is invisible to the user. */
+                el.style.willChange = 'transform';
+                el.style.transform  = 'translateZ(' + (tick % 2 === 0 ? '0' : '0.01') + 'px)';
+                requestAnimationFrame(frame);
+            }
+            requestAnimationFrame(frame);
+        })();
     </script>
 </body>
 </html>
