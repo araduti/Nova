@@ -120,7 +120,9 @@
                 }
 
                 showLoginBtn();
-            }).catch(function () {
+            }).catch(function (err) {
+                /* Log details so operators can diagnose via the browser console. */
+                console.error('[Nova Auth] MSAL initialisation failed:', err);
                 showLoginBtn();
             });
 
