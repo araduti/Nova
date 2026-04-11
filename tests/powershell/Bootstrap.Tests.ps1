@@ -67,3 +67,65 @@ Describe 'Import-LocaleJson' {
 # Additional Bootstrap.ps1-specific tests can be added here.
 # Network utility tests (Get-SignalBar, Test-InternetConnectivity, Test-HasValidIP)
 # have been moved to Tests/Nova.Network.Tests.ps1.
+
+Describe 'Get-RepoFileUrl' {
+    It 'is defined and accepts RelativePath parameter' {
+        $cmd = Get-Command Get-RepoFileUrl -ErrorAction SilentlyContinue
+        $cmd | Should -Not -BeNullOrEmpty
+        $cmd.Parameters.Keys | Should -Contain 'RelativePath'
+    }
+
+    It 'RelativePath is mandatory' {
+        $cmd = Get-Command Get-RepoFileUrl
+        $p = $cmd.Parameters['RelativePath']
+        $p.Attributes | Where-Object {
+            $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory
+        } | Should -Not -BeNullOrEmpty
+    }
+
+    It 'returns hashtable with Url and Headers keys when proxy is not configured' {
+        # Ensure proxy is not configured
+        $global:ProxyBaseUrl = $null
+        $global:ProxyHeaders = $null
+        $result = Get-RepoFileUrl -RelativePath 'config/auth.json'
+        $result | Should -BeOfType [hashtable]
+        $result.Keys | Should -Contain 'Url'
+        $result.Keys | Should -Contain 'Headers'
+        $result.Url | Should -BeLike '*raw.githubusercontent.com*config/auth.json'
+        $result.Headers | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'New-RepoWebClient' {
+    It 'is defined' {
+        $cmd = Get-Command New-RepoWebClient -ErrorAction SilentlyContinue
+        $cmd | Should -Not -BeNullOrEmpty
+    }
+
+    It 'accepts NoCache switch parameter' {
+        $cmd = Get-Command New-RepoWebClient
+        $cmd.Parameters.Keys | Should -Contain 'NoCache'
+        $cmd.Parameters['NoCache'].SwitchParameter | Should -BeTrue
+    }
+
+    It 'returns a System.Net.WebClient' {
+        $global:ProxyHeaders = $null
+        $wc = New-RepoWebClient
+        try {
+            $wc | Should -BeOfType [System.Net.WebClient]
+        } finally {
+            $wc.Dispose()
+        }
+    }
+
+    It 'adds Cache-Control and Pragma headers when NoCache is specified' {
+        $global:ProxyHeaders = $null
+        $wc = New-RepoWebClient -NoCache
+        try {
+            $wc.Headers['Cache-Control'] | Should -Be 'no-cache'
+            $wc.Headers['Pragma'] | Should -Be 'no-cache'
+        } finally {
+            $wc.Dispose()
+        }
+    }
+}

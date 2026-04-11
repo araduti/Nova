@@ -157,3 +157,41 @@ Describe 'Confirm-FileIntegrity' {
         Test-Path $tmp | Should -BeFalse
     }
 }
+
+Describe 'Confirm-FileIntegrity proxy parameters' {
+    It 'accepts ProxyBaseUrl parameter' {
+        $cmd = Get-Command Confirm-FileIntegrity
+        $cmd.Parameters.Keys | Should -Contain 'ProxyBaseUrl'
+    }
+
+    It 'ProxyBaseUrl is a string parameter' {
+        $cmd = Get-Command Confirm-FileIntegrity
+        $cmd.Parameters['ProxyBaseUrl'].ParameterType.Name | Should -Be 'String'
+    }
+
+    It 'accepts ProxyHeaders parameter' {
+        $cmd = Get-Command Confirm-FileIntegrity
+        $cmd.Parameters.Keys | Should -Contain 'ProxyHeaders'
+    }
+
+    It 'ProxyHeaders is a hashtable parameter' {
+        $cmd = Get-Command Confirm-FileIntegrity
+        $cmd.Parameters['ProxyHeaders'].ParameterType.Name | Should -Be 'Hashtable'
+    }
+
+    It 'passes when hash matches with proxy parameters provided' {
+        Mock -ModuleName Nova.Integrity Write-Success {}
+        $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "integrity_proxy_$(Get-Random).txt"
+        Set-Content -Path $tmp -Value 'proxy test content' -NoNewline -Encoding UTF8
+        $hash = (Get-FileHash -Path $tmp -Algorithm SHA256).Hash
+        $manifest = [pscustomobject]@{ files = [pscustomobject]@{ 'test.txt' = $hash } }
+        try {
+            { Confirm-FileIntegrity -Path $tmp -RelativeName 'test.txt' -HashesJson $manifest `
+                -ProxyBaseUrl 'https://proxy.example.com' `
+                -ProxyHeaders @{ 'Authorization' = 'Bearer test-token' } } |
+                Should -Not -Throw
+        } finally {
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
