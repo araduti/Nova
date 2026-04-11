@@ -1038,66 +1038,80 @@ function ProceedToEngine {
     $script:S = $Strings[$script:Lang]
 
     # ── Resolve task sequence assignment ────────────────────────────────────
-    # Download config/assignments.json from GitHub and match the authenticated
-    # user's Entra group memberships against the assignment list.  When a match
-    # is found the corresponding task sequence file is downloaded and
-    # $script:AssignedTaskSequence is set so that Show-ConfigurationMenu can
-    # skip the default.json download.
+    # Fetch assignments from the Cloudflare Worker KV store (via the OAuth
+    # proxy) and match the authenticated user's Entra group memberships
+    # against the assignment list.  When a match is found the corresponding
+    # task sequence file is downloaded and $script:AssignedTaskSequence is
+    # set so that Show-ConfigurationMenu can skip the default.json download.
     $script:AssignedTaskSequence = ''
     if ($script:GraphAccessToken) {
         try {
-            $assignUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/config/assignments.json"
-            $wc = New-Object System.Net.WebClient
-            $wc.Headers.Add('Cache-Control', 'no-cache')
-            $wc.Headers.Add('Pragma', 'no-cache')
-            $assignRaw = $wc.DownloadString($assignUrl)
-            $assignData = $assignRaw | ConvertFrom-Json
-            if ($assignData.assignments -and $assignData.assignments.Count -gt 0) {
-                $groupIds = @($assignData.assignments | ForEach-Object { $_.target })
-                $matched = $null
-                try {
-                    $checkBody = @{ groupIds = $groupIds } | ConvertTo-Json -Compress
-                    $grpWc = New-Object System.Net.WebClient
-                    $grpWc.Headers.Add('Authorization', "Bearer $($script:GraphAccessToken)")
-                    $grpWc.Headers.Add('Content-Type', 'application/json')
-                    $grpRaw = $grpWc.UploadString(
-                        'https://graph.microsoft.com/v1.0/me/checkMemberGroups',
-                        'POST',
-                        $checkBody
-                    )
-                    $grpResult = $grpRaw | ConvertFrom-Json
-                    $memberOf = @()
-                    if ($grpResult.value) { $memberOf = @($grpResult.value) }
-                    foreach ($a in $assignData.assignments) {
-                        if ($memberOf -contains $a.target) {
-                            $matched = $a
-                            break
-                        }
-                    }
-                } catch {
-                    Write-AuthLog "Group membership check failed: $_"
+            # Determine the OAuth proxy URL from auth config.
+            $proxyUrl = $null
+            if ($script:AuthConfig -and
+                $script:AuthConfig.PSObject.Properties['githubOAuthProxy'] -and
+                $script:AuthConfig.githubOAuthProxy) {
+                $proxyUrl = ($script:AuthConfig.githubOAuthProxy).TrimEnd('/')
+            }
+            if (-not $proxyUrl) {
+                Write-AuthLog 'No githubOAuthProxy configured -- skipping assignment resolution'
+            } else {
+                $assignWc = New-Object System.Net.WebClient
+                $assignWc.Headers.Add('Authorization', "Bearer $($script:GraphAccessToken)")
+                $assignRaw = $assignWc.DownloadString("$proxyUrl/api/config/assignments")
+                $assignResp = $assignRaw | ConvertFrom-Json
+                $assignData = $null
+                if ($assignResp.PSObject.Properties['value'] -and $assignResp.value) {
+                    $assignData = $assignResp.value
                 }
-
-                if ($matched -and $matched.taskSequence) {
-                    Write-AuthLog "Assignment matched: group '$($matched.target)' -> $($matched.taskSequence)"
-                    # Sanitize the task sequence path to prevent directory traversal.
-                    $tsFile = $matched.taskSequence -replace '\\','/'
-                    $tsFile = $tsFile.Split('/')[-1]
-                    if (-not $tsFile -or $tsFile -notmatch '\.json$') {
-                        Write-AuthLog "Invalid task sequence filename: '$tsFile' -- skipping"
-                    } else {
-                        $assignedTsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/task-sequence/$tsFile"
-                        $assignedTsDir = 'X:\Nova'
-                        if (-not (Test-Path $assignedTsDir)) {
-                            $null = New-Item -ItemType Directory -Path $assignedTsDir -Force
+                if ($assignData -and $assignData.PSObject.Properties['assignments'] -and
+                    $assignData.assignments -and $assignData.assignments.Count -gt 0) {
+                    $groupIds = @($assignData.assignments | ForEach-Object { $_.target })
+                    $matched = $null
+                    try {
+                        $checkBody = @{ groupIds = $groupIds } | ConvertTo-Json -Compress
+                        $grpWc = New-Object System.Net.WebClient
+                        $grpWc.Headers.Add('Authorization', "Bearer $($script:GraphAccessToken)")
+                        $grpWc.Headers.Add('Content-Type', 'application/json')
+                        $grpRaw = $grpWc.UploadString(
+                            'https://graph.microsoft.com/v1.0/me/checkMemberGroups',
+                            'POST',
+                            $checkBody
+                        )
+                        $grpResult = $grpRaw | ConvertFrom-Json
+                        $memberOf = @()
+                        if ($grpResult.value) { $memberOf = @($grpResult.value) }
+                        foreach ($a in $assignData.assignments) {
+                            if ($memberOf -contains $a.target) {
+                                $matched = $a
+                                break
+                            }
                         }
-                        $assignedTsPath = Join-Path $assignedTsDir 'tasksequence.json'
-                        $tsWc = New-Object System.Net.WebClient
-                        $tsWc.Headers.Add('Cache-Control', 'no-cache')
-                        $tsWc.Headers.Add('Pragma', 'no-cache')
-                        $tsWc.DownloadFile($assignedTsUrl, $assignedTsPath)
-                        $script:AssignedTaskSequence = $assignedTsPath
-                        Write-AuthLog "Assigned task sequence downloaded to $assignedTsPath"
+                    } catch {
+                        Write-AuthLog "Group membership check failed: $_"
+                    }
+
+                    if ($matched -and $matched.taskSequence) {
+                        Write-AuthLog "Assignment matched: group '$($matched.target)' -> $($matched.taskSequence)"
+                        # Sanitize the task sequence path to prevent directory traversal.
+                        $tsFile = $matched.taskSequence -replace '\\','/'
+                        $tsFile = $tsFile.Split('/')[-1]
+                        if (-not $tsFile -or $tsFile -notmatch '\.json$') {
+                            Write-AuthLog "Invalid task sequence filename: '$tsFile' -- skipping"
+                        } else {
+                            $assignedTsUrl = "https://raw.githubusercontent.com/$GitHubUser/$GitHubRepo/$GitHubBranch/resources/task-sequence/$tsFile"
+                            $assignedTsDir = 'X:\Nova'
+                            if (-not (Test-Path $assignedTsDir)) {
+                                $null = New-Item -ItemType Directory -Path $assignedTsDir -Force
+                            }
+                            $assignedTsPath = Join-Path $assignedTsDir 'tasksequence.json'
+                            $tsWc = New-Object System.Net.WebClient
+                            $tsWc.Headers.Add('Cache-Control', 'no-cache')
+                            $tsWc.Headers.Add('Pragma', 'no-cache')
+                            $tsWc.DownloadFile($assignedTsUrl, $assignedTsPath)
+                            $script:AssignedTaskSequence = $assignedTsPath
+                            Write-AuthLog "Assigned task sequence downloaded to $assignedTsPath"
+                        }
                     }
                 }
             }
