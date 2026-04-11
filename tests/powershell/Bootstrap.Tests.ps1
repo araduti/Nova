@@ -94,6 +94,20 @@ Describe 'Get-RepoFileUrl' {
         $result.Url | Should -BeLike '*raw.githubusercontent.com*config/auth.json'
         $result.Headers | Should -BeNullOrEmpty
     }
+
+    It 'returns proxy URL when proxy is configured' {
+        $script:ProxyBaseUrl = 'https://proxy.example.com'
+        $script:ProxyHeaders = @{ 'Authorization' = 'Bearer test-token' }
+        try {
+            $result = Get-RepoFileUrl -RelativePath 'config/auth.json'
+            $result.Url | Should -BeLike '*api/repo/config/auth.json'
+            $result.Headers | Should -Not -BeNullOrEmpty
+            $result.Headers['Authorization'] | Should -Be 'Bearer test-token'
+        } finally {
+            $script:ProxyBaseUrl = $null
+            $script:ProxyHeaders = $null
+        }
+    }
 }
 
 Describe 'New-RepoWebClient' {

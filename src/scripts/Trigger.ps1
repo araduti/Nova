@@ -131,6 +131,7 @@ function Invoke-RepoDownload {
     if ($script:ProxyBaseUrl -and $script:ProxyHeaders) {
         $proxyUrl = "$($script:ProxyBaseUrl.TrimEnd('/'))/api/repo/$RelativePath"
         try {
+            # 30s timeout -- file downloads may be larger than JSON payloads
             Invoke-WebRequest -Uri $proxyUrl -OutFile $OutFile -UseBasicParsing `
                 -Headers $script:ProxyHeaders -ErrorAction Stop -TimeoutSec 30
             return
@@ -164,6 +165,7 @@ function Invoke-RepoRestMethod {
     if ($script:ProxyBaseUrl -and $script:ProxyHeaders) {
         $proxyUrl = "$($script:ProxyBaseUrl.TrimEnd('/'))/api/repo/$RelativePath"
         try {
+            # 15s timeout -- JSON metadata responses are small
             return (Invoke-RestMethod -Uri $proxyUrl -UseBasicParsing `
                 -Headers $script:ProxyHeaders -ErrorAction Stop -TimeoutSec 15)
         } catch {
