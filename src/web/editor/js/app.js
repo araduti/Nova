@@ -603,10 +603,10 @@ function getStepTooltip(step) {
 
 /* ── Render step list ─────────────────────────────────────────────── */
 const STEP_BADGE_LABELS = {
-    PartitionDisk: 'P', DownloadImage: 'D', ApplyImage: 'A', SetBootloader: 'B',
-    InjectDrivers: 'I', InjectOemDrivers: 'O', ApplyAutopilot: 'AP',
-    StageCCMSetup: 'S', CustomizeOOBE: 'C', RunPostScripts: 'R',
-    SetComputerName: 'CN', SetRegionalSettings: 'RS', ImportAutopilot: 'IA'
+    PartitionDisk: 'DSK', DownloadImage: 'DL', ApplyImage: 'IMG', SetBootloader: 'BT',
+    InjectDrivers: 'DRV', InjectOemDrivers: 'OEM', ApplyAutopilot: 'AP',
+    StageCCMSetup: 'CCM', CustomizeOOBE: 'OOB', RunPostScripts: 'PS',
+    SetComputerName: 'CN', SetRegionalSettings: 'RGN', ImportAutopilot: 'IAP'
 };
 
 function saveCollapsedGroups() {

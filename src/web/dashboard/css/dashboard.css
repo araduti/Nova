@@ -100,7 +100,9 @@ body::before {
     cursor: pointer;
     transition: all var(--transition);
     white-space: nowrap;
+    text-decoration: none;
 }
+.dash-btn svg { flex-shrink: 0; }
 .dash-btn:hover {
     background: var(--surface-alt);
     border-color: var(--border-hover);
@@ -227,42 +229,44 @@ body::before {
     gap: 5px;
 }
 .ts-card-stat-icon {
-    font-size: 14px;
-    opacity: 0.6;
+    display: inline-flex;
+    align-items: center;
+    opacity: 0.7;
 }
 .ts-card-badges {
     display: flex;
-    gap: 4px;
+    gap: 6px;
     flex-wrap: wrap;
     margin-top: 14px;
 }
-.ts-mini-badge {
+.ts-category-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--pill-color, #71717a);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    line-height: 1.4;
+    white-space: nowrap;
+}
+.ts-category-pill svg { flex-shrink: 0; }
+.ts-pill-count {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 6px;
-    font-size: 9px;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    font-size: 10px;
     font-weight: 700;
-    color: #fff;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--pill-color, #71717a);
+    padding: 0 4px;
 }
-.ts-mini-badge.disabled {
-    opacity: 0.25;
-}
-.ts-mini-badge[data-type="PartitionDisk"]   { background: #d97706; }
-.ts-mini-badge[data-type="DownloadImage"]   { background: #2563eb; }
-.ts-mini-badge[data-type="ApplyImage"]      { background: #16a34a; }
-.ts-mini-badge[data-type="SetBootloader"]   { background: #7c3aed; }
-.ts-mini-badge[data-type="InjectDrivers"]   { background: #db2777; }
-.ts-mini-badge[data-type="InjectOemDrivers"]{ background: #ea580c; }
-.ts-mini-badge[data-type="ApplyAutopilot"]  { background: #0891b2; }
-.ts-mini-badge[data-type="StageCCMSetup"]   { background: #6d28d9; }
-.ts-mini-badge[data-type="CustomizeOOBE"]   { background: #e11d48; }
-.ts-mini-badge[data-type="RunPostScripts"]  { background: #65a30d; }
-.ts-mini-badge[data-type="SetComputerName"] { background: var(--accent); }
-.ts-mini-badge[data-type="SetRegionalSettings"] { background: var(--accent); }
-.ts-mini-badge[data-type="ImportAutopilot"] { background: var(--accent); }
 .ts-card-actions {
     display: flex;
     gap: 8px;
@@ -273,7 +277,7 @@ body::before {
 .ts-card-action {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     padding: 5px 12px;
     font-size: 12px;
     font-weight: 500;
@@ -285,6 +289,7 @@ body::before {
     cursor: pointer;
     transition: all var(--transition);
 }
+.ts-card-action svg { flex-shrink: 0; }
 .ts-card-action:hover { color: #fafafa; border-color: var(--border-hover); background: var(--surface-alt); }
 .ts-card-action.primary { color: #fff; background: var(--accent); border-color: var(--accent); }
 .ts-card-action.primary:hover { background: var(--accent-hover); }

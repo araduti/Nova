@@ -19,10 +19,10 @@
             <span class="dash-subtitle">Deployment Monitoring</span>
         </div>
         <div class="dash-header-right">
-            <a href="../../../" class="dash-btn">&#8592; Dashboard</a>
-            <button id="btnDiagnostics" class="dash-btn" title="Troubleshoot connections to GitHub and deployment data sources">&#128295; Diagnostics</button>
-            <button id="btnSampleData" class="dash-btn" title="Add sample deployment data for demonstration">&#128202; Add Sample Data</button>
-            <button id="btnClearHistory" class="dash-btn" title="Clear all deployment history">&#128465; Clear History</button>
+            <a href="../../../" class="dash-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg> Dashboard</a>
+            <button id="btnDiagnostics" class="dash-btn" title="Troubleshoot connections to GitHub and deployment data sources"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Diagnostics</button>
+            <button id="btnSampleData" class="dash-btn" title="Add sample deployment data for demonstration"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg> Add Sample Data</button>
+            <button id="btnClearHistory" class="dash-btn" title="Clear all deployment history"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Clear History</button>
         </div>
     </header>
 
@@ -31,9 +31,9 @@
 
         <!-- Tabs -->
         <div class="mon-tabs">
-            <button class="mon-tab active" data-tab="dashboard">&#128200; Dashboard</button>
-            <button class="mon-tab" data-tab="history">&#128203; History</button>
-            <button class="mon-tab" data-tab="alerts">&#128276; Alerts</button>
+            <button class="mon-tab active" data-tab="dashboard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg> Dashboard</button>
+            <button class="mon-tab" data-tab="history"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> History</button>
+            <button class="mon-tab" data-tab="alerts"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg> Alerts</button>
         </div>
 
         <!-- ═══ Dashboard Tab ═══════════════════════════════════════ -->
@@ -82,11 +82,11 @@
             <div class="history-controls">
                 <div class="history-filter">
                     <button class="history-filter-btn active" data-filter="all">All</button>
-                    <button class="history-filter-btn" data-filter="success">&#10003; Success</button>
-                    <button class="history-filter-btn" data-filter="failed">&#10007; Failed</button>
+                    <button class="history-filter-btn" data-filter="success"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Success</button>
+                    <button class="history-filter-btn" data-filter="failed"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Failed</button>
                 </div>
                 <div class="history-actions">
-                    <button id="btnExportHistory" class="dash-btn" title="Export deployment history as CSV">&#11015; Export CSV</button>
+                    <button id="btnExportHistory" class="dash-btn" title="Export deployment history as CSV"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Export CSV</button>
                 </div>
             </div>
             <div id="historyTableWrap" class="history-table-wrap">
@@ -116,7 +116,7 @@
                 <div class="alert-card">
                     <div class="alert-card-header">
                         <div class="alert-card-title">
-                            <span class="alert-card-icon">&#128172;</span>
+                            <span class="alert-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
                             Microsoft Teams
                         </div>
                         <label class="toggle-switch">
@@ -130,7 +130,7 @@
                                placeholder="https://outlook.office.com/webhook/...">
                         <div class="alert-field-hint">Create an Incoming Webhook connector in your Teams channel settings.</div>
                     </div>
-                    <button class="alert-test-btn" data-test-channel="teams">&#9889; Send Test</button>
+                    <button class="alert-test-btn" data-test-channel="teams"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Send Test</button>
                     <div class="alert-events">
                         <div class="alert-event-label">Notify on</div>
                         <label class="alert-event-row">
@@ -148,7 +148,7 @@
                 <div class="alert-card">
                     <div class="alert-card-header">
                         <div class="alert-card-title">
-                            <span class="alert-card-icon">&#128172;</span>
+                            <span class="alert-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
                             Slack
                         </div>
                         <label class="toggle-switch">
@@ -162,7 +162,7 @@
                                placeholder="https://hooks.slack.com/services/...">
                         <div class="alert-field-hint">Create an Incoming Webhook in your Slack workspace App settings.</div>
                     </div>
-                    <button class="alert-test-btn" data-test-channel="slack">&#9889; Send Test</button>
+                    <button class="alert-test-btn" data-test-channel="slack"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Send Test</button>
                     <div class="alert-events">
                         <div class="alert-event-label">Notify on</div>
                         <label class="alert-event-row">
@@ -180,7 +180,7 @@
                 <div class="alert-card">
                     <div class="alert-card-header">
                         <div class="alert-card-title">
-                            <span class="alert-card-icon">&#9993;</span>
+                            <span class="alert-card-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></span>
                             Email (SMTP)
                         </div>
                         <label class="toggle-switch">
@@ -209,7 +209,7 @@
                                placeholder="admin@contoso.com, it-team@contoso.com">
                         <div class="alert-field-hint">Comma-separated list of recipients.</div>
                     </div>
-                    <button class="alert-test-btn" data-test-channel="email">&#9889; Send Test</button>
+                    <button class="alert-test-btn" data-test-channel="email"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Send Test</button>
                     <div class="alert-events">
                         <div class="alert-event-label">Notify on</div>
                         <label class="alert-event-row">
@@ -227,8 +227,8 @@
             <!-- PowerShell config snippet -->
             <div class="config-snippet">
                 <div class="config-snippet-header">
-                    <div class="config-snippet-title">&#128221; PowerShell Alert Configuration</div>
-                    <button id="btnCopySnippet" class="config-snippet-copy">&#128203; Copy</button>
+                    <div class="config-snippet-title"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> PowerShell Alert Configuration</div>
+                    <button id="btnCopySnippet" class="config-snippet-copy"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy</button>
                 </div>
                 <pre id="configSnippet"></pre>
             </div>
@@ -240,7 +240,7 @@
     <div id="diagOverlay" class="diag-overlay">
         <div class="diag-panel">
             <div class="diag-header">
-                <span class="diag-header-title">&#128295; Connection Diagnostics</span>
+                <span class="diag-header-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Connection Diagnostics</span>
                 <button id="btnDiagClose" class="diag-close" title="Close">&times;</button>
             </div>
             <div class="diag-body">
@@ -252,7 +252,7 @@
             </div>
             <div class="diag-footer">
                 <span id="diagStatus" class="diag-footer-status"></span>
-                <button id="btnRerunDiag" class="diag-rerun-btn">&#8635; Re-run Checks</button>
+                <button id="btnRerunDiag" class="diag-rerun-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Re-run Checks</button>
             </div>
         </div>
     </div>
