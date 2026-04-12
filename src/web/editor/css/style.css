@@ -379,6 +379,46 @@ html, body {
 .props-empty p { max-width: 300px; line-height: 1.7; font-size: 13px; }
 .props-editor { max-width: 680px; }
 
+/* ── Properties panel tabs ─────────────────────────────────────────── */
+.props-tabs {
+    display: flex;
+    gap: 2px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border-subtle);
+    padding-bottom: 0;
+}
+.props-tab {
+    padding: 7px 16px;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all var(--transition);
+    margin-bottom: -1px;
+    position: relative;
+}
+.props-tab:hover { color: var(--text); }
+.props-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+.props-tab-badge {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    background: var(--accent);
+    border-radius: 50%;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+.props-tab-badge.warn {
+    background: var(--warning);
+}
+
 .prop-group { margin-bottom: 18px; }
 .prop-group label {
     display: block;

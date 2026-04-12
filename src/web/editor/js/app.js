@@ -303,6 +303,65 @@ const $condType     = document.getElementById('condType');
 const $condFields   = document.getElementById('condFields');
 const $btnAddCondition = document.getElementById('btnAddCondition');
 const $btnRemoveCondition = document.getElementById('btnRemoveCondition');
+const $conditionBadge = document.getElementById('conditionBadge');
+const $tabGeneral    = document.getElementById('tabGeneral');
+const $tabParameters = document.getElementById('tabParameters');
+const $tabConditions = document.getElementById('tabConditions');
+const $propsTabs     = document.querySelectorAll('.props-tab');
+let activePropsTab   = 'general';
+
+/* ── Properties panel tab switching ──────────────────────────────── */
+function switchPropsTab(tabName) {
+    activePropsTab = tabName;
+    $propsTabs.forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.propsTab === tabName);
+    });
+    if ($tabGeneral) $tabGeneral.classList.toggle('hidden', tabName !== 'general');
+    if ($tabParameters) $tabParameters.classList.toggle('hidden', tabName !== 'parameters');
+    if ($tabConditions) $tabConditions.classList.toggle('hidden', tabName !== 'conditions');
+}
+
+$propsTabs.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        switchPropsTab(btn.dataset.propsTab);
+    });
+});
+
+/** Update the condition badge indicator on the Conditions tab. */
+function updateConditionBadge() {
+    if (!$conditionBadge) return;
+    if (selectedIndex >= 0 && taskSequence.steps[selectedIndex] &&
+        taskSequence.steps[selectedIndex].condition &&
+        taskSequence.steps[selectedIndex].condition.type) {
+        $conditionBadge.classList.remove('hidden');
+    } else {
+        $conditionBadge.classList.add('hidden');
+    }
+}
+
+/** Update the validation badge on the Parameters tab. */
+function updateParamTabBadge() {
+    var paramTab = Array.prototype.find.call($propsTabs, function (btn) {
+        return btn.dataset.propsTab === 'parameters';
+    });
+    if (!paramTab) return;
+    var existingBadge = paramTab.querySelector('.props-tab-badge');
+    if (selectedIndex >= 0 && taskSequence.steps[selectedIndex]) {
+        var warnings = validateStep(taskSequence.steps[selectedIndex]);
+        if (warnings.length > 0) {
+            if (!existingBadge) {
+                existingBadge = document.createElement('span');
+                existingBadge.className = 'props-tab-badge warn';
+                paramTab.appendChild(existingBadge);
+            }
+            existingBadge.classList.remove('hidden');
+        } else if (existingBadge) {
+            existingBadge.classList.add('hidden');
+        }
+    } else if (existingBadge) {
+        existingBadge.classList.add('hidden');
+    }
+}
 
 /* ── Condition type definitions ───────────────────────────────────── */
 const CONDITION_DEFS = {
@@ -493,6 +552,7 @@ function renderValidationWarnings() {
     if (!$validationWarnings) return;
     if (selectedIndex < 0 || !taskSequence.steps[selectedIndex]) {
         $validationWarnings.classList.add('hidden');
+        updateParamTabBadge();
         return;
     }
     var warnings = validateStep(taskSequence.steps[selectedIndex]);
@@ -504,6 +564,7 @@ function renderValidationWarnings() {
     } else {
         $validationWarnings.classList.add('hidden');
     }
+    updateParamTabBadge();
 }
 
 window.addEventListener('beforeunload', function (e) {
@@ -701,6 +762,10 @@ function showPropertiesForIndex(index) {
     updateHelpLink(step.type);
     renderConditionUI(step);
     renderValidationWarnings();
+    updateConditionBadge();
+    updateParamTabBadge();
+    /* Restore the active tab (keep last-used tab across step switches) */
+    switchPropsTab(activePropsTab);
     if (jsonRawMode) {
         showJsonRawView();
     } else {
@@ -847,6 +912,7 @@ if ($btnAddCondition) {
         step.condition = { type: 'variable', variable: '', operator: 'equals', value: '' };
         markDirty();
         renderConditionUI(step);
+        updateConditionBadge();
         renderStepList();
     });
 }
@@ -857,6 +923,7 @@ if ($btnRemoveCondition) {
         delete taskSequence.steps[selectedIndex].condition;
         markDirty();
         renderConditionUI(taskSequence.steps[selectedIndex]);
+        updateConditionBadge();
         renderStepList();
     });
 }
