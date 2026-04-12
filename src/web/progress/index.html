@@ -9,22 +9,22 @@
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
-            --bg-top:       #dae8fc;
-            --bg-bottom:    #eaf0fa;
-            --bg-dark-top:  #1a1a2e;
-            --bg-dark-bot:  #16213e;
+            --bg-top:       #e8edf5;
+            --bg-bottom:    #f0f4fa;
+            --bg-dark-top:  #09090b;
+            --bg-dark-bot:  #0a0a0f;
             --card:         #ffffff;
-            --card-dark:    rgba(22, 33, 62, 0.92);
-            --card-shadow:  rgba(0, 0, 0, 0.08);
-            --accent:       #0f7ae5;
-            --accent-glow:  rgba(15, 122, 229, 0.25);
-            --text:         #1a1a2e;
-            --text-dark:    #e0e0e0;
-            --text-muted:   #7b8da6;
-            --border:       #2a3a5c;
-            --success:      #107c10;
+            --card-dark:    rgba(17, 17, 22, 0.92);
+            --card-shadow:  rgba(0, 0, 0, 0.06);
+            --accent:       #3b82f6;
+            --accent-glow:  rgba(59, 130, 246, 0.15);
+            --text:         #18181b;
+            --text-dark:    #fafafa;
+            --text-muted:   #71717a;
+            --border:       rgba(255, 255, 255, 0.06);
+            --success:      #22c55e;
             --radius:       16px;
-            --font:         'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font:         system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', sans-serif;
         }
 
         html, body {
@@ -32,6 +32,8 @@
             font-family: var(--font);
             overflow: hidden;
             user-select: none;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         /* ── Gradient backdrop ─────────────────────────────────────── */
@@ -47,6 +49,15 @@
         .backdrop.dark {
             background: linear-gradient(180deg, var(--bg-dark-top) 0%, var(--bg-dark-bot) 100%);
         }
+        .backdrop.dark::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.06) 0%, transparent 70%),
+                radial-gradient(ellipse 40% 30% at 80% 60%, rgba(99, 102, 241, 0.03) 0%, transparent 60%);
+            pointer-events: none;
+        }
 
         /* ── Card ──────────────────────────────────────────────────── */
         .card {
@@ -56,13 +67,19 @@
             width: 520px;
             max-width: 92vw;
             text-align: center;
-            box-shadow: 0 8px 40px var(--card-shadow), 0 0 0 1px rgba(0,0,0,0.04);
+            box-shadow: 0 8px 40px var(--card-shadow), 0 0 0 1px rgba(0, 0, 0, 0.04);
             position: relative;
             transition: background 0.4s ease, box-shadow 0.4s ease;
         }
         .dark .card {
             background: var(--card-dark);
-            box-shadow: 0 16px 64px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
+            border: 1px solid var(--border);
+            box-shadow:
+                0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+                0 24px 48px -12px rgba(0, 0, 0, 0.6),
+                0 0 80px -20px rgba(59, 130, 246, 0.06);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
         }
 
         /* ── Logo ──────────────────────────────────────────────────── */
@@ -74,7 +91,7 @@
             font-size: 24px;
             font-weight: 700;
             color: var(--accent);
-            letter-spacing: 1px;
+            letter-spacing: -0.01em;
             margin-bottom: 32px;
         }
         .logo img {
@@ -93,10 +110,10 @@
         .spinner {
             width: 40px;
             height: 40px;
-            border: 3px solid rgba(15, 122, 229, 0.15);
+            border: 3px solid rgba(59, 130, 246, 0.12);
             border-top-color: var(--accent);
             border-radius: 50%;
-            animation: spin 1s linear infinite;
+            animation: spin 0.9s linear infinite;
         }
         .spinner.done {
             animation: none;
@@ -124,7 +141,7 @@
             width: 28px;
             height: 28px;
             border-radius: 50%;
-            border: 2px solid #ccc;
+            border: 2px solid #d4d4d8;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -132,10 +149,10 @@
             background: transparent;
         }
         .step-icon svg { width: 14px; height: 14px; display: none; }
-        .dark .step-icon { border-color: #3a3a4e; }
+        .dark .step-icon { border-color: rgba(255, 255, 255, 0.1); }
         .step.active .step-icon {
             border-color: var(--accent);
-            background: rgba(15, 122, 229, 0.08);
+            background: rgba(59, 130, 246, 0.08);
         }
         .step.completed .step-icon {
             border-color: var(--success);
@@ -144,7 +161,7 @@
         .step.completed .step-icon svg { display: block; }
         .step-label {
             font-size: 11px;
-            color: #999;
+            color: #a1a1aa;
             font-weight: 500;
             transition: color 0.3s ease;
         }
@@ -156,13 +173,13 @@
         .step-line {
             width: 32px;
             height: 2px;
-            background: #ddd;
+            background: #e4e4e7;
             margin: 0 4px;
-            margin-top: 13px; /* centre with step-icon (28px + 2px border) / 2 - line height */
+            margin-top: 13px;
             flex-shrink: 0;
             transition: background 0.3s ease;
         }
-        .dark .step-line { background: #2a3a5c; }
+        .dark .step-line { background: rgba(255, 255, 255, 0.08); }
         .step-line.completed { background: var(--success); }
 
         /* ── Status message ────────────────────────────────────────── */
@@ -183,15 +200,15 @@
         .progress-bar {
             width: 100%;
             height: 6px;
-            background: rgba(0, 0, 0, 0.06);
+            background: rgba(0, 0, 0, 0.05);
             border-radius: 3px;
             overflow: hidden;
         }
-        .dark .progress-bar { background: rgba(255, 255, 255, 0.08); }
+        .dark .progress-bar { background: rgba(255, 255, 255, 0.06); }
         .progress-fill {
             height: 100%;
             width: 0%;
-            background: linear-gradient(90deg, var(--accent), #5c7cfa);
+            background: linear-gradient(90deg, var(--accent), #818cf8);
             border-radius: 3px;
             transition: width 0.4s ease;
         }
@@ -213,25 +230,25 @@
         .hint {
             position: fixed;
             font-size: 11px;
-            color: rgba(0, 0, 0, 0.25);
+            color: rgba(0, 0, 0, 0.2);
             transition: color 0.4s ease;
             bottom: 12px;
             left: 16px;
         }
-        .dark .hint { color: rgba(255, 255, 255, 0.15); }
+        .dark .hint { color: rgba(255, 255, 255, 0.12); }
         .company-logo {
             position: fixed;
             bottom: 12px;
             right: 16px;
             height: 28px;
             width: auto;
-            opacity: 0.3;
+            opacity: 0.25;
             transition: opacity 0.3s ease;
         }
-        .company-logo:hover { opacity: 0.6; }
+        .company-logo:hover { opacity: 0.5; }
 
         /* ── Fade-in ───────────────────────────────────────────────── */
-        body { opacity: 0; animation: fadeIn 0.8s ease forwards; }
+        body { opacity: 0; animation: fadeIn 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
         @keyframes fadeIn { to { opacity: 1; } }
     </style>
 </head>

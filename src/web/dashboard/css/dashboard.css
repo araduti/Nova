@@ -2,27 +2,28 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-    --bg:           #1a1a2e;
-    --surface:      #16213e;
-    --surface-alt:  #1a2744;
-    --border:       #2a3a5c;
-    --text:         #e0e0e0;
-    --text-muted:   #7b8da6;
-    --accent:       #0f7ae5;
-    --accent-hover: #339af0;
-    --accent-glow:  rgba(15, 122, 229, 0.25);
-    --danger:       #e03e3e;
-    --success:      #2b8a3e;
-    --warning:      #f59f00;
+    --bg:           #09090b;
+    --surface:      #111116;
+    --surface-alt:  #18181b;
+    --border:       rgba(255, 255, 255, 0.06);
+    --border-hover: rgba(255, 255, 255, 0.10);
+    --text:         #fafafa;
+    --text-muted:   #71717a;
+    --accent:       #3b82f6;
+    --accent-hover: #2563eb;
+    --accent-glow:  rgba(59, 130, 246, 0.15);
+    --danger:       #ef4444;
+    --success:      #22c55e;
+    --warning:      #f59e0b;
     --header-h:     56px;
-    --font:         'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
-    --mono:         'Cascadia Code', 'Consolas', monospace;
-    --radius:       6px;
-    --radius-lg:    10px;
-    --shadow-sm:    0 1px 3px rgba(0,0,0,0.3);
-    --shadow-md:    0 4px 12px rgba(0,0,0,0.4);
-    --shadow-lg:    0 8px 32px rgba(0,0,0,0.5);
-    --transition:   0.15s ease;
+    --font:         system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', sans-serif;
+    --mono:         'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    --radius:       8px;
+    --radius-lg:    12px;
+    --shadow-sm:    0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md:    0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.3);
+    --shadow-lg:    0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+    --transition:   0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 html, body {
@@ -31,6 +32,20 @@ html, body {
     font-size: 14px;
     color: var(--text);
     background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Subtle ambient background ──────────────────────────────── */
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 30% at 85% 60%, rgba(99, 102, 241, 0.03) 0%, transparent 60%);
+    pointer-events: none;
+    z-index: 0;
 }
 
 /* ── Header ─────────────────────────────────────────────────── */
@@ -40,21 +55,22 @@ html, body {
     justify-content: space-between;
     height: var(--header-h);
     padding: 0 28px;
-    background: linear-gradient(135deg, #0d1b3e 0%, #162447 100%);
+    background: rgba(9, 9, 11, 0.8);
     border-bottom: 1px solid var(--border);
     user-select: none;
-    box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
     position: sticky;
     top: 0;
     z-index: 10;
 }
 .dash-header-left { display: flex; align-items: center; gap: 12px; }
-.dash-header-right { display: flex; align-items: center; gap: 12px; }
+.dash-header-right { display: flex; align-items: center; gap: 10px; }
 .dash-logo {
     font-weight: 700;
     font-size: 17px;
-    color: #fff;
-    letter-spacing: 0.5px;
+    color: #fafafa;
+    letter-spacing: -0.01em;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -67,24 +83,29 @@ html, body {
     font-size: 13px;
     color: var(--text-muted);
     margin-left: 4px;
+    font-weight: 400;
 }
 .dash-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 16px;
+    padding: 7px 14px;
     font-size: 13px;
     font-weight: 500;
     font-family: inherit;
-    color: var(--text);
-    background: var(--surface-alt);
+    color: #a1a1aa;
+    background: transparent;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     cursor: pointer;
     transition: all var(--transition);
     white-space: nowrap;
 }
-.dash-btn:hover { background: var(--border); color: #fff; }
+.dash-btn:hover {
+    background: var(--surface-alt);
+    border-color: var(--border-hover);
+    color: #fafafa;
+}
 .dash-btn-primary {
     background: var(--accent);
     border-color: var(--accent);
@@ -93,22 +114,25 @@ html, body {
 }
 .dash-btn-primary:hover {
     background: var(--accent-hover);
-    box-shadow: 0 0 16px var(--accent-glow);
+    border-color: var(--accent-hover);
+    box-shadow: 0 0 20px var(--accent-glow);
 }
 
 /* ── Main content ───────────────────────────────────────────── */
 .dash-content {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 32px 28px;
+    padding: 36px 28px;
+    position: relative;
+    z-index: 1;
 }
 .dash-section-title {
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 11px;
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 1.2px;
     color: var(--text-muted);
-    margin-bottom: 18px;
+    margin-bottom: 20px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -117,7 +141,7 @@ html, body {
     content: '';
     display: inline-block;
     width: 3px;
-    height: 16px;
+    height: 14px;
     background: var(--accent);
     border-radius: 2px;
 }
@@ -126,7 +150,7 @@ html, body {
 .ts-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-    gap: 20px;
+    gap: 16px;
     margin-bottom: 40px;
 }
 .ts-card {
@@ -135,14 +159,15 @@ html, body {
     border-radius: var(--radius-lg);
     padding: 24px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     overflow: hidden;
 }
 .ts-card:hover {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent), var(--shadow-lg);
+    border-color: rgba(59, 130, 246, 0.3);
+    box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.15), 0 8px 24px rgba(0, 0, 0, 0.3);
     transform: translateY(-2px);
+    background: rgba(17, 17, 22, 0.95);
 }
 .ts-card::before {
     content: '';
@@ -150,8 +175,8 @@ html, body {
     top: 0;
     left: 0;
     right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--accent), #5c7cfa);
+    height: 2px;
+    background: linear-gradient(90deg, var(--accent), #818cf8);
     opacity: 0;
     transition: opacity 0.2s ease;
 }
@@ -163,24 +188,26 @@ html, body {
     margin-bottom: 12px;
 }
 .ts-card-name {
-    font-size: 16px;
+    font-size: 15px;
     font-weight: 600;
-    color: #fff;
-    line-height: 1.3;
+    color: #fafafa;
+    line-height: 1.4;
+    letter-spacing: -0.01em;
 }
 .ts-card-version {
     font-size: 11px;
     color: var(--text-muted);
-    background: rgba(0,0,0,0.2);
+    background: rgba(255, 255, 255, 0.04);
     padding: 2px 8px;
-    border-radius: 10px;
+    border-radius: 6px;
     flex-shrink: 0;
     margin-left: 12px;
+    border: 1px solid var(--border);
 }
 .ts-card-desc {
     font-size: 13px;
-    color: var(--text-muted);
-    line-height: 1.5;
+    color: #a1a1aa;
+    line-height: 1.6;
     margin-bottom: 16px;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -201,7 +228,7 @@ html, body {
 }
 .ts-card-stat-icon {
     font-size: 14px;
-    opacity: 0.7;
+    opacity: 0.6;
 }
 .ts-card-badges {
     display: flex;
@@ -213,26 +240,26 @@ html, body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
     font-size: 9px;
     font-weight: 700;
     color: #fff;
 }
 .ts-mini-badge.disabled {
-    opacity: 0.3;
+    opacity: 0.25;
 }
-.ts-mini-badge[data-type="PartitionDisk"]   { background: #e67700; }
-.ts-mini-badge[data-type="DownloadImage"]   { background: #1971c2; }
-.ts-mini-badge[data-type="ApplyImage"]      { background: #2f9e44; }
-.ts-mini-badge[data-type="SetBootloader"]   { background: #7048e8; }
-.ts-mini-badge[data-type="InjectDrivers"]   { background: #c2255c; }
-.ts-mini-badge[data-type="InjectOemDrivers"]{ background: #e8590c; }
-.ts-mini-badge[data-type="ApplyAutopilot"]  { background: #0c8599; }
-.ts-mini-badge[data-type="StageCCMSetup"]   { background: #5f3dc4; }
-.ts-mini-badge[data-type="CustomizeOOBE"]   { background: #d6336c; }
-.ts-mini-badge[data-type="RunPostScripts"]  { background: #5c940d; }
+.ts-mini-badge[data-type="PartitionDisk"]   { background: #d97706; }
+.ts-mini-badge[data-type="DownloadImage"]   { background: #2563eb; }
+.ts-mini-badge[data-type="ApplyImage"]      { background: #16a34a; }
+.ts-mini-badge[data-type="SetBootloader"]   { background: #7c3aed; }
+.ts-mini-badge[data-type="InjectDrivers"]   { background: #db2777; }
+.ts-mini-badge[data-type="InjectOemDrivers"]{ background: #ea580c; }
+.ts-mini-badge[data-type="ApplyAutopilot"]  { background: #0891b2; }
+.ts-mini-badge[data-type="StageCCMSetup"]   { background: #6d28d9; }
+.ts-mini-badge[data-type="CustomizeOOBE"]   { background: #e11d48; }
+.ts-mini-badge[data-type="RunPostScripts"]  { background: #65a30d; }
 .ts-mini-badge[data-type="SetComputerName"] { background: var(--accent); }
 .ts-mini-badge[data-type="SetRegionalSettings"] { background: var(--accent); }
 .ts-mini-badge[data-type="ImportAutopilot"] { background: var(--accent); }
@@ -251,14 +278,14 @@ html, body {
     font-size: 12px;
     font-weight: 500;
     font-family: inherit;
-    color: var(--text-muted);
-    background: rgba(0,0,0,0.15);
+    color: #a1a1aa;
+    background: transparent;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     cursor: pointer;
     transition: all var(--transition);
 }
-.ts-card-action:hover { color: #fff; border-color: var(--accent); background: var(--accent-glow); }
+.ts-card-action:hover { color: #fafafa; border-color: var(--border-hover); background: var(--surface-alt); }
 .ts-card-action.primary { color: #fff; background: var(--accent); border-color: var(--accent); }
 .ts-card-action.primary:hover { background: var(--accent-hover); }
 
@@ -271,9 +298,11 @@ html, body {
     min-height: 200px;
     border-style: dashed;
     background: transparent;
+    border-color: rgba(255, 255, 255, 0.06);
 }
 .ts-card-new:hover {
-    background: var(--surface);
+    background: rgba(17, 17, 22, 0.6);
+    border-color: rgba(59, 130, 246, 0.2);
 }
 .ts-card-new-icon {
     font-size: 36px;
@@ -285,7 +314,7 @@ html, body {
 .ts-card-new-label {
     font-size: 14px;
     font-weight: 500;
-    color: var(--text-muted);
+    color: #a1a1aa;
 }
 .ts-card-new-hint {
     font-size: 12px;
@@ -302,7 +331,7 @@ html, body {
 }
 .dash-empty-icon {
     font-size: 48px;
-    opacity: 0.3;
+    opacity: 0.2;
     margin-bottom: 16px;
 }
 .dash-empty p {
@@ -320,10 +349,10 @@ html, body {
     min-height: 200px;
 }
 .skeleton-line {
-    background: linear-gradient(90deg, var(--surface-alt) 25%, rgba(255,255,255,0.05) 50%, var(--surface-alt) 75%);
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0.03) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
-    border-radius: 4px;
+    border-radius: 6px;
     margin-bottom: 12px;
 }
 .skeleton-line.w60 { width: 60%; height: 18px; }
@@ -331,20 +360,20 @@ html, body {
 .skeleton-line.w40 { width: 40%; height: 14px; }
 .skeleton-badges { display: flex; gap: 4px; margin-top: 16px; }
 .skeleton-badge {
-    width: 20px;
-    height: 20px;
-    border-radius: 4px;
-    background: linear-gradient(90deg, var(--surface-alt) 25%, rgba(255,255,255,0.05) 50%, var(--surface-alt) 75%);
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0.03) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
 }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
 /* ── Scrollbar ─────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.06); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.12); }
 
 ::selection { background: var(--accent); color: #fff; }
 
