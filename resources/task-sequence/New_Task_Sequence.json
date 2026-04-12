@@ -2,5 +2,32 @@
   "name": "New Task Sequence",
   "version": "1.0",
   "description": "",
-  "steps": []
+  "steps": [
+    {
+      "id": "partitiondisk-mnvqi0fdo3ak7",
+      "name": "Partition Disk",
+      "type": "PartitionDisk",
+      "enabled": false,
+      "description": "Create GPT (UEFI) or MBR (BIOS) layout on the target drive",
+      "continueOnError": true,
+      "parameters": {
+        "diskNumber": 0,
+        "osDriveLetter": "C"
+      },
+      "group": "Disk & Image"
+    },
+    {
+      "id": "importautopilot-mnvqm2j167tzb",
+      "name": "Import Autopilot Device",
+      "type": "ImportAutopilot",
+      "enabled": true,
+      "description": "Register this device in Windows Autopilot via Microsoft Graph API before imaging",
+      "continueOnError": false,
+      "parameters": {
+        "groupTag": "",
+        "userEmail": ""
+      },
+      "group": "Disk & Image"
+    }
+  ]
 }
