@@ -14,7 +14,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? 'github' : 'html',
   use: {
-    baseURL: 'http://localhost:5173/Nova/',
+    baseURL: 'http://localhost:5173/',
     trace: 'on-first-retry',
   },
   projects: [
@@ -25,7 +25,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'npm run dev',
-    url: 'http://localhost:5173/Nova/',
+    url: 'http://localhost:5173/',
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
   },
