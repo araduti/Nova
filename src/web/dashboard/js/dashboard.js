@@ -191,6 +191,10 @@ function loadDashboard() {
                     })
                     .then(function (ts) {
                         return { file: file, data: ts };
+                    })
+                    .catch(function () {
+                        /* Skip files that fail to load */
+                        return null;
                     });
             });
             return Promise.all(fetches);
@@ -198,6 +202,7 @@ function loadDashboard() {
         .then(function (results) {
             if (skeleton) skeleton.remove();
             results.forEach(function (entry) {
+                if (!entry) return;
                 var source = entry.file === 'default.json' ? 'default' : entry.file;
                 var card = createTsCard(entry.data, source, null);
                 grid.appendChild(card);
