@@ -22,6 +22,21 @@
       }
     },
     {
+      "id": "downloadimage-mnvqmfn96ua91",
+      "name": "Download Windows Image",
+      "type": "DownloadImage",
+      "enabled": true,
+      "description": "Fetch the Windows ESD/WIM from Microsoft CDN or a custom URL",
+      "continueOnError": false,
+      "parameters": {
+        "imageUrl": "",
+        "edition": "Professional",
+        "language": "en-us",
+        "architecture": "x64"
+      },
+      "group": "Configuration"
+    },
+    {
       "id": "set-regional-settings",
       "name": "Set Regional Settings",
       "type": "SetRegionalSettings",
