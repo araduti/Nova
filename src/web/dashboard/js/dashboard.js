@@ -1,8 +1,43 @@
-const BADGE_LABELS = {
-    PartitionDisk: 'P', DownloadImage: 'D', ApplyImage: 'A', SetBootloader: 'B',
-    InjectDrivers: 'I', InjectOemDrivers: 'O', ApplyAutopilot: 'AP',
-    StageCCMSetup: 'S', CustomizeOOBE: 'C', RunPostScripts: 'R',
-    SetComputerName: 'N', SetRegionalSettings: 'L', ImportAutopilot: 'IA'
+/* ── Step type display names ────────────────────────────────────────── */
+const STEP_DISPLAY_NAMES = {
+    PartitionDisk: 'Partition Disk', DownloadImage: 'Download Image', ApplyImage: 'Apply Image',
+    SetBootloader: 'Bootloader', InjectDrivers: 'Inject Drivers', InjectOemDrivers: 'OEM Drivers',
+    ApplyAutopilot: 'Autopilot Config', StageCCMSetup: 'ConfigMgr', CustomizeOOBE: 'OOBE',
+    RunPostScripts: 'Post Scripts', SetComputerName: 'Computer Name',
+    SetRegionalSettings: 'Regional', ImportAutopilot: 'Import Autopilot'
+};
+
+/* ── Step type → category mapping ──────────────────────────────────── */
+const STEP_CATEGORIES = {
+    PartitionDisk: 'Disk & Image', DownloadImage: 'Disk & Image', ApplyImage: 'Disk & Image',
+    SetBootloader: 'Disk & Image', InjectDrivers: 'Drivers', InjectOemDrivers: 'Drivers',
+    ImportAutopilot: 'Provisioning', ApplyAutopilot: 'Provisioning', StageCCMSetup: 'Provisioning',
+    SetComputerName: 'Configuration', SetRegionalSettings: 'Configuration',
+    CustomizeOOBE: 'Finalization', RunPostScripts: 'Finalization'
+};
+
+const CATEGORY_ICONS = {
+    'Disk & Image':   '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>',
+    'Drivers':        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="10" rx="2"/><circle cx="8" cy="12" r="1"/><circle cx="16" cy="12" r="1"/></svg>',
+    'Provisioning':   '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>',
+    'Configuration':  '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>',
+    'Finalization':   '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>'
+};
+
+const CATEGORY_COLORS = {
+    'Disk & Image': '#2563eb', 'Drivers': '#db2777', 'Provisioning': '#0891b2',
+    'Configuration': '#d97706', 'Finalization': '#65a30d'
+};
+
+/* ── SVG icon helpers ──────────────────────────────────────────────── */
+var ICONS = {
+    steps:     '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>',
+    enabled:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>',
+    disabled:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
+    edit:      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
+    download:  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
+    duplicate: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+    remove:    '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'
 };
 
 var MAX_RECENT_ITEMS = 10;
@@ -35,28 +70,34 @@ function createTsCard(ts, source, storageKey) {
 
     /* Meta stats */
     var metaHtml = '<div class="ts-card-meta">' +
-        '<span class="ts-card-stat"><span class="ts-card-stat-icon">&#128203;</span> ' + totalSteps + ' step' + (totalSteps !== 1 ? 's' : '') + '</span>' +
-        '<span class="ts-card-stat"><span class="ts-card-stat-icon">&#9989;</span> ' + enabledSteps + ' enabled</span>' +
-        (disabledSteps > 0 ? '<span class="ts-card-stat"><span class="ts-card-stat-icon">&#10060;</span> ' + disabledSteps + ' disabled</span>' : '') +
+        '<span class="ts-card-stat"><span class="ts-card-stat-icon">' + ICONS.steps + '</span>' + totalSteps + ' step' + (totalSteps !== 1 ? 's' : '') + '</span>' +
+        '<span class="ts-card-stat"><span class="ts-card-stat-icon">' + ICONS.enabled + '</span>' + enabledSteps + ' enabled</span>' +
+        (disabledSteps > 0 ? '<span class="ts-card-stat"><span class="ts-card-stat-icon">' + ICONS.disabled + '</span>' + disabledSteps + ' disabled</span>' : '') +
         '</div>';
 
-    /* Mini badges */
+    /* Category summary pills */
     var badgesHtml = '<div class="ts-card-badges">';
-    if (ts.steps) {
+    if (ts.steps && ts.steps.length > 0) {
+        var catCounts = {};
         ts.steps.forEach(function (step) {
-            var label = BADGE_LABELS[step.type] || '?';
-            var cls = step.enabled === false ? ' disabled' : '';
-            badgesHtml += '<span class="ts-mini-badge' + cls + '" data-type="' + escapeHtml(step.type) + '" title="' + escapeHtml(step.name) + '">' + label + '</span>';
+            var cat = STEP_CATEGORIES[step.type] || 'Other';
+            if (!catCounts[cat]) catCounts[cat] = 0;
+            catCounts[cat]++;
+        });
+        Object.keys(catCounts).forEach(function (cat) {
+            var icon = CATEGORY_ICONS[cat] || '';
+            var color = CATEGORY_COLORS[cat] || '#71717a';
+            badgesHtml += '<span class="ts-category-pill" style="--pill-color:' + color + '" title="' + escapeHtml(cat) + ': ' + catCounts[cat] + ' step' + (catCounts[cat] !== 1 ? 's' : '') + '">' + icon + ' ' + escapeHtml(cat) + ' <span class="ts-pill-count">' + catCounts[cat] + '</span></span>';
         });
     }
     badgesHtml += '</div>';
 
     /* Actions */
     var actionsHtml = '<div class="ts-card-actions">' +
-        '<button class="ts-card-action primary" data-action="open">&#9998; Open in Editor</button>' +
-        '<button class="ts-card-action" data-action="download">&#11015; Download</button>' +
-        '<button class="ts-card-action" data-action="duplicate">&#128203; Duplicate</button>' +
-        (storageKey ? '<button class="ts-card-action" data-action="remove" title="Remove from recently opened">&#128465; Remove</button>' : '') +
+        '<button class="ts-card-action primary" data-action="open">' + ICONS.edit + ' Open in Editor</button>' +
+        '<button class="ts-card-action" data-action="download">' + ICONS.download + ' Download</button>' +
+        '<button class="ts-card-action" data-action="duplicate">' + ICONS.duplicate + ' Duplicate</button>' +
+        (storageKey ? '<button class="ts-card-action" data-action="remove" title="Remove from recently opened">' + ICONS.remove + ' Remove</button>' : '') +
         '</div>';
 
     card.innerHTML = headerHtml + descHtml + metaHtml + badgesHtml + actionsHtml;
