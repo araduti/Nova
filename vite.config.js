@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
-import { cpSync, existsSync } from 'fs';
+import { cpSync, existsSync, readdirSync, writeFileSync } from 'fs';
 
 /**
  * Vite configuration for Nova web UIs.
@@ -48,6 +48,15 @@ export default defineConfig({
           if (existsSync(src)) {
             cpSync(src, dest, { recursive: true });
           }
+        }
+
+        /* Auto-generate task-sequence index from available JSON files */
+        const tsDir = 'dist/resources/task-sequence';
+        if (existsSync(tsDir)) {
+          const tsFiles = readdirSync(tsDir)
+            .filter(f => f.endsWith('.json') && f !== 'index.json')
+            .sort((a, b) => (a === 'default.json' ? -1 : b === 'default.json' ? 1 : a.localeCompare(b)));
+          writeFileSync(resolve(tsDir, 'index.json'), JSON.stringify(tsFiles, null, 2) + '\n');
         }
       },
     },

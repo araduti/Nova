@@ -172,20 +172,36 @@ function loadRecentSequences() {
     });
 }
 
-/** Load the default task sequence and display. */
+/** Load all available task sequences and display. */
 function loadDashboard() {
     var grid = document.getElementById('tsGrid');
     var skeleton = document.getElementById('loadingSkeleton');
 
-    fetch('resources/task-sequence/default.json')
+    fetch('resources/task-sequence/index.json')
         .then(function (r) {
             if (!r.ok) throw new Error(r.statusText);
             return r.json();
         })
-        .then(function (ts) {
+        .then(function (files) {
+            var fetches = files.map(function (file) {
+                return fetch('resources/task-sequence/' + file)
+                    .then(function (r) {
+                        if (!r.ok) throw new Error(r.statusText);
+                        return r.json();
+                    })
+                    .then(function (ts) {
+                        return { file: file, data: ts };
+                    });
+            });
+            return Promise.all(fetches);
+        })
+        .then(function (results) {
             if (skeleton) skeleton.remove();
-            var card = createTsCard(ts, 'default', null);
-            grid.insertBefore(card, grid.firstChild);
+            results.forEach(function (entry) {
+                var source = entry.file === 'default.json' ? 'default' : entry.file;
+                var card = createTsCard(entry.data, source, null);
+                grid.appendChild(card);
+            });
             grid.appendChild(createNewCard());
         })
         .catch(function () {
