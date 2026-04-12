@@ -280,9 +280,9 @@ function renderActiveDeployments() {
     if (active.length === 0) {
         container.innerHTML =
             '<div class="deploy-empty">' +
-                '<div class="deploy-empty-icon">&#128203;</div>' +
+                '<div class="deploy-empty-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>' +
                 '<p>No active deployments. Deployment status will appear here in real time when devices are being imaged.</p>' +
-                '<p style="margin-top:8px"><button type="button" class="diag-link">&#128295; Troubleshoot connection</button></p>' +
+                '<p style="margin-top:8px"><button type="button" class="diag-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Troubleshoot connection</button></p>' +
             '</div>';
         return;
     }
@@ -302,7 +302,7 @@ function renderActiveDeployments() {
             var elapsedStr = hours > 0 ? hours + 'h ' + mins + 'm' : mins + 'm';
             staleBanner =
                 '<div class="deploy-stale-banner">' +
-                    '<span>&#9888; Running for ' + elapsedStr + ' — this deployment may have completed or failed without updating its status.</span>' +
+                    '<span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Running for ' + elapsedStr + ' -- this deployment may have completed or failed without updating its status.</span>' +
                     '<button type="button" class="deploy-dismiss-btn" data-device-id="' + escapeHtml(dep.id || '') + '">Dismiss</button>' +
                 '</div>';
         }
@@ -402,7 +402,7 @@ function renderDonutChart() {
     var total   = success + failed;
 
     if (total === 0) {
-        container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No deployment data yet.</p><p style="margin-top:8px"><button type="button" class="diag-link">&#128295; Troubleshoot connection</button></p></div>';
+        container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No deployment data yet.</p><p style="margin-top:8px"><button type="button" class="diag-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Troubleshoot connection</button></p></div>';
         return;
     }
 
@@ -460,7 +460,7 @@ function renderErrors() {
     }).sort(function (a, b) { return b.count - a.count; }).slice(0, 8);
 
     if (errors.length === 0) {
-        container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No errors recorded.</p><p style="margin-top:8px"><button type="button" class="diag-link">&#128295; Troubleshoot connection</button></p></div>';
+        container.innerHTML = '<div class="deploy-empty" style="padding:20px"><p>No errors recorded.</p><p style="margin-top:8px"><button type="button" class="diag-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Troubleshoot connection</button></p></div>';
         return;
     }
 
@@ -543,15 +543,15 @@ function renderHistory() {
     filtered.sort(function (a, b) { return (b.startedAt || 0) - (a.startedAt || 0); });
 
     if (filtered.length === 0) {
-        body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No deployment records found. <button type="button" class="diag-link">&#128295; Troubleshoot connection</button></td></tr>';
+        body.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-muted)">No deployment records found. <button type="button" class="diag-link"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Troubleshoot connection</button></td></tr>';
         return;
     }
 
     var html = '';
     filtered.forEach(function (r) {
         var statusBadge = r.status === 'success'
-            ? '<span class="history-status-badge success">&#10003; Success</span>'
-            : '<span class="history-status-badge failed">&#10007; Failed</span>';
+            ? '<span class="history-status-badge success"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Success</span>'
+            : '<span class="history-status-badge failed"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Failed</span>';
 
         var errorDisplay = r.failedStep && r.error
             ? r.failedStep + ': ' + r.error

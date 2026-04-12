@@ -104,6 +104,7 @@ body::before {
     white-space: nowrap;
     text-decoration: none;
 }
+.dash-btn svg { flex-shrink: 0; }
 .dash-btn:hover {
     background: var(--surface-alt);
     border-color: var(--border-hover);
@@ -158,6 +159,7 @@ body::before {
     cursor: pointer;
     transition: all var(--transition);
 }
+.mon-tab svg { flex-shrink: 0; }
 .mon-tab:hover { color: var(--text); }
 .mon-tab.active {
     color: var(--accent);
@@ -279,6 +281,7 @@ body::before {
     justify-content: space-between;
     gap: 8px;
 }
+.deploy-stale-banner svg { flex-shrink: 0; }
 .deploy-dismiss-btn {
     background: none;
     border: 1px solid #e67700;
@@ -333,7 +336,7 @@ body::before {
     padding: 48px 20px;
     color: var(--text-muted);
 }
-.deploy-empty-icon { font-size: 40px; opacity: 0.3; margin-bottom: 12px; }
+.deploy-empty-icon { opacity: 0.3; margin-bottom: 12px; display: inline-flex; }
 .deploy-empty p { max-width: 360px; margin: 0 auto; line-height: 1.6; }
 
 /* ── History table ──────────────────────────────────────────── */
@@ -377,6 +380,7 @@ body::before {
     padding: 3px 8px;
     border-radius: 10px;
 }
+.history-status-badge svg { flex-shrink: 0; }
 .history-status-badge.success {
     color: var(--success);
     background: rgba(34, 197, 94, 0.12);
@@ -533,7 +537,7 @@ body::before {
     align-items: center;
     gap: 8px;
 }
-.alert-card-icon { font-size: 20px; }
+.alert-card-icon { display: inline-flex; align-items: center; }
 
 /* Toggle switch */
 .toggle-switch {
@@ -620,6 +624,7 @@ body::before {
     transition: all var(--transition);
     margin-top: 8px;
 }
+.alert-test-btn svg { flex-shrink: 0; }
 .alert-test-btn:hover {
     background: var(--accent);
     color: #fff;
@@ -671,8 +676,15 @@ body::before {
     font-size: 13px;
     font-weight: 700;
     color: var(--text);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
+.config-snippet-title svg { flex-shrink: 0; }
 .config-snippet-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     padding: 4px 10px;
     font-size: 11px;
     font-weight: 600;
@@ -684,6 +696,7 @@ body::before {
     cursor: pointer;
     transition: all var(--transition);
 }
+.config-snippet-copy svg { flex-shrink: 0; }
 .config-snippet-copy:hover { background: var(--accent); color: #fff; }
 .config-snippet pre {
     font-family: var(--mono);
@@ -719,6 +732,7 @@ body::before {
     cursor: pointer;
     transition: all var(--transition);
 }
+.history-filter-btn svg { flex-shrink: 0; }
 .history-filter-btn:hover { color: var(--text); border-color: var(--text-muted); }
 .history-filter-btn.active {
     color: var(--accent);
@@ -782,7 +796,11 @@ body::before {
     font-size: 15px;
     font-weight: 700;
     color: #fafafa;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
 }
+.diag-header-title svg { flex-shrink: 0; }
 .diag-close {
     background: none;
     border: none;
@@ -865,6 +883,7 @@ body::before {
     transition: background var(--transition);
 }
 .diag-rerun-btn:hover { background: var(--accent-hover); }
+.diag-rerun-btn svg { flex-shrink: 0; }
 .diag-link {
     color: var(--accent);
     cursor: pointer;
@@ -874,6 +893,7 @@ body::before {
     font: inherit;
     padding: 0;
 }
+.diag-link svg { flex-shrink: 0; vertical-align: middle; }
 .diag-link:hover { color: var(--accent-hover); }
 @keyframes diag-spin {
     to { transform: rotate(360deg); }
