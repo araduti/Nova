@@ -14,7 +14,7 @@ import { cpSync, existsSync, readdirSync, writeFileSync } from 'fs';
  * and run offline — they are NOT part of this build.
  */
 export default defineConfig({
-  base: '/',
+  base: './',
   build: {
     outDir: 'dist',
     rollupOptions: {
