@@ -341,8 +341,9 @@ function updateConditionBadge() {
 
 /** Update the validation badge on the Parameters tab. */
 function updateParamTabBadge() {
-    if (!$propsTabs || $propsTabs.length < 2) return;
-    var paramTab = $propsTabs[1]; /* Parameters is the second tab */
+    var paramTab = Array.prototype.find.call($propsTabs, function (btn) {
+        return btn.dataset.propsTab === 'parameters';
+    });
     if (!paramTab) return;
     var existingBadge = paramTab.querySelector('.props-tab-badge');
     if (selectedIndex >= 0 && taskSequence.steps[selectedIndex]) {
