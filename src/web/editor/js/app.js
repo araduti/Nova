@@ -1004,15 +1004,15 @@ function renderParamFields(step) {
             inputHtml = '<textarea data-param="' + f.key + '" data-kind="array" rows="3" placeholder="One entry per line">' + escapeHtml(txt) + '</textarea>';
         } else if (f.kind === 'xml') {
             inputHtml = '<div class="xml-view-toggle">' +
-                '<button type="button" class="xml-view-btn active" data-view="visual" title="Form-based visual editor">&#9998; Visual</button>' +
+                '<button type="button" class="xml-view-btn active" data-view="visual" title="Form-based visual editor"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Visual</button>' +
                 '<button type="button" class="xml-view-btn" data-view="xml" title="Raw XML editor">&lt;/&gt; XML</button>' +
                 '</div>' +
                 '<div class="visual-unattend-builder" data-param-key="' + f.key + '"></div>' +
                 '<div class="xml-editor-raw" style="display:none;">' +
                 '<div class="xml-editor-toolbar">' +
-                '<button type="button" class="xml-tb-btn" data-action="format" title="Format / indent XML">&#9998; Format</button>' +
-                '<button type="button" class="xml-tb-btn" data-action="validate" title="Check XML syntax">&#10003; Validate</button>' +
-                '<button type="button" class="xml-tb-btn" data-action="reset" title="Reset to default unattend.xml">&#8634; Reset</button>' +
+                '<button type="button" class="xml-tb-btn" data-action="format" title="Format / indent XML"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="21" y1="10" x2="3" y2="10"/><line x1="21" y1="6" x2="3" y2="6"/><line x1="21" y1="14" x2="3" y2="14"/><line x1="21" y1="18" x2="3" y2="18"/></svg> Format</button>' +
+                '<button type="button" class="xml-tb-btn" data-action="validate" title="Check XML syntax"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Validate</button>' +
+                '<button type="button" class="xml-tb-btn" data-action="reset" title="Reset to default unattend.xml"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg> Reset</button>' +
                 '</div>' +
                 '<div class="xml-editor-body">' +
                 '<div class="xml-line-numbers" aria-hidden="true"></div>' +
@@ -1238,7 +1238,7 @@ function renderTemplateList() {
             '<div class="st-name">' +
                 '<span class="step-badge st-badge-inline" data-type="' + escapeHtml(tpl.type) + '">' + badge + '</span> ' +
                 escapeHtml(tpl.label) +
-                (isUser ? '<button class="tpl-delete-btn" data-tpl-id="' + escapeHtml(tpl.id) + '" title="Delete template">&#10005;</button>' : '') +
+                (isUser ? '<button class="tpl-delete-btn" data-tpl-id="' + escapeHtml(tpl.id) + '" title="Delete template"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>' : '') +
             '</div>' +
             '<div class="st-desc">' + escapeHtml(tpl.description) + '</div>';
         li.addEventListener('click', (e) => {
@@ -1810,7 +1810,7 @@ function showValidationReport(results) {
             ? warnings + ' warning' + (warnings > 1 ? 's' : '')
             : 'All checks passed';
 
-    var html = '<h2>&#9989; Validation Report</h2>';
+    var html = '<h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg> Validation Report</h2>';
     html += '<div class="vr-summary ' + summaryClass + '">' + summaryText + '</div>';
     html += '<ul class="vr-list">';
     results.forEach(function (r) {
@@ -2173,7 +2173,7 @@ function renderVisualUnattendForm(builderEl, textarea, step) {
 
     if (managedItems.length) {
         html += '<div class="vub-section vub-managed">';
-        html += '<div class="vub-pass-header"><span class="vub-pass-badge vub-badge-managed">&#128274;</span> Managed by Other Steps</div>';
+        html += '<div class="vub-pass-header"><span class="vub-pass-badge vub-badge-managed"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> Managed by Other Steps</div>';
         html += '<div class="vub-pass-hint">These values are synced automatically and cannot be edited here</div>';
         managedItems.forEach(function (item) {
             html += '<div class="vub-managed-row">' +

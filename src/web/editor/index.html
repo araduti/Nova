@@ -177,7 +177,7 @@
             <div id="tabTemplates" class="dialog-tab-content hidden">
                 <p>Select a pre-configured step template:</p>
                 <ul id="templateList" class="step-type-list"></ul>
-                <p id="noTemplates" class="no-templates hidden">No templates available. Save a step as a template using the <strong>&#128278;</strong> button in the step list panel.</p>
+                <p id="noTemplates" class="no-templates hidden">No templates available. Save a step as a template using the bookmark button in the step list panel.</p>
             </div>
             <div class="dialog-actions">
                 <button id="btnAddStepCancel" class="btn">Cancel</button>
@@ -189,7 +189,7 @@
     <!-- ── Assignments dialog ───────────────────────────────────────── -->
     <div id="assignmentsDialog" class="dialog-overlay hidden">
         <div class="dialog dialog-wide">
-            <h2>&#128101; Task Sequence Assignments</h2>
+            <h2><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg> Task Sequence Assignments</h2>
             <p class="assignments-desc">Assign task sequences to Entra ID groups by Object ID. When a user in the group runs Nova, their assigned task sequence is automatically selected.</p>
             <div class="assignments-add-row">
                 <input id="assignTargetValue" type="text" class="assign-input" placeholder="Entra group Object ID (e.g. aabbccdd-1234-...)">
@@ -211,7 +211,7 @@
             </div>
             <div class="dialog-actions">
                 <button id="btnAssignmentsClose" class="btn">Close</button>
-                <button id="btnAssignmentsSave" class="btn btn-primary">&#128190; Save to GitHub</button>
+                <button id="btnAssignmentsSave" class="btn btn-primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save to GitHub</button>
             </div>
         </div>
     </div>
