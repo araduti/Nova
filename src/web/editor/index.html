@@ -86,63 +86,77 @@
                 <p>Select a step to view its properties, or click <strong>+</strong> to add a new step.</p>
             </div>
             <div id="propsEditor" class="props-editor hidden">
-                <div class="prop-group">
-                    <label for="propName">Name</label>
-                    <input id="propName" type="text" placeholder="Step name">
-                </div>
-                <div class="prop-group">
-                    <label for="propType">Type</label>
-                    <select id="propType"></select>
-                </div>
-                <div class="prop-group">
-                    <label for="propDescription">Description</label>
-                    <textarea id="propDescription" rows="2" placeholder="Optional description"></textarea>
-                </div>
-                <div class="prop-group prop-row">
-                    <label class="cb-label">
-                        <input id="propEnabled" type="checkbox"> Enabled
-                    </label>
-                    <label class="cb-label">
-                        <input id="propContinueOnError" type="checkbox"> Continue on error
-                    </label>
-                </div>
-                <div class="prop-group">
-                    <label for="propGroup">Group</label>
-                    <input id="propGroup" type="text" placeholder="e.g. Configuration, Imaging, Drivers" list="groupSuggestions">
-                    <datalist id="groupSuggestions"></datalist>
+                <!-- ── Property tabs ─────────────────────────────── -->
+                <div class="props-tabs">
+                    <button class="props-tab active" data-props-tab="general">General</button>
+                    <button class="props-tab" data-props-tab="parameters">Parameters</button>
+                    <button class="props-tab" data-props-tab="conditions">Conditions<span id="conditionBadge" class="props-tab-badge hidden"></span></button>
                 </div>
 
-                <!-- Condition section -->
-                <div id="conditionSection" class="condition-section hidden">
-                    <div class="condition-header">
-                        <span class="condition-header-label">&#9889; Condition</span>
-                        <button id="btnRemoveCondition" class="condition-remove-btn" title="Remove condition">&#10005;</button>
+                <!-- ── General tab ───────────────────────────────── -->
+                <div id="tabGeneral" class="props-tab-content">
+                    <div class="prop-group">
+                        <label for="propName">Name</label>
+                        <input id="propName" type="text" placeholder="Step name">
                     </div>
-                    <div class="condition-body">
-                        <div class="condition-field">
-                            <label for="condType">Condition type</label>
-                            <select id="condType">
-                                <option value="variable">Task Sequence Variable</option>
-                                <option value="wmiQuery">WMI Query</option>
-                                <option value="registry">Registry Value</option>
-                            </select>
+                    <div class="prop-group">
+                        <label for="propType">Type</label>
+                        <select id="propType"></select>
+                    </div>
+                    <div class="prop-group">
+                        <label for="propDescription">Description</label>
+                        <textarea id="propDescription" rows="2" placeholder="Optional description"></textarea>
+                    </div>
+                    <div class="prop-group prop-row">
+                        <label class="cb-label">
+                            <input id="propEnabled" type="checkbox"> Enabled
+                        </label>
+                        <label class="cb-label">
+                            <input id="propContinueOnError" type="checkbox"> Continue on error
+                        </label>
+                    </div>
+                    <div class="prop-group">
+                        <label for="propGroup">Group</label>
+                        <input id="propGroup" type="text" placeholder="e.g. Configuration, Imaging, Drivers" list="groupSuggestions">
+                        <datalist id="groupSuggestions"></datalist>
+                    </div>
+                </div>
+
+                <!-- ── Parameters tab ────────────────────────────── -->
+                <div id="tabParameters" class="props-tab-content hidden">
+                    <div id="validationWarnings" class="validation-warnings hidden"></div>
+                    <div class="param-header">
+                        <h3>Parameters</h3>
+                        <a id="helpLink" class="help-link hidden" href="#" target="_blank" rel="noopener noreferrer" title="Open documentation">&#63; Docs</a>
+                        <button id="jsonToggle" class="json-toggle-btn" title="Switch to raw JSON view">{ } JSON</button>
+                    </div>
+                    <div id="paramFields"></div>
+                    <div id="jsonRawEditor" class="json-raw-editor hidden">
+                        <textarea id="jsonRawTextarea" class="json-raw-textarea" spellcheck="false" wrap="off" rows="18"></textarea>
+                        <div id="jsonRawError" class="json-raw-error hidden"></div>
+                    </div>
+                </div>
+
+                <!-- ── Conditions tab ────────────────────────────── -->
+                <div id="tabConditions" class="props-tab-content hidden">
+                    <div id="conditionSection" class="condition-section hidden">
+                        <div class="condition-header">
+                            <span class="condition-header-label">&#9889; Condition</span>
+                            <button id="btnRemoveCondition" class="condition-remove-btn" title="Remove condition">&#10005;</button>
                         </div>
-                        <div id="condFields"></div>
+                        <div class="condition-body">
+                            <div class="condition-field">
+                                <label for="condType">Condition type</label>
+                                <select id="condType">
+                                    <option value="variable">Task Sequence Variable</option>
+                                    <option value="wmiQuery">WMI Query</option>
+                                    <option value="registry">Registry Value</option>
+                                </select>
+                            </div>
+                            <div id="condFields"></div>
+                        </div>
                     </div>
-                </div>
-                <button id="btnAddCondition" class="btn-add-condition hidden" title="Add a condition to control when this step runs">&#9889; Add Condition</button>
-
-                <hr>
-                <div id="validationWarnings" class="validation-warnings hidden"></div>
-                <div class="param-header">
-                    <h3>Parameters</h3>
-                    <a id="helpLink" class="help-link hidden" href="#" target="_blank" rel="noopener noreferrer" title="Open documentation">&#63; Docs</a>
-                    <button id="jsonToggle" class="json-toggle-btn" title="Switch to raw JSON view">{ } JSON</button>
-                </div>
-                <div id="paramFields"></div>
-                <div id="jsonRawEditor" class="json-raw-editor hidden">
-                    <textarea id="jsonRawTextarea" class="json-raw-textarea" spellcheck="false" wrap="off" rows="18"></textarea>
-                    <div id="jsonRawError" class="json-raw-error hidden"></div>
+                    <button id="btnAddCondition" class="btn-add-condition hidden" title="Add a condition to control when this step runs">&#9889; Add Condition</button>
                 </div>
             </div>
         </section>
