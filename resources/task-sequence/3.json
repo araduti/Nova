@@ -2,5 +2,26 @@
   "name": "3",
   "version": "1.0",
   "description": "",
-  "steps": []
+  "steps": [
+    {
+      "id": "setbootloader-mnvlohefopmkq",
+      "name": "Configure Bootloader",
+      "type": "SetBootloader",
+      "enabled": true,
+      "description": "Write BCD store and EFI/MBR boot entries",
+      "continueOnError": true,
+      "parameters": {},
+      "group": "Configuration"
+    },
+    {
+      "id": "setregionalsettings-mnuc6sjg82azb",
+      "name": "English (US) Regional",
+      "type": "InjectOemDrivers",
+      "enabled": true,
+      "description": "Set all locale settings to en-US for US English",
+      "continueOnError": true,
+      "parameters": {},
+      "group": "Configuration"
+    }
+  ]
 }
