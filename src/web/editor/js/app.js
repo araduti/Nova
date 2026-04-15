@@ -2979,17 +2979,25 @@ document.getElementById('btnAssignmentsSave').addEventListener('click', async fu
                 return;
             }
 
-            /* Initialise MSAL */
-            const msalConfig = {
-                auth: {
-                    clientId: config.clientId,
-                    authority: 'https://login.microsoftonline.com/organizations',
-                    redirectUri: config.redirectUri || (window.location.origin + window.location.pathname)
-                },
-                cache: { cacheLocation: 'sessionStorage' }
-            };
-            const msalApp = new msal.PublicClientApplication(msalConfig);
-            msalInstance = msalApp;
+            /* Initialise MSAL — wrapped in try/catch so that a
+               synchronous throw (e.g. invalid config) shows the login
+               UI instead of falling to the outer catch which would
+               bypass auth entirely. */
+            try {
+                var msalConfig = {
+                    auth: {
+                        clientId: config.clientId,
+                        authority: 'https://login.microsoftonline.com/organizations',
+                        redirectUri: config.redirectUri || (window.location.origin + window.location.pathname)
+                    },
+                    cache: { cacheLocation: 'sessionStorage' }
+                };
+                var msalApp = new msal.PublicClientApplication(msalConfig);
+                msalInstance = msalApp;
+            } catch (_) {
+                showLoginUI();
+                return;
+            }
 
             /* MSAL v4+ requires explicit initialisation before any API call. */
             msalApp.initialize().then(() => {
@@ -3001,7 +3009,7 @@ document.getElementById('btnAssignmentsSave').addEventListener('click', async fu
                     return;
                 }
                 /* Check if already signed in. */
-                const accounts = msalApp.getAllAccounts();
+                var accounts = msalApp.getAllAccounts();
                 if (accounts.length > 0) {
                     msalApp.setActiveAccount(accounts[0]);
                     showEditor(accounts[0]);
