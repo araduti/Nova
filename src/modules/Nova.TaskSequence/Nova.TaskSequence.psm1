@@ -436,15 +436,17 @@ $script:NovaVariables = @{}
 function Set-NovaVariable {
     <# .SYNOPSIS Sets a Nova task sequence variable for cross-step data sharing. #>
     [OutputType([void])]
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter(Mandatory)][string]$Name,
         [Parameter(Mandatory)][AllowEmptyString()][string]$Value
     )
-    $script:NovaVariables[$Name] = $Value
-    # Also set as environment variable so existing condition logic works
-    [System.Environment]::SetEnvironmentVariable($Name, $Value, 'Process')
-    Write-Detail "Nova variable set: $Name = $Value"
+    if ($PSCmdlet.ShouldProcess($Name, 'Set Nova variable')) {
+        $script:NovaVariables[$Name] = $Value
+        # Also set as environment variable so existing condition logic works
+        [System.Environment]::SetEnvironmentVariable($Name, $Value, 'Process')
+        Write-Detail "Nova variable set: $Name = $Value"
+    }
 }
 
 function Get-NovaVariable {
@@ -462,6 +464,7 @@ function Get-NovaVariable {
 
 function Clear-NovaVariables {
     <# .SYNOPSIS Resets all Nova task sequence variables. #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '')]
     [OutputType([void])]
     [CmdletBinding()]
     param()
@@ -471,6 +474,7 @@ function Clear-NovaVariables {
 
 function Get-AllNovaVariables {
     <# .SYNOPSIS Returns a copy of all Nova task sequence variables as a hashtable. #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '')]
     [OutputType([hashtable])]
     [CmdletBinding()]
     param()
