@@ -2979,17 +2979,26 @@ document.getElementById('btnAssignmentsSave').addEventListener('click', async fu
                 return;
             }
 
-            /* Initialise MSAL */
-            const msalConfig = {
-                auth: {
-                    clientId: config.clientId,
-                    authority: 'https://login.microsoftonline.com/organizations',
-                    redirectUri: config.redirectUri || (window.location.origin + window.location.pathname)
-                },
-                cache: { cacheLocation: 'sessionStorage' }
-            };
-            const msalApp = new msal.PublicClientApplication(msalConfig);
-            msalInstance = msalApp;
+            /* Initialise MSAL — wrapped in try/catch so that a
+               synchronous throw (e.g. invalid config) shows the login
+               UI instead of falling to the outer catch which would
+               bypass auth entirely. */
+            let msalApp;
+            try {
+                const msalConfig = {
+                    auth: {
+                        clientId: config.clientId,
+                        authority: 'https://login.microsoftonline.com/organizations',
+                        redirectUri: config.redirectUri || (window.location.origin + window.location.pathname)
+                    },
+                    cache: { cacheLocation: 'sessionStorage' }
+                };
+                msalApp = new msal.PublicClientApplication(msalConfig);
+                msalInstance = msalApp;
+            } catch (_) {
+                showLoginUI();
+                return;
+            }
 
             /* MSAL v4+ requires explicit initialisation before any API call. */
             msalApp.initialize().then(() => {

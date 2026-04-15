@@ -23,6 +23,7 @@ BeforeAll {
     }
 
     Import-Module "$PSScriptRoot/../../src/modules/Nova.Logging" -Force
+    Import-Module "$PSScriptRoot/../../src/modules/Nova.Platform" -Force
     Import-Module "$PSScriptRoot/../../src/modules/Nova.Imaging" -Force
 }
 
@@ -317,6 +318,125 @@ Describe 'Set-Bootloader' {
     }
 }
 
+Describe 'Find-CachedImage' {
+    It 'returns $null when no drives are found' {
+        Mock Get-Volume -ModuleName Nova.Imaging { @() }
+        Mock Write-Step -ModuleName Nova.Imaging { }
+        Mock Write-Detail -ModuleName Nova.Imaging { }
+
+        $result = Find-CachedImage -Edition 'Professional'
+        $result | Should -BeNullOrEmpty
+    }
+
+    It 'returns $null when no matching edition in image' {
+        Mock Get-Volume -ModuleName Nova.Imaging {
+            @([PSCustomObject]@{ DriveLetter = 'D'; DriveType = 'Fixed' })
+        }
+        Mock Join-Path -ModuleName Nova.Imaging { '/tmp' }
+        Mock Get-ChildItem -ModuleName Nova.Imaging -MockWith {
+            @([PSCustomObject]@{ FullName = '/tmp/install.wim' })
+        }
+        Mock Get-WindowsImage -ModuleName Nova.Imaging {
+            @([PSCustomObject]@{ ImageIndex = 1; ImageName = 'Windows 11 Home' })
+        }
+        Mock Write-Step -ModuleName Nova.Imaging { }
+        Mock Write-Detail -ModuleName Nova.Imaging { }
+
+        $result = Find-CachedImage -Edition 'Enterprise'
+        $result | Should -BeNullOrEmpty
+    }
+
+    It 'returns cached image path when edition matches directly' {
+        Mock Get-Volume -ModuleName Nova.Imaging {
+            @([PSCustomObject]@{ DriveLetter = 'E'; DriveType = 'Removable' })
+        }
+        # Return a real existing path so Test-Path works natively (avoids mock conflicts)
+        Mock Join-Path -ModuleName Nova.Imaging { '/tmp' }
+        Mock Get-ChildItem -ModuleName Nova.Imaging -MockWith {
+            @([PSCustomObject]@{ FullName = '/tmp/install.wim' })
+        }
+        Mock Get-WindowsImage -ModuleName Nova.Imaging {
+            @([PSCustomObject]@{ ImageIndex = 1; ImageName = 'Windows 11 Enterprise' })
+        }
+        Mock Write-Step -ModuleName Nova.Imaging { }
+        Mock Write-Detail -ModuleName Nova.Imaging { }
+        Mock Write-Success -ModuleName Nova.Imaging { }
+
+        $result = Find-CachedImage -Edition 'Enterprise'
+        $result | Should -Be '/tmp/install.wim'
+    }
+
+    It 'returns cached image path when edition matches via EditionNameMap' {
+        Mock Get-Volume -ModuleName Nova.Imaging {
+            @([PSCustomObject]@{ DriveLetter = 'E'; DriveType = 'Removable' })
+        }
+        Mock Join-Path -ModuleName Nova.Imaging { '/tmp' }
+        Mock Get-ChildItem -ModuleName Nova.Imaging -MockWith {
+            @([PSCustomObject]@{ FullName = '/tmp/win11.wim' })
+        }
+        Mock Get-WindowsImage -ModuleName Nova.Imaging {
+            @([PSCustomObject]@{ ImageIndex = 2; ImageName = 'Windows 11 Pro' })
+        }
+        Mock Write-Step -ModuleName Nova.Imaging { }
+        Mock Write-Detail -ModuleName Nova.Imaging { }
+        Mock Write-Success -ModuleName Nova.Imaging { }
+
+        # 'Professional' maps to 'Pro' via EditionNameMap
+        $result = Find-CachedImage -Edition 'Professional'
+        $result | Should -Be '/tmp/win11.wim'
+    }
+
+    It 'excludes drives listed in ExcludeDrives' {
+        Mock Get-Volume -ModuleName Nova.Imaging {
+            @(
+                [PSCustomObject]@{ DriveLetter = 'X'; DriveType = 'Fixed' }
+                [PSCustomObject]@{ DriveLetter = 'C'; DriveType = 'Fixed' }
+            )
+        }
+        Mock Write-Step -ModuleName Nova.Imaging { }
+        Mock Write-Detail -ModuleName Nova.Imaging { }
+
+        $result = Find-CachedImage -Edition 'Professional' -ExcludeDrives @('X', 'C')
+        $result | Should -BeNullOrEmpty
+    }
+
+    It 'falls back to filesystem scan when Get-Volume throws' {
+        Mock Get-Volume -ModuleName Nova.Imaging { throw 'Not available' }
+        Mock Test-Path -ModuleName Nova.Imaging { $false }
+        Mock Write-Step -ModuleName Nova.Imaging { }
+        Mock Write-Detail -ModuleName Nova.Imaging { }
+
+        $result = Find-CachedImage -Edition 'Professional'
+        $result | Should -BeNullOrEmpty
+    }
+
+    It 'skips unreadable image files gracefully' {
+        Mock Get-Volume -ModuleName Nova.Imaging {
+            @([PSCustomObject]@{ DriveLetter = 'F'; DriveType = 'Removable' })
+        }
+        Mock Join-Path -ModuleName Nova.Imaging { '/tmp' }
+        Mock Get-ChildItem -ModuleName Nova.Imaging -MockWith {
+            @([PSCustomObject]@{ FullName = '/tmp/install.esd' })
+        }
+        Mock Get-WindowsImage -ModuleName Nova.Imaging { throw 'Corrupted image' }
+        Mock Write-Step -ModuleName Nova.Imaging { }
+        Mock Write-Detail -ModuleName Nova.Imaging { }
+
+        $result = Find-CachedImage -Edition 'Professional'
+        $result | Should -BeNullOrEmpty
+    }
+
+    It 'has correct parameter defaults' {
+        $cmd = Get-Command Find-CachedImage
+        $cmd.Parameters['Edition'].Attributes |
+            Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] } |
+            ForEach-Object { $_.Mandatory } | Should -Be $false
+        $cmd.Parameters['Architecture'].Attributes |
+            Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] } |
+            ForEach-Object { $_.Mandatory } | Should -Be $false
+    }
+}
+
 Describe 'Module exports' {
     It 'exports exactly the expected functions' {
         $mod = Get-Module Nova.Imaging
@@ -326,6 +446,7 @@ Describe 'Module exports' {
             'Install-WindowsImage'
             'Set-Bootloader'
             'Get-EditionNameMap'
+            'Find-CachedImage'
         )
         $mod.ExportedFunctions.Keys | Sort-Object | Should -Be ($expectedFunctions | Sort-Object)
     }

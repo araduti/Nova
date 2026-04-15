@@ -400,6 +400,7 @@ function Find-CachedImage {
         [string[]]$ExcludeDrives = @('X')
     )
 
+    $null = $Language, $Architecture   # reserved for future filename-hint matching
     Write-Step "Searching for cached Windows image on local drives..."
 
     # Well-known subdirectories where pre-cached images are placed

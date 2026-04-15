@@ -63,6 +63,7 @@ function New-RepoWebClient {
         Returns a System.Net.WebClient with headers set for either
         proxy-authenticated or public GitHub access.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '')]
     [CmdletBinding()]
     param([switch]$NoCache)
     $wc = New-Object System.Net.WebClient
