@@ -12,12 +12,12 @@
         'Nova.Platform'
     )
     FunctionsToExport = @(
+        'Find-CachedImage'
         'Find-WindowsESD'
+        'Get-EditionNameMap'
         'Get-WindowsImageSource'
         'Install-WindowsImage'
         'Set-Bootloader'
-        'Get-EditionNameMap'
-        'Find-CachedImage'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()
