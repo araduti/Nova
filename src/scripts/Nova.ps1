@@ -180,6 +180,18 @@ function Invoke-DownloadWithProgress {
             }
 
             $response  = $wr.GetResponse()
+
+            # Validate resume: if we requested a Range but the server sent the
+            # full file (200 OK instead of 206 Partial Content), discard the
+            # partial file and start fresh to avoid corruption.
+            if ($existingSize -gt 0) {
+                $statusCode = [int]$response.StatusCode
+                if ($statusCode -ne 206) {
+                    Write-Warn "Server does not support resume (HTTP $statusCode) -- restarting download"
+                    $existingSize = 0
+                }
+            }
+
             $totalBytes = $response.ContentLength + $existingSize
             $stream     = $response.GetResponseStream()
             $stream.ReadTimeout = 30000   # 30-second read timeout (ms)
@@ -569,6 +581,34 @@ try {
     Write-Section "Task Sequence Execution"
     Write-Step "Executing $($enabledSteps.Count) enabled steps ($disabledCount disabled/skipped)"
 
+    # ── Pre-flight step order validation ────────────────────────────
+    # Catch critical ordering mistakes before any destructive work begins.
+    $stepTypes = @($enabledSteps | ForEach-Object { $_.type })
+    $hasPartitionStep = $stepTypes -contains 'PartitionDisk'
+    if ($hasPartitionStep) {
+        $partitionIndex = [array]::IndexOf($stepTypes, 'PartitionDisk')
+        $mustFollowPartition = @('ApplyImage', 'SetBootloader')
+        foreach ($depType in $mustFollowPartition) {
+            for ($vi = 0; $vi -lt $stepTypes.Count; $vi++) {
+                if ($stepTypes[$vi] -eq $depType -and $vi -lt $partitionIndex) {
+                    throw "Invalid task sequence: '$($enabledSteps[$vi].name)' ($depType) at position $($vi+1) runs before PartitionDisk at position $($partitionIndex+1). The disk must be partitioned first."
+                }
+            }
+        }
+    }
+    # Ensure ApplyImage has an image source
+    $hasDownloadStep = $stepTypes -contains 'DownloadImage'
+    for ($vi = 0; $vi -lt $stepTypes.Count; $vi++) {
+        if ($stepTypes[$vi] -eq 'ApplyImage' -and $hasDownloadStep) {
+            $downloadIndex = [array]::IndexOf($stepTypes, 'DownloadImage')
+            $applyP = $enabledSteps[$vi].parameters
+            $hasInlineUrl = ($applyP -and $applyP.PSObject.Properties['imageUrl'] -and $applyP.imageUrl)
+            if ($vi -lt $downloadIndex -and -not $hasInlineUrl) {
+                throw "Invalid task sequence: '$($enabledSteps[$vi].name)' (ApplyImage) at position $($vi+1) runs before DownloadImage at position $($downloadIndex+1). No image will be available."
+            }
+        }
+    }
+
     # Log phase breakdown so operators see which steps run in WinPE vs OOBE.
     $phases = Get-StepsByPhase -TaskSequence $ts
     if ($phases.winpe.Count -gt 0 -or $phases.oobe.Count -gt 0) {
@@ -623,35 +663,46 @@ try {
             Write-Detail "Non-blocking: active deployment report update failed for step '$($s.name)': $_"
         }
 
-        # After PartitionDisk, redirect scratch to OS drive
-        if ($s.type -eq 'PartitionDisk') {
+        try {
             Invoke-TaskSequenceStep -Step $s -Index ($i+1) -TotalSteps $enabledSteps.Count `
                 -CurrentScratchDir $ScratchDir `
                 -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
                 -CurrentDiskNumber $TargetDiskNumber
-            $ScratchDir = Join-Path "${OSDrive}:" 'Nova'
-            New-ScratchDirectory -Path $ScratchDir
-            Write-Detail "Scratch directory redirected to OS drive: $ScratchDir"
-        } else {
-            try {
-                Invoke-TaskSequenceStep -Step $s -Index ($i+1) -TotalSteps $enabledSteps.Count `
-                    -CurrentScratchDir $ScratchDir `
-                    -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
-                    -CurrentDiskNumber $TargetDiskNumber
-            } catch {
-                $failDurMs = [math]::Round(((Get-Date) - $stepStartTime).TotalMilliseconds)
-                $script:StepTimings += @{
-                    name       = $s.name
-                    type       = $s.type
-                    durationMs = $failDurMs
-                    status     = 'failed'
-                    error      = "$_"
+
+            # After PartitionDisk, redirect scratch to OS drive with retry
+            if ($s.type -eq 'PartitionDisk') {
+                $newScratch = Join-Path "${OSDrive}:" 'Nova'
+                $scratchReady = $false
+                for ($retryIdx = 0; $retryIdx -lt 3; $retryIdx++) {
+                    try {
+                        New-ScratchDirectory -Path $newScratch
+                        $scratchReady = $true
+                        break
+                    } catch {
+                        Write-Detail "Scratch directory creation attempt $($retryIdx+1)/3 failed: $_"
+                        Start-Sleep -Seconds 2
+                    }
                 }
-                if ($s.PSObject.Properties['continueOnError'] -and $s.continueOnError) {
-                    Write-Warn "Step '$($s.name)' failed but continueOnError is set -- continuing: $_"
+                if ($scratchReady) {
+                    $ScratchDir = $newScratch
+                    Write-Detail "Scratch directory redirected to OS drive: $ScratchDir"
                 } else {
-                    throw
+                    Write-Warn "Could not create scratch directory on ${OSDrive}: -- continuing with $ScratchDir"
                 }
+            }
+        } catch {
+            $failDurMs = [math]::Round(((Get-Date) - $stepStartTime).TotalMilliseconds)
+            $script:StepTimings += @{
+                name       = $s.name
+                type       = $s.type
+                durationMs = $failDurMs
+                status     = 'failed'
+                error      = "$_"
+            }
+            if ($s.PSObject.Properties['continueOnError'] -and $s.continueOnError) {
+                Write-Warn "Step '$($s.name)' failed but continueOnError is set -- continuing: $_"
+            } else {
+                throw
             }
         }
         $stepDuration = (Get-Date) - $stepStartTime

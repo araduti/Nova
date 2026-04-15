@@ -160,6 +160,85 @@ Describe 'Invoke-DryRunValidation' {
         }
         { Invoke-DryRunValidation -TaskSequence $ts -ScratchDir '/tmp' -OSDrive 'C' -FirmwareType 'UEFI' -DiskNumber 0 } | Should -Not -Throw
     }
+
+    It 'reports error when ApplyImage runs before PartitionDisk' {
+        Mock -ModuleName Nova.TaskSequence Write-Step {}
+        Mock -ModuleName Nova.TaskSequence Write-Host {}
+        Mock -ModuleName Nova.TaskSequence Write-Success {}
+        Mock -ModuleName Nova.TaskSequence Write-Warn {}
+        Mock -ModuleName Nova.TaskSequence Write-Fail {}
+        Mock -ModuleName Nova.TaskSequence Get-Disk { $null }
+        Mock -ModuleName Nova.TaskSequence Get-CimInstance { $null }
+
+        $ts = [pscustomobject]@{
+            name = 'BadOrder'
+            steps = @(
+                [pscustomobject]@{ name = 'Apply'; type = 'ApplyImage'; enabled = $true; parameters = [pscustomobject]@{} }
+                [pscustomobject]@{ name = 'Partition'; type = 'PartitionDisk'; enabled = $true; parameters = [pscustomobject]@{} }
+            )
+        }
+        { Invoke-DryRunValidation -TaskSequence $ts -ScratchDir '/tmp' -OSDrive 'C' -FirmwareType 'UEFI' -DiskNumber 0 } | Should -Throw '*validation failed*'
+    }
+
+    It 'reports error when ApplyImage runs before DownloadImage without imageUrl' {
+        Mock -ModuleName Nova.TaskSequence Write-Step {}
+        Mock -ModuleName Nova.TaskSequence Write-Host {}
+        Mock -ModuleName Nova.TaskSequence Write-Success {}
+        Mock -ModuleName Nova.TaskSequence Write-Warn {}
+        Mock -ModuleName Nova.TaskSequence Write-Fail {}
+        Mock -ModuleName Nova.TaskSequence Get-Disk { $null }
+        Mock -ModuleName Nova.TaskSequence Get-CimInstance { $null }
+
+        $ts = [pscustomobject]@{
+            name = 'BadOrder2'
+            steps = @(
+                [pscustomobject]@{ name = 'Apply'; type = 'ApplyImage'; enabled = $true; parameters = [pscustomobject]@{} }
+                [pscustomobject]@{ name = 'Download'; type = 'DownloadImage'; enabled = $true; parameters = [pscustomobject]@{} }
+            )
+        }
+        { Invoke-DryRunValidation -TaskSequence $ts -ScratchDir '/tmp' -OSDrive 'C' -FirmwareType 'UEFI' -DiskNumber 0 } | Should -Throw '*validation failed*'
+    }
+
+    It 'passes when steps are in correct order' {
+        Mock -ModuleName Nova.TaskSequence Write-Step {}
+        Mock -ModuleName Nova.TaskSequence Write-Host {}
+        Mock -ModuleName Nova.TaskSequence Write-Success {}
+        Mock -ModuleName Nova.TaskSequence Write-Warn {}
+        Mock -ModuleName Nova.TaskSequence Get-Disk { [pscustomobject]@{ Number = 0; FriendlyName = 'TestDisk'; Size = 256GB; PartitionStyle = 'GPT' } }
+        Mock -ModuleName Nova.TaskSequence Get-CimInstance { $null }
+        Mock -ModuleName Nova.TaskSequence Get-FileSizeReadable { '256.00 GB' }
+
+        $ts = [pscustomobject]@{
+            name = 'GoodOrder'
+            steps = @(
+                [pscustomobject]@{ name = 'Partition'; type = 'PartitionDisk'; enabled = $true; parameters = [pscustomobject]@{} }
+                [pscustomobject]@{ name = 'Download'; type = 'DownloadImage'; enabled = $true; parameters = [pscustomobject]@{ imageUrl = 'http://example.com/img.wim' } }
+                [pscustomobject]@{ name = 'Apply'; type = 'ApplyImage'; enabled = $true; parameters = [pscustomobject]@{} }
+                [pscustomobject]@{ name = 'Boot'; type = 'SetBootloader'; enabled = $true; parameters = [pscustomobject]@{} }
+            )
+        }
+        { Invoke-DryRunValidation -TaskSequence $ts -ScratchDir '/tmp' -OSDrive 'C' -FirmwareType 'UEFI' -DiskNumber 0 } | Should -Not -Throw
+    }
+
+    It 'warns when ApplyImage has no DownloadImage step and no imageUrl' {
+        Mock -ModuleName Nova.TaskSequence Write-Step {}
+        Mock -ModuleName Nova.TaskSequence Write-Host {}
+        Mock -ModuleName Nova.TaskSequence Write-Success {}
+        Mock -ModuleName Nova.TaskSequence Write-Warn {}
+        Mock -ModuleName Nova.TaskSequence Get-Disk { $null }
+        Mock -ModuleName Nova.TaskSequence Get-CimInstance { $null }
+
+        $ts = [pscustomobject]@{
+            name = 'NoDownload'
+            steps = @(
+                [pscustomobject]@{ name = 'Apply'; type = 'ApplyImage'; enabled = $true; parameters = [pscustomobject]@{} }
+            )
+        }
+        # Should not throw (warnings only, no errors)
+        { Invoke-DryRunValidation -TaskSequence $ts -ScratchDir '/tmp' -OSDrive 'C' -FirmwareType 'UEFI' -DiskNumber 0 } | Should -Not -Throw
+        # Verify that Write-Warn was called with validation warnings
+        Should -Invoke Write-Warn -ModuleName Nova.TaskSequence -Times 1
+    }
 }
 
 Describe 'Update-TaskSequenceFromConfig' {

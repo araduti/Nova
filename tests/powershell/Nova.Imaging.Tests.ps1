@@ -200,6 +200,22 @@ Describe 'Get-WindowsImageSource' {
 }
 
 Describe 'Install-WindowsImage' {
+    BeforeAll {
+        # Create a temporary file with a valid WIM magic header for tests
+        # WIM magic: 4D 53 57 49 4D 00 00 00 = 'MSWIM' + 3 null bytes
+        $script:fakeWimDir = Join-Path ([System.IO.Path]::GetTempPath()) "Nova_FakeWim_$(Get-Random)"
+        $null = New-Item -ItemType Directory -Path $script:fakeWimDir -Force
+        $script:fakeWimPath = Join-Path $script:fakeWimDir 'fake.wim'
+        $wimHeader = [byte[]]@(0x4D, 0x53, 0x57, 0x49, 0x4D, 0x00, 0x00, 0x00)
+        # Pad to a reasonable minimum size
+        $padding = [byte[]]::new(200)
+        $allBytes = $wimHeader + $padding
+        [System.IO.File]::WriteAllBytes($script:fakeWimPath, $allBytes)
+    }
+    AfterAll {
+        if (Test-Path $script:fakeWimDir) { Remove-Item $script:fakeWimDir -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+
     It 'finds edition by direct name match' {
         Mock Get-WindowsImage -ModuleName Nova.Imaging {
             @(
@@ -211,10 +227,11 @@ Describe 'Install-WindowsImage' {
         Mock Write-Host -ModuleName Nova.Imaging { }
         Mock Write-Step -ModuleName Nova.Imaging { }
         Mock Write-Success -ModuleName Nova.Imaging { }
+        Mock Write-Detail -ModuleName Nova.Imaging { }
 
         $testScratch = Join-Path ([System.IO.Path]::GetTempPath()) "Nova_Install_Test_$(Get-Random)"
         try {
-            Install-WindowsImage -ImagePath 'C:\fake.wim' -Edition 'Pro' `
+            Install-WindowsImage -ImagePath $script:fakeWimPath -Edition 'Pro' `
                 -OSDriveLetter 'W' -ScratchDir $testScratch
 
             Should -Invoke Expand-WindowsImage -ModuleName Nova.Imaging -Times 1 -ParameterFilter {
@@ -236,11 +253,12 @@ Describe 'Install-WindowsImage' {
         Mock Write-Host -ModuleName Nova.Imaging { }
         Mock Write-Step -ModuleName Nova.Imaging { }
         Mock Write-Success -ModuleName Nova.Imaging { }
+        Mock Write-Detail -ModuleName Nova.Imaging { }
 
         $testScratch = Join-Path ([System.IO.Path]::GetTempPath()) "Nova_Install_Test_$(Get-Random)"
         try {
             # 'Professional' won't match directly, but EditionNameMap maps it to 'Pro'
-            Install-WindowsImage -ImagePath 'C:\fake.wim' -Edition 'Professional' `
+            Install-WindowsImage -ImagePath $script:fakeWimPath -Edition 'Professional' `
                 -OSDriveLetter 'W' -ScratchDir $testScratch
 
             Should -Invoke Expand-WindowsImage -ModuleName Nova.Imaging -Times 1 -ParameterFilter {
@@ -263,10 +281,11 @@ Describe 'Install-WindowsImage' {
         Mock Write-Step -ModuleName Nova.Imaging { }
         Mock Write-Success -ModuleName Nova.Imaging { }
         Mock Write-Warn -ModuleName Nova.Imaging { }
+        Mock Write-Detail -ModuleName Nova.Imaging { }
 
         $testScratch = Join-Path ([System.IO.Path]::GetTempPath()) "Nova_Install_Test_$(Get-Random)"
         try {
-            Install-WindowsImage -ImagePath 'C:\fake.wim' -Edition 'ServerDatacenter' `
+            Install-WindowsImage -ImagePath $script:fakeWimPath -Edition 'ServerDatacenter' `
                 -OSDriveLetter 'W' -ScratchDir $testScratch
 
             Should -Invoke Expand-WindowsImage -ModuleName Nova.Imaging -Times 1 -ParameterFilter {
@@ -281,14 +300,61 @@ Describe 'Install-WindowsImage' {
         Mock Get-WindowsImage -ModuleName Nova.Imaging { throw 'DISM error' }
         Mock Write-Host -ModuleName Nova.Imaging { }
         Mock Write-Step -ModuleName Nova.Imaging { }
+        Mock Write-Detail -ModuleName Nova.Imaging { }
 
         $testScratch = Join-Path ([System.IO.Path]::GetTempPath()) "Nova_Install_Test_$(Get-Random)"
         try {
-            { Install-WindowsImage -ImagePath 'C:\fake.wim' -Edition 'Pro' `
+            { Install-WindowsImage -ImagePath $script:fakeWimPath -Edition 'Pro' `
                 -OSDriveLetter 'W' -ScratchDir $testScratch } |
                 Should -Throw '*Install-WindowsImage failed*'
         } finally {
             if (Test-Path $testScratch) { Remove-Item $testScratch -Recurse -Force }
+        }
+    }
+    It 'throws when image file does not exist' {
+        Mock Write-Step -ModuleName Nova.Imaging { }
+        $testScratch = Join-Path ([System.IO.Path]::GetTempPath()) "Nova_Install_Test_$(Get-Random)"
+        try {
+            { Install-WindowsImage -ImagePath '/nonexistent/fake.wim' -Edition 'Pro' `
+                -OSDriveLetter 'W' -ScratchDir $testScratch } |
+                Should -Throw '*Image file not found*'
+        } finally {
+            if (Test-Path $testScratch) { Remove-Item $testScratch -Recurse -Force }
+        }
+    }
+
+    It 'throws when image file has invalid WIM header' {
+        Mock Write-Step -ModuleName Nova.Imaging { }
+
+        $badDir = Join-Path ([System.IO.Path]::GetTempPath()) "Nova_BadImg_$(Get-Random)"
+        $null = New-Item -ItemType Directory -Path $badDir -Force
+        $badFile = Join-Path $badDir 'bad.wim'
+        try {
+            # Write an HTML-like response (simulates CDN error page)
+            Set-Content -Path $badFile -Value '<html><body>404 Not Found</body></html>' -Encoding UTF8
+            $testScratch = Join-Path ([System.IO.Path]::GetTempPath()) "Nova_Install_Test_$(Get-Random)"
+            { Install-WindowsImage -ImagePath $badFile -Edition 'Pro' `
+                -OSDriveLetter 'W' -ScratchDir $testScratch } |
+                Should -Throw '*does not have a valid WIM/ESD header*'
+        } finally {
+            Remove-Item $badDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'throws when image file is too small' {
+        Mock Write-Step -ModuleName Nova.Imaging { }
+
+        $tinyDir = Join-Path ([System.IO.Path]::GetTempPath()) "Nova_TinyImg_$(Get-Random)"
+        $null = New-Item -ItemType Directory -Path $tinyDir -Force
+        $tinyFile = Join-Path $tinyDir 'tiny.wim'
+        try {
+            [System.IO.File]::WriteAllBytes($tinyFile, [byte[]]@(0x00, 0x01))
+            $testScratch = Join-Path ([System.IO.Path]::GetTempPath()) "Nova_Install_Test_$(Get-Random)"
+            { Install-WindowsImage -ImagePath $tinyFile -Edition 'Pro' `
+                -OSDriveLetter 'W' -ScratchDir $testScratch } |
+                Should -Throw '*too small*'
+        } finally {
+            Remove-Item $tinyDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }
