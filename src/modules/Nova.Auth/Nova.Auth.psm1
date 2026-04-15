@@ -596,9 +596,109 @@ function Update-M365Token {
 
 #endregion
 
+#region ── Entra group targeting ────────────────────────────────────────────────
+
+function Resolve-EntraGroupAssignment {
+    <#
+    .SYNOPSIS  Resolves a task sequence assignment based on Entra ID group membership.
+    .DESCRIPTION
+        Fetches assignment rules from the OAuth proxy's KV store, then checks
+        the authenticated user's Entra ID group memberships against those rules
+        via Microsoft Graph (checkMemberGroups).
+
+        Returns a hashtable with:
+          Matched        [bool]   $true when an assignment was found.
+          TaskSequence   [string] The task sequence filename (e.g. 'corp-standard.json').
+          GroupId        [string] The matched Entra group ID.
+
+        Returns @{ Matched = $false } when no assignment matches or when any
+        prerequisite (token, proxy URL, group check) is unavailable.
+    .PARAMETER GraphAccessToken
+        A valid Microsoft Graph access token obtained during Entra ID sign-in.
+    .PARAMETER ProxyUrl
+        The base URL of the Nova OAuth proxy (e.g. 'https://nova-proxy.example.com').
+    .PARAMETER WriteLog
+        Optional scriptblock for logging messages during resolution.
+    #>
+    [OutputType([hashtable])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$GraphAccessToken,
+
+        [Parameter(Mandatory)]
+        [string]$ProxyUrl,
+
+        [scriptblock]$WriteLog
+    )
+
+    $noMatch = @{ Matched = $false; TaskSequence = ''; GroupId = '' }
+    $proxyBase = $ProxyUrl.TrimEnd('/')
+
+    # ── Fetch assignment rules from the OAuth proxy ────────────────
+    $assignData = $null
+    try {
+        $assignWc = New-Object System.Net.WebClient
+        $assignWc.Headers.Add('Authorization', "Bearer $GraphAccessToken")
+        $assignRaw = $assignWc.DownloadString("$proxyBase/api/config/assignments")
+        $assignResp = $assignRaw | ConvertFrom-Json
+        if ((_HasProp $assignResp 'value') -and $assignResp.value) {
+            $assignData = $assignResp.value
+        }
+    } catch {
+        if ($WriteLog) { & $WriteLog "Failed to fetch assignment rules: $_" }
+        return $noMatch
+    }
+
+    if (-not $assignData -or
+        -not ((_HasProp $assignData 'assignments') -and $assignData.assignments) -or
+        $assignData.assignments.Count -eq 0) {
+        if ($WriteLog) { & $WriteLog 'No assignment rules configured' }
+        return $noMatch
+    }
+
+    # ── Check group membership via Microsoft Graph ─────────────────
+    $groupIds = @($assignData.assignments | ForEach-Object { $_.target })
+    $memberOf = @()
+    try {
+        $checkBody = @{ groupIds = $groupIds } | ConvertTo-Json -Compress
+        $grpWc = New-Object System.Net.WebClient
+        $grpWc.Headers.Add('Authorization', "Bearer $GraphAccessToken")
+        $grpWc.Headers.Add('Content-Type', 'application/json')
+        $grpRaw = $grpWc.UploadString(
+            'https://graph.microsoft.com/v1.0/me/checkMemberGroups',
+            'POST',
+            $checkBody
+        )
+        $grpResult = $grpRaw | ConvertFrom-Json
+        if ($grpResult.value) { $memberOf = @($grpResult.value) }
+    } catch {
+        if ($WriteLog) { & $WriteLog "Group membership check failed: $_" }
+        return $noMatch
+    }
+
+    # ── Match the first assignment whose target group the user belongs to ──
+    foreach ($a in $assignData.assignments) {
+        if ($memberOf -contains $a.target) {
+            if ($WriteLog) { & $WriteLog "Assignment matched: group '$($a.target)' -> $($a.taskSequence)" }
+            return @{
+                Matched      = $true
+                TaskSequence = $a.taskSequence
+                GroupId      = $a.target
+            }
+        }
+    }
+
+    if ($WriteLog) { & $WriteLog 'No group assignments matched the current user' }
+    return $noMatch
+}
+
+#endregion
+
 Export-ModuleMember -Function @(
     'Invoke-M365Auth'
     'Update-M365Token'
+    'Resolve-EntraGroupAssignment'
 )
 
 # SIG # Begin signature block

@@ -274,7 +274,10 @@ function Save-DeploymentReport {
         [string]$ScratchDir     = '',
         [string]$GitHubUser     = '',
         [string]$GitHubRepo     = '',
-        [string]$GitHubBranch   = ''
+        [string]$GitHubBranch   = '',
+        # Per-step timing data collected during the deployment run.
+        # Each entry should be a hashtable with keys: name, type, durationMs, status.
+        [array]$StepTimings     = @()
     )
     if (-not $ReportPath) {
         $safeName = ($DeviceName -replace '[\\/:*?"<>|]', '-')
@@ -295,9 +298,13 @@ function Save-DeploymentReport {
             error          = $ErrorMessage
             failedStep     = $FailedStep
         }
+        if ($StepTimings -and $StepTimings.Count -gt 0) {
+            $report.stepTimings = @($StepTimings)
+        }
         $dir = Split-Path $ReportPath
         if ($dir -and -not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
-        $report | ConvertTo-Json | Set-Content -Path $ReportPath -Force
+        # Depth 5 ensures nested stepTimings entries (arrays of hashtables) are fully serialized.
+        $report | ConvertTo-Json -Depth 5 | Set-Content -Path $ReportPath -Force
         Write-Success "Deployment report saved to $ReportPath"
 
         # Push to GitHub so the Monitoring dashboard can read it

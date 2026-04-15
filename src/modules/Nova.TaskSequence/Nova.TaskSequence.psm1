@@ -481,6 +481,72 @@ function Get-AllNovaVariables {
     return @{} + $script:NovaVariables
 }
 
+# ── Phase classification ────────────────────────────────────────────────────────
+# Step types that execute during the WinPE phase (before reboot).
+$script:WinPEStepTypes = @(
+    'PartitionDisk'
+    'DownloadImage'
+    'ApplyImage'
+    'SetBootloader'
+    'InjectDrivers'
+    'InjectOemDrivers'
+    'SetComputerName'
+    'SetRegionalSettings'
+    'ApplyAutopilot'
+    'ImportAutopilot'
+    'StageCCMSetup'
+    'CustomizeOOBE'
+)
+# Step types whose work takes effect on first boot into Windows (OOBE phase).
+$script:OOBEStepTypes = @(
+    'EnableBitLocker'
+    'RunPostScripts'
+    'InstallApplication'
+    'WindowsUpdate'
+)
+
+function Get-StepsByPhase {
+    <#
+    .SYNOPSIS  Classifies task sequence steps into WinPE and OOBE phases.
+    .DESCRIPTION
+        Given a task sequence object (as returned by Read-TaskSequence), returns
+        a hashtable with two keys:
+
+          winpe -- steps that execute entirely inside WinPE before reboot.
+          oobe  -- steps whose work is staged in WinPE but takes effect on the
+                   first boot into Windows (OOBE / SetupComplete).
+
+        Steps with unrecognised types are placed into 'winpe' by default.
+        Only enabled steps are included in the output.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = 'Returns steps grouped by phase')]
+    [OutputType([hashtable])]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$TaskSequence
+    )
+
+    $winpe = [System.Collections.Generic.List[psobject]]::new()
+    $oobe  = [System.Collections.Generic.List[psobject]]::new()
+
+    $enabledSteps = @($TaskSequence.steps | Where-Object { $_.enabled -ne $false })
+
+    foreach ($step in $enabledSteps) {
+        if ($script:OOBEStepTypes -contains $step.type) {
+            $oobe.Add($step)
+        } else {
+            $winpe.Add($step)
+        }
+    }
+
+    return @{
+        winpe = @($winpe)
+        oobe  = @($oobe)
+    }
+}
+
 Export-ModuleMember -Function @(
     'Read-TaskSequence'
     'Test-StepCondition'
@@ -490,6 +556,7 @@ Export-ModuleMember -Function @(
     'Get-NovaVariable'
     'Clear-NovaVariables'
     'Get-AllNovaVariables'
+    'Get-StepsByPhase'
 )
 
 # SIG # Begin signature block

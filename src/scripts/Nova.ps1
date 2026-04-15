@@ -545,6 +545,7 @@ Write-Detail "OS: $([System.Environment]::OSVersion.VersionString)"
 $stepName = ''
 $script:DeploymentStartTime = Get-Date
 $script:CompletedStepCount  = 0
+$script:StepTimings         = @()
 try {
 
     # ── Task-sequence-driven execution ──────────────────────────────
@@ -568,6 +569,12 @@ try {
     Write-Section "Task Sequence Execution"
     Write-Step "Executing $($enabledSteps.Count) enabled steps ($disabledCount disabled/skipped)"
 
+    # Log phase breakdown so operators see which steps run in WinPE vs OOBE.
+    $phases = Get-StepsByPhase -TaskSequence $ts
+    if ($phases.winpe.Count -gt 0 -or $phases.oobe.Count -gt 0) {
+        Write-Detail "Phase breakdown: $($phases.winpe.Count) WinPE step(s), $($phases.oobe.Count) OOBE/first-boot step(s)"
+    }
+
     # Inter-step state: DownloadImage stores the resolved image path for
     # ApplyImage to consume.  ComputerName and locale settings are synced
     # into unattendContent by the Editor and Bootstrap config modal -- the
@@ -586,6 +593,12 @@ try {
             Write-Detail "Evaluating condition for step '$($s.name)': type=$($s.condition.type)"
             if (-not (Test-StepCondition -Condition $s.condition)) {
                 Write-Step "[$($i+1)/$($enabledSteps.Count)] $($s.name) ($($s.type)) -- condition not met, skipping"
+                $script:StepTimings += @{
+                    name       = $s.name
+                    type       = $s.type
+                    durationMs = 0
+                    status     = 'skipped'
+                }
                 continue
             }
         }
@@ -626,6 +639,14 @@ try {
                     -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
                     -CurrentDiskNumber $TargetDiskNumber
             } catch {
+                $failDurMs = [math]::Round(((Get-Date) - $stepStartTime).TotalMilliseconds)
+                $script:StepTimings += @{
+                    name       = $s.name
+                    type       = $s.type
+                    durationMs = $failDurMs
+                    status     = 'failed'
+                    error      = "$_"
+                }
                 if ($s.PSObject.Properties['continueOnError'] -and $s.continueOnError) {
                     Write-Warn "Step '$($s.name)' failed but continueOnError is set -- continuing: $_"
                 } else {
@@ -634,7 +655,14 @@ try {
             }
         }
         $stepDuration = (Get-Date) - $stepStartTime
+        $stepDurMs = [math]::Round($stepDuration.TotalMilliseconds)
         Write-Info "Step '$($s.name)' completed in $([math]::Round($stepDuration.TotalSeconds, 1))s"
+        $script:StepTimings += @{
+            name       = $s.name
+            type       = $s.type
+            durationMs = $stepDurMs
+            status     = 'success'
+        }
         $script:CompletedStepCount = $i + 1
         Set-NovaVariable -Name 'OSDCurrentStep' -Value $s.name
         Set-NovaVariable -Name 'OSDStepIndex' -Value ($i + 1).ToString()
@@ -660,6 +688,7 @@ try {
     Save-DeploymentReport -Status 'success' -TaskSequence $tsName `
         -StepsCompleted $enabledSteps.Count -StepsTotal $enabledSteps.Count `
         -StartTime $script:DeploymentStartTime `
+        -StepTimings $script:StepTimings `
         -ScratchDir $ScratchDir `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
     Write-Detail 'Deployment report saved'
@@ -733,6 +762,7 @@ try {
         -StepsCompleted $script:CompletedStepCount -StepsTotal $totalSteps `
         -StartTime $script:DeploymentStartTime `
         -ErrorMessage "$_" -FailedStep $stepName `
+        -StepTimings $script:StepTimings `
         -ScratchDir $ScratchDir `
         -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch
 

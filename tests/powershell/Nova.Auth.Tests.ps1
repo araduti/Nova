@@ -120,6 +120,11 @@ Describe 'Module Exports' {
         $mod.ExportedFunctions.Keys | Should -Contain 'Update-M365Token'
     }
 
+    It 'exports Resolve-EntraGroupAssignment' {
+        $mod = Get-Module Nova.Auth
+        $mod.ExportedFunctions.Keys | Should -Contain 'Resolve-EntraGroupAssignment'
+    }
+
     It 'does not export removed legacy functions' {
         $mod = Get-Module Nova.Auth
         $mod.ExportedFunctions.Keys | Should -Not -Contain 'Invoke-M365DeviceCodeAuth'
@@ -139,5 +144,29 @@ Describe 'Module Exports' {
         $mod = Get-Module Nova.Auth
         $mod.ExportedFunctions.Keys | Should -Not -Contain 'Install-WebView2SDK'
         $mod.ExportedFunctions.Keys | Should -Not -Contain 'Show-WebView2AuthPopup'
+    }
+}
+
+Describe 'Resolve-EntraGroupAssignment' {
+    It 'returns Matched=$false when assignment fetch fails' {
+        # Use a non-existent proxy URL to trigger a WebClient exception.
+        $logMessages = @()
+        $writeLog = { param($msg) $logMessages += $msg }.GetNewClosure()
+        $result = Resolve-EntraGroupAssignment `
+            -GraphAccessToken 'fake-token' `
+            -ProxyUrl 'https://localhost:1/nonexistent' `
+            -WriteLog $writeLog
+        $result.Matched | Should -BeFalse
+        $result.TaskSequence | Should -BeNullOrEmpty
+    }
+
+    It 'returns expected hashtable keys on no-match' {
+        $result = Resolve-EntraGroupAssignment `
+            -GraphAccessToken 'fake-token' `
+            -ProxyUrl 'https://localhost:1/nonexistent'
+        $result | Should -BeOfType [hashtable]
+        $result.ContainsKey('Matched') | Should -BeTrue
+        $result.ContainsKey('TaskSequence') | Should -BeTrue
+        $result.ContainsKey('GroupId') | Should -BeTrue
     }
 }
