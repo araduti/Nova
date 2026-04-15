@@ -2983,8 +2983,9 @@ document.getElementById('btnAssignmentsSave').addEventListener('click', async fu
                synchronous throw (e.g. invalid config) shows the login
                UI instead of falling to the outer catch which would
                bypass auth entirely. */
+            let msalApp;
             try {
-                var msalConfig = {
+                const msalConfig = {
                     auth: {
                         clientId: config.clientId,
                         authority: 'https://login.microsoftonline.com/organizations',
@@ -2992,7 +2993,7 @@ document.getElementById('btnAssignmentsSave').addEventListener('click', async fu
                     },
                     cache: { cacheLocation: 'sessionStorage' }
                 };
-                var msalApp = new msal.PublicClientApplication(msalConfig);
+                msalApp = new msal.PublicClientApplication(msalConfig);
                 msalInstance = msalApp;
             } catch (_) {
                 showLoginUI();
@@ -3009,7 +3010,7 @@ document.getElementById('btnAssignmentsSave').addEventListener('click', async fu
                     return;
                 }
                 /* Check if already signed in. */
-                var accounts = msalApp.getAllAccounts();
+                const accounts = msalApp.getAllAccounts();
                 if (accounts.length > 0) {
                     msalApp.setActiveAccount(accounts[0]);
                     showEditor(accounts[0]);
