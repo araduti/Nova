@@ -583,6 +583,9 @@ try {
 
     # ── Pre-flight step order validation ────────────────────────────
     # Catch critical ordering mistakes before any destructive work begins.
+    # Steps with a runtime condition are excluded -- they may be skipped
+    # during execution, so flagging them here would cause false failures
+    # for task sequences that use conditional branches.
     $stepTypes = @($enabledSteps | ForEach-Object { $_.type })
     $hasPartitionStep = $stepTypes -contains 'PartitionDisk'
     if ($hasPartitionStep) {
@@ -591,7 +594,9 @@ try {
         foreach ($depType in $mustFollowPartition) {
             for ($vi = 0; $vi -lt $stepTypes.Count; $vi++) {
                 if ($stepTypes[$vi] -eq $depType -and $vi -lt $partitionIndex) {
-                    throw "Invalid task sequence: '$($enabledSteps[$vi].name)' ($depType) at position $($vi+1) runs before PartitionDisk at position $($partitionIndex+1). The disk must be partitioned first."
+                    $step = $enabledSteps[$vi]
+                    if ($step.PSObject.Properties['condition'] -and $step.condition -and $step.condition.type) { continue }
+                    throw "Invalid task sequence: '$($step.name)' ($depType) at position $($vi+1) runs before PartitionDisk at position $($partitionIndex+1). The disk must be partitioned first."
                 }
             }
         }
@@ -601,10 +606,12 @@ try {
     for ($vi = 0; $vi -lt $stepTypes.Count; $vi++) {
         if ($stepTypes[$vi] -eq 'ApplyImage' -and $hasDownloadStep) {
             $downloadIndex = [array]::IndexOf($stepTypes, 'DownloadImage')
-            $applyP = $enabledSteps[$vi].parameters
+            $step = $enabledSteps[$vi]
+            $applyP = $step.parameters
             $hasInlineUrl = ($applyP -and $applyP.PSObject.Properties['imageUrl'] -and $applyP.imageUrl)
             if ($vi -lt $downloadIndex -and -not $hasInlineUrl) {
-                throw "Invalid task sequence: '$($enabledSteps[$vi].name)' (ApplyImage) at position $($vi+1) runs before DownloadImage at position $($downloadIndex+1). No image will be available."
+                if ($step.PSObject.Properties['condition'] -and $step.condition -and $step.condition.type) { continue }
+                throw "Invalid task sequence: '$($step.name)' (ApplyImage) at position $($vi+1) runs before DownloadImage at position $($downloadIndex+1). No image will be available."
             }
         }
     }
