@@ -60,14 +60,13 @@ function Add-Driver {
             -ErrorVariable driverErrors
 
         if ($driverErrors.Count -gt 0) {
-            Write-Warn "$($driverErrors.Count) driver(s) failed to inject:"
+            Write-Warn "$($driverErrors.Count) driver injection error(s) occurred:"
             foreach ($derr in $driverErrors) {
                 Write-Host "    [!] $derr" -ForegroundColor Yellow
             }
         }
 
-        $injectedCount = $infFiles.Count - $driverErrors.Count
-        Write-Success "Drivers injected from: $DriverPath ($injectedCount succeeded, $($driverErrors.Count) failed)"
+        Write-Success "Drivers injected from: $DriverPath ($($driverErrors.Count) error(s))"
     } catch {
         throw "Add-Driver failed at step '$stepName': $_"
     }
