@@ -20,6 +20,7 @@
         'Get-NovaVariable'
         'Clear-NovaVariables'
         'Get-AllNovaVariables'
+        'Get-StepsByPhase'
     )
     CmdletsToExport   = @()
     VariablesToExport  = @()

@@ -63,6 +63,44 @@ Describe 'Save-DeploymentReport' {
             Remove-Item $testDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
+
+    It 'includes step timings when provided' {
+        $testDir = Join-Path ([System.IO.Path]::GetTempPath()) "nova-report3-$(New-Guid)"
+        $null = New-Item -ItemType Directory -Path $testDir -Force
+        try {
+            Mock -ModuleName Nova.Reporting Write-Success {}
+            Mock -ModuleName Nova.Reporting Push-ReportToGitHub {}
+            $reportPath = Join-Path $testDir 'test-report.json'
+            $timings = @(
+                @{ name = 'Partition'; type = 'PartitionDisk'; durationMs = 1200; status = 'success' }
+                @{ name = 'Download';  type = 'DownloadImage';  durationMs = 45000; status = 'success' }
+            )
+            Save-DeploymentReport -Status 'success' -DeviceName 'TIMING-PC' -ReportPath $reportPath -ScratchDir $testDir -StepTimings $timings
+            $json = Get-Content $reportPath -Raw | ConvertFrom-Json
+            $json.stepTimings | Should -Not -BeNullOrEmpty
+            $json.stepTimings.Count | Should -Be 2
+            $json.stepTimings[0].name | Should -Be 'Partition'
+            $json.stepTimings[0].durationMs | Should -Be 1200
+            $json.stepTimings[1].type | Should -Be 'DownloadImage'
+        } finally {
+            Remove-Item $testDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'omits stepTimings key when no timings are provided' {
+        $testDir = Join-Path ([System.IO.Path]::GetTempPath()) "nova-report4-$(New-Guid)"
+        $null = New-Item -ItemType Directory -Path $testDir -Force
+        try {
+            Mock -ModuleName Nova.Reporting Write-Success {}
+            Mock -ModuleName Nova.Reporting Push-ReportToGitHub {}
+            $reportPath = Join-Path $testDir 'test-report.json'
+            Save-DeploymentReport -Status 'success' -DeviceName 'NO-TIMINGS' -ReportPath $reportPath -ScratchDir $testDir
+            $json = Get-Content $reportPath -Raw | ConvertFrom-Json
+            $json.PSObject.Properties['stepTimings'] | Should -BeNullOrEmpty
+        } finally {
+            Remove-Item $testDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 Describe 'Get-GitHubTokenViaEntra' {

@@ -29,7 +29,7 @@ Describe 'Module Exports' {
         $expected = @(
             'Read-TaskSequence', 'Test-StepCondition', 'Invoke-DryRunValidation',
             'Update-TaskSequenceFromConfig', 'Set-NovaVariable', 'Get-NovaVariable',
-            'Clear-NovaVariables', 'Get-AllNovaVariables'
+            'Clear-NovaVariables', 'Get-AllNovaVariables', 'Get-StepsByPhase'
         )
         foreach ($fn in $expected) {
             $mod.ExportedFunctions.Keys | Should -Contain $fn
@@ -453,5 +453,92 @@ Describe 'Test-StepCondition uses Get-NovaVariable' {
         } finally {
             Remove-Item Env:\NOVA_COND_ENVONLY -ErrorAction SilentlyContinue
         }
+    }
+}
+
+Describe 'Get-StepsByPhase' {
+    It 'classifies WinPE steps correctly' {
+        $ts = [pscustomobject]@{
+            name = 'Phase Test'
+            steps = @(
+                [pscustomobject]@{ name = 'Partition'; type = 'PartitionDisk'; enabled = $true }
+                [pscustomobject]@{ name = 'Download';  type = 'DownloadImage'; enabled = $true }
+                [pscustomobject]@{ name = 'Apply';     type = 'ApplyImage';    enabled = $true }
+                [pscustomobject]@{ name = 'Boot';      type = 'SetBootloader'; enabled = $true }
+            )
+        }
+        $result = Get-StepsByPhase -TaskSequence $ts
+        $result.winpe.Count | Should -Be 4
+        $result.oobe.Count  | Should -Be 0
+    }
+
+    It 'classifies OOBE steps correctly' {
+        $ts = [pscustomobject]@{
+            name = 'OOBE Test'
+            steps = @(
+                [pscustomobject]@{ name = 'BitLocker'; type = 'EnableBitLocker';    enabled = $true }
+                [pscustomobject]@{ name = 'Scripts';   type = 'RunPostScripts';     enabled = $true }
+                [pscustomobject]@{ name = 'Apps';      type = 'InstallApplication'; enabled = $true }
+                [pscustomobject]@{ name = 'Updates';   type = 'WindowsUpdate';      enabled = $true }
+            )
+        }
+        $result = Get-StepsByPhase -TaskSequence $ts
+        $result.winpe.Count | Should -Be 0
+        $result.oobe.Count  | Should -Be 4
+    }
+
+    It 'splits mixed step types into correct phases' {
+        $ts = [pscustomobject]@{
+            name = 'Mixed Test'
+            steps = @(
+                [pscustomobject]@{ name = 'Partition';  type = 'PartitionDisk';     enabled = $true }
+                [pscustomobject]@{ name = 'Download';   type = 'DownloadImage';     enabled = $true }
+                [pscustomobject]@{ name = 'Apply';      type = 'ApplyImage';        enabled = $true }
+                [pscustomobject]@{ name = 'Drivers';    type = 'InjectDrivers';     enabled = $true }
+                [pscustomobject]@{ name = 'BitLocker';  type = 'EnableBitLocker';   enabled = $true }
+                [pscustomobject]@{ name = 'PostScript'; type = 'RunPostScripts';    enabled = $true }
+            )
+        }
+        $result = Get-StepsByPhase -TaskSequence $ts
+        $result.winpe.Count | Should -Be 4
+        $result.oobe.Count  | Should -Be 2
+        $result.winpe[0].name | Should -Be 'Partition'
+        $result.oobe[0].name  | Should -Be 'BitLocker'
+    }
+
+    It 'excludes disabled steps' {
+        $ts = [pscustomobject]@{
+            name = 'Disabled Test'
+            steps = @(
+                [pscustomobject]@{ name = 'Partition'; type = 'PartitionDisk'; enabled = $true }
+                [pscustomobject]@{ name = 'Skipped';   type = 'DownloadImage'; enabled = $false }
+                [pscustomobject]@{ name = 'Updates';   type = 'WindowsUpdate'; enabled = $true }
+            )
+        }
+        $result = Get-StepsByPhase -TaskSequence $ts
+        $result.winpe.Count | Should -Be 1
+        $result.oobe.Count  | Should -Be 1
+    }
+
+    It 'places unknown step types in winpe phase' {
+        $ts = [pscustomobject]@{
+            name = 'Unknown Type'
+            steps = @(
+                [pscustomobject]@{ name = 'Custom'; type = 'CustomStep'; enabled = $true }
+            )
+        }
+        $result = Get-StepsByPhase -TaskSequence $ts
+        $result.winpe.Count | Should -Be 1
+        $result.oobe.Count  | Should -Be 0
+    }
+
+    It 'returns empty arrays for empty task sequence' {
+        $ts = [pscustomobject]@{
+            name = 'Empty'
+            steps = @()
+        }
+        $result = Get-StepsByPhase -TaskSequence $ts
+        $result.winpe.Count | Should -Be 0
+        $result.oobe.Count  | Should -Be 0
     }
 }

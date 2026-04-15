@@ -10,6 +10,7 @@
     RequiredModules   = @('Nova.Logging')
     FunctionsToExport = @(
         'Invoke-M365Auth'
+        'Resolve-EntraGroupAssignment'
         'Update-M365Token'
     )
     CmdletsToExport   = @()
