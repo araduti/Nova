@@ -303,6 +303,7 @@ function Save-DeploymentReport {
         }
         $dir = Split-Path $ReportPath
         if ($dir -and -not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
+        # Depth 5 ensures nested stepTimings entries (arrays of hashtables) are fully serialized.
         $report | ConvertTo-Json -Depth 5 | Set-Content -Path $ReportPath -Force
         Write-Success "Deployment report saved to $ReportPath"
 

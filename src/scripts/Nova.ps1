@@ -639,23 +639,17 @@ try {
                     -CurrentOSDrive $OSDrive -CurrentFirmwareType $FirmwareType `
                     -CurrentDiskNumber $TargetDiskNumber
             } catch {
+                $failDurMs = [math]::Round(((Get-Date) - $stepStartTime).TotalMilliseconds)
+                $script:StepTimings += @{
+                    name       = $s.name
+                    type       = $s.type
+                    durationMs = $failDurMs
+                    status     = 'failed'
+                    error      = "$_"
+                }
                 if ($s.PSObject.Properties['continueOnError'] -and $s.continueOnError) {
-                    $script:StepTimings += @{
-                        name       = $s.name
-                        type       = $s.type
-                        durationMs = [math]::Round(((Get-Date) - $stepStartTime).TotalMilliseconds)
-                        status     = 'failed'
-                        error      = "$_"
-                    }
                     Write-Warn "Step '$($s.name)' failed but continueOnError is set -- continuing: $_"
                 } else {
-                    $script:StepTimings += @{
-                        name       = $s.name
-                        type       = $s.type
-                        durationMs = [math]::Round(((Get-Date) - $stepStartTime).TotalMilliseconds)
-                        status     = 'failed'
-                        error      = "$_"
-                    }
                     throw
                 }
             }
