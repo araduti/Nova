@@ -49,13 +49,25 @@ function Add-Driver {
         Write-Host "  Found $($infFiles.Count) driver(s)."
 
         $stepName = 'Add-WindowsDriver'
+        # Capture errors explicitly so suppressed failures are logged with
+        # specific driver names instead of silently swallowed.
+        $driverErrors = @()
         $null = Add-WindowsDriver `
             -Path        "${OSDriveLetter}:\" `
             -Driver      $DriverPath `
             -Recurse `
-            -ErrorAction Continue
+            -ErrorAction Continue `
+            -ErrorVariable driverErrors
 
-        Write-Success "Drivers injected from: $DriverPath"
+        if ($driverErrors.Count -gt 0) {
+            Write-Warn "$($driverErrors.Count) driver(s) failed to inject:"
+            foreach ($derr in $driverErrors) {
+                Write-Host "    [!] $derr" -ForegroundColor Yellow
+            }
+        }
+
+        $injectedCount = $infFiles.Count - $driverErrors.Count
+        Write-Success "Drivers injected from: $DriverPath ($injectedCount succeeded, $($driverErrors.Count) failed)"
     } catch {
         throw "Add-Driver failed at step '$stepName': $_"
     }

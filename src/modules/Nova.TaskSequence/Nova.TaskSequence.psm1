@@ -197,6 +197,60 @@ function Invoke-DryRunValidation {
     Write-Host "  OS drive: ${OSDrive}:"
     Write-Host "  Scratch dir: $ScratchDir"
 
+    # ── Step order validation ──────────────────────────────────────────
+    # Steps that require a disk partition to exist must run after PartitionDisk.
+    $stepTypes = @($enabledSteps | ForEach-Object { $_.type })
+    $diskDependentTypes = @('ApplyImage', 'SetBootloader', 'InjectDrivers', 'InjectOemDrivers',
+        'CustomizeOOBE', 'EnableBitLocker', 'RunPostScripts', 'InstallApplication',
+        'WindowsUpdate', 'ApplyAutopilot', 'StageCCMSetup')
+    $hasPartitionStep = $stepTypes -contains 'PartitionDisk'
+    if ($hasPartitionStep) {
+        $partitionIndex = [array]::IndexOf($stepTypes, 'PartitionDisk')
+        foreach ($depType in $diskDependentTypes) {
+            for ($di = 0; $di -lt $stepTypes.Count; $di++) {
+                if ($stepTypes[$di] -eq $depType -and $di -lt $partitionIndex) {
+                    $errors += "Step '$($enabledSteps[$di].name)' ($depType) at position $($di+1) runs before PartitionDisk at position $($partitionIndex+1) -- disk will not be ready"
+                }
+            }
+        }
+    }
+    # ApplyImage without a preceding DownloadImage is valid only if the step
+    # has its own imageUrl parameter -- warn when it does not.
+    $hasDownload = $stepTypes -contains 'DownloadImage'
+    for ($di = 0; $di -lt $stepTypes.Count; $di++) {
+        if ($stepTypes[$di] -eq 'ApplyImage') {
+            $applyStep = $enabledSteps[$di]
+            $ap = $applyStep.parameters
+            $hasUrl = ($ap -and $ap.PSObject.Properties['imageUrl'] -and $ap.imageUrl)
+            if (-not $hasDownload -and -not $hasUrl) {
+                $warnings += "Step '$($applyStep.name)' (ApplyImage) has no preceding DownloadImage step and no imageUrl -- image download will be attempted inline"
+            }
+            if ($hasDownload) {
+                $downloadIndex = [array]::IndexOf($stepTypes, 'DownloadImage')
+                if ($di -lt $downloadIndex -and -not $hasUrl) {
+                    $errors += "Step '$($applyStep.name)' (ApplyImage) at position $($di+1) runs before DownloadImage at position $($downloadIndex+1) -- no image will be available"
+                }
+            }
+        }
+    }
+
+    # ── Firmware vs partition layout validation ────────────────────────
+    # Detect firmware/partition mismatch on the target disk before deployment.
+    if ($hasPartitionStep) {
+        try {
+            $disk = Get-Disk -Number $DiskNumber -ErrorAction Stop
+            if ($disk -and $disk.PartitionStyle -and $disk.PartitionStyle -ne 'RAW') {
+                $currentStyle = $disk.PartitionStyle
+                $expectedStyle = if ($FirmwareType -eq 'UEFI') { 'GPT' } else { 'MBR' }
+                if ($currentStyle -ne $expectedStyle) {
+                    Write-Host "    Current partition style: $currentStyle (will be re-initialized as $expectedStyle)" -ForegroundColor Gray
+                }
+            }
+        } catch {
+            # Disk access may fail in dry-run on non-target systems -- that is OK
+        }
+    }
+
     foreach ($s in $enabledSteps) {
         $p = $s.parameters
         Write-Host "  [OK] Step '$($s.name)' ($($s.type)) -- enabled" -ForegroundColor Green

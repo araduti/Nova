@@ -259,6 +259,35 @@ function Install-WindowsImage {
 
     $stepName = ''
     try {
+        # Validate image file format before attempting to apply.
+        # WIM/ESD files start with the 8-byte magic header 'MSWIM\0\0\0'.
+        $stepName = 'Validate image format'
+        if (-not (Test-Path $ImagePath)) {
+            throw "Image file not found: $ImagePath"
+        }
+        $imageSize = (Get-Item $ImagePath).Length
+        if ($imageSize -lt 8) {
+            throw "Image file is too small ($imageSize bytes) -- likely not a valid WIM/ESD: $ImagePath"
+        }
+        $headerBytes = [byte[]]::new(8)
+        $headerStream = [System.IO.File]::OpenRead($ImagePath)
+        try {
+            $null = $headerStream.Read($headerBytes, 0, 8)
+        } finally {
+            $headerStream.Close()
+        }
+        # WIM magic: 4D 53 57 49 4D 00 00 00 = 'MSWIM' + 3 null bytes
+        $wimMagic = @(0x4D, 0x53, 0x57, 0x49, 0x4D, 0x00, 0x00, 0x00)
+        $isWim = $true
+        for ($mi = 0; $mi -lt 8; $mi++) {
+            if ($headerBytes[$mi] -ne $wimMagic[$mi]) { $isWim = $false; break }
+        }
+        if (-not $isWim) {
+            $hexHeader = ($headerBytes | ForEach-Object { '{0:X2}' -f $_ }) -join ' '
+            throw "Image file does not have a valid WIM/ESD header (got: $hexHeader). The file may be corrupted or an HTML error page: $ImagePath"
+        }
+        Write-Detail "Image format validated (WIM header OK, size: $(Get-FileSizeReadable $imageSize))"
+
         # Get the correct image index for the requested edition
         $stepName = 'Get-WindowsImage (enumerate editions)'
         $images = Get-WindowsImage -ImagePath $ImagePath -ErrorAction Stop
