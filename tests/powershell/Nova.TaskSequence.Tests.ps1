@@ -26,7 +26,11 @@ BeforeAll {
 Describe 'Module Exports' {
     It 'exports expected functions' {
         $mod = Get-Module Nova.TaskSequence
-        $expected = @('Read-TaskSequence', 'Test-StepCondition', 'Invoke-DryRunValidation', 'Update-TaskSequenceFromConfig')
+        $expected = @(
+            'Read-TaskSequence', 'Test-StepCondition', 'Invoke-DryRunValidation',
+            'Update-TaskSequenceFromConfig', 'Set-NovaVariable', 'Get-NovaVariable',
+            'Clear-NovaVariables', 'Get-AllNovaVariables'
+        )
         foreach ($fn in $expected) {
             $mod.ExportedFunctions.Keys | Should -Contain $fn
         }
@@ -311,5 +315,143 @@ Describe 'Update-TaskSequenceFromConfig' {
         $result = Get-Content $script:tsFile -Raw | ConvertFrom-Json
         $result.steps[0].parameters.unattendContent | Should -Match 'OOBE-PC'
         $result.steps[0].parameters.unattendContent | Should -Match 'specialize'
+    }
+}
+
+Describe 'Set-NovaVariable / Get-NovaVariable' {
+    BeforeEach {
+        Clear-NovaVariables
+    }
+
+    AfterAll {
+        Clear-NovaVariables
+    }
+
+    It 'stores and retrieves a variable' {
+        Mock -ModuleName Nova.TaskSequence Write-Detail {}
+        Set-NovaVariable -Name 'TestVar1' -Value 'Alpha'
+        $result = Get-NovaVariable -Name 'TestVar1'
+        $result | Should -Be 'Alpha'
+    }
+
+    It 'overwrites an existing variable' {
+        Mock -ModuleName Nova.TaskSequence Write-Detail {}
+        Set-NovaVariable -Name 'TestVar2' -Value 'First'
+        Set-NovaVariable -Name 'TestVar2' -Value 'Second'
+        $result = Get-NovaVariable -Name 'TestVar2'
+        $result | Should -Be 'Second'
+    }
+
+    It 'allows empty string values' {
+        Mock -ModuleName Nova.TaskSequence Write-Detail {}
+        Set-NovaVariable -Name 'EmptyVar' -Value ''
+        $result = Get-NovaVariable -Name 'EmptyVar'
+        $result | Should -Be ''
+    }
+
+    It 'sets environment variable in sync' {
+        Mock -ModuleName Nova.TaskSequence Write-Detail {}
+        Set-NovaVariable -Name 'NOVA_ENV_SYNC_TEST' -Value 'EnvValue'
+        try {
+            $envVal = [System.Environment]::GetEnvironmentVariable('NOVA_ENV_SYNC_TEST')
+            $envVal | Should -Be 'EnvValue'
+        } finally {
+            [System.Environment]::SetEnvironmentVariable('NOVA_ENV_SYNC_TEST', $null, 'Process')
+        }
+    }
+
+    It 'falls back to environment variable when not in store' {
+        [System.Environment]::SetEnvironmentVariable('NOVA_FALLBACK_TEST', 'FromEnv', 'Process')
+        try {
+            $result = Get-NovaVariable -Name 'NOVA_FALLBACK_TEST'
+            $result | Should -Be 'FromEnv'
+        } finally {
+            [System.Environment]::SetEnvironmentVariable('NOVA_FALLBACK_TEST', $null, 'Process')
+        }
+    }
+
+    It 'returns null for unknown variable' {
+        $result = Get-NovaVariable -Name 'NOVA_DOES_NOT_EXIST_12345'
+        $result | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Clear-NovaVariables' {
+    It 'removes all stored variables' {
+        Mock -ModuleName Nova.TaskSequence Write-Detail {}
+        Set-NovaVariable -Name 'ClearTest1' -Value 'A'
+        Set-NovaVariable -Name 'ClearTest2' -Value 'B'
+        Clear-NovaVariables
+        $all = Get-AllNovaVariables
+        $all.Count | Should -Be 0
+    }
+}
+
+Describe 'Get-AllNovaVariables' {
+    BeforeEach {
+        Clear-NovaVariables
+    }
+
+    AfterAll {
+        Clear-NovaVariables
+    }
+
+    It 'returns a hashtable copy of all variables' {
+        Mock -ModuleName Nova.TaskSequence Write-Detail {}
+        Set-NovaVariable -Name 'AllTest1' -Value 'X'
+        Set-NovaVariable -Name 'AllTest2' -Value 'Y'
+        $all = Get-AllNovaVariables
+        $all | Should -BeOfType [hashtable]
+        $all.Count | Should -Be 2
+        $all['AllTest1'] | Should -Be 'X'
+        $all['AllTest2'] | Should -Be 'Y'
+    }
+
+    It 'returns a copy that does not mutate the store' {
+        Mock -ModuleName Nova.TaskSequence Write-Detail {}
+        Set-NovaVariable -Name 'CopyTest' -Value 'Original'
+        $copy = Get-AllNovaVariables
+        $copy['CopyTest'] = 'Mutated'
+        $actual = Get-NovaVariable -Name 'CopyTest'
+        $actual | Should -Be 'Original'
+    }
+}
+
+Describe 'Test-StepCondition uses Get-NovaVariable' {
+    BeforeEach {
+        Clear-NovaVariables
+    }
+
+    AfterAll {
+        Clear-NovaVariables
+    }
+
+    It 'resolves condition from Nova variable store' {
+        Mock -ModuleName Nova.TaskSequence Write-Detail {}
+        Set-NovaVariable -Name 'OSDComputerName' -Value 'NOVA-PC'
+        $cond = [pscustomobject]@{
+            type     = 'variable'
+            variable = 'OSDComputerName'
+            operator = 'equals'
+            value    = 'NOVA-PC'
+        }
+        $result = Test-StepCondition -Condition $cond
+        $result | Should -BeTrue
+    }
+
+    It 'resolves condition from env var when not in store' {
+        $env:NOVA_COND_ENVONLY = 'fromenv'
+        try {
+            $cond = [pscustomobject]@{
+                type     = 'variable'
+                variable = 'NOVA_COND_ENVONLY'
+                operator = 'equals'
+                value    = 'fromenv'
+            }
+            $result = Test-StepCondition -Condition $cond
+            $result | Should -BeTrue
+        } finally {
+            Remove-Item Env:\NOVA_COND_ENVONLY -ErrorAction SilentlyContinue
+        }
     }
 }

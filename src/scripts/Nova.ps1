@@ -342,6 +342,7 @@ function Invoke-TaskSequenceStep {
                 -GitHubUser $GitHubUser -GitHubRepo $GitHubRepo -GitHubBranch $GitHubBranch `
                 -DownloadCommand $dlCmd
             Write-Info "Image resolved: $($script:TsImagePath)"
+            Set-NovaVariable -Name 'OSDImagePath' -Value $script:TsImagePath
         }
         'ApplyImage' {
             $ed   = if ($p -and $p.PSObject.Properties['edition']       -and $p.edition)       { $p.edition }       else { 'Professional' }
@@ -435,6 +436,7 @@ function Invoke-TaskSequenceStep {
             if ($cName) {
                 Update-BootstrapStatus -Message "Setting computer name..." -Detail "Name: $cName" -Step $uiStep -Progress $pct
                 Write-Success "Computer name resolved: $cName"
+                Set-NovaVariable -Name 'OSDComputerName' -Value $cName
             } else {
                 Update-BootstrapStatus -Message "Setting computer name..." -Detail "No name specified -- Windows will assign a random name" -Step $uiStep -Progress $pct
                 Write-Warn "No computer name resolved -- Windows will assign a random name"
@@ -572,6 +574,7 @@ try {
     # engine just writes what's in the task sequence.
     $script:TsImagePath = ''
     $tsName = if ($ts.name) { $ts.name } else { 'Unknown' }
+    Clear-NovaVariables
 
     for ($i = 0; $i -lt $enabledSteps.Count; $i++) {
         $s = $enabledSteps[$i]
@@ -633,6 +636,8 @@ try {
         $stepDuration = (Get-Date) - $stepStartTime
         Write-Info "Step '$($s.name)' completed in $([math]::Round($stepDuration.TotalSeconds, 1))s"
         $script:CompletedStepCount = $i + 1
+        Set-NovaVariable -Name 'OSDCurrentStep' -Value $s.name
+        Set-NovaVariable -Name 'OSDStepIndex' -Value ($i + 1).ToString()
     }
 
     # ── Deployment reporting & alerting ─────────────────────────────
