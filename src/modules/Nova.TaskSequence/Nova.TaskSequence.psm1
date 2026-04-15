@@ -248,6 +248,7 @@ function Invoke-DryRunValidation {
             }
         } catch {
             # Disk access may fail in dry-run on non-target systems -- that is OK
+            Write-Verbose "Skipping partition style check: $_"
         }
     }
 
