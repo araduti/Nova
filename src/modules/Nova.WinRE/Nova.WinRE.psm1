@@ -194,15 +194,40 @@ function Get-WinREPathFromWindowsISO {
             }
             Write-Success 'Windows ISO downloaded.'
             $isoDownloaded = $true
+
+            # Sanity-check the downloaded file.  A valid Windows ISO is several
+            # GB; if the file is very small it is almost certainly an HTML error
+            # page, a redirect stub, or a truncated download.
+            $isoFileSize = (Get-Item -LiteralPath $isoPath).Length
+            $minISOBytes = 500MB   # 500 MB -- any real Windows ISO exceeds this
+            if ($isoFileSize -lt $minISOBytes) {
+                $sizeMB = [math]::Round($isoFileSize / 1MB, 1)
+                throw ("The downloaded file is only ${sizeMB} MB, which is too small to be a valid Windows ISO. " +
+                       "The download URL may have returned an error page or the download was truncated.`n" +
+                       "Tip: download the ISO manually from https://www.microsoft.com/software-download/windows11 " +
+                       "and re-run with -WindowsISOUrl '<path-to-iso>'.")
+            }
         }
 
         # ── Step 2: Mount the ISO ────────────────────────────────────────────────
         Write-Step 'Mounting Windows ISO...'
-        $null = Mount-DiskImage -ImagePath $isoPath
-        $isoMounted     = $true
-        $isoDriveLetter = (Get-DiskImage -ImagePath $isoPath |
-                            Get-Partition | Get-Volume |
-                            Select-Object -First 1 -ExpandProperty DriveLetter)
+        try {
+            $null = Mount-DiskImage -ImagePath $isoPath -ErrorAction Stop
+        } catch {
+            throw ("Failed to mount the Windows ISO at '$isoPath': $_`n" +
+                   'The file may be corrupted or not a valid Windows ISO.`n' +
+                   "Tip: download the ISO manually and re-run with -WindowsISOUrl '<path-to-iso>'.")
+        }
+        $isoMounted = $true
+
+        try {
+            $isoDriveLetter = (Get-DiskImage -ImagePath $isoPath -ErrorAction Stop |
+                                Get-Partition | Get-Volume |
+                                Select-Object -First 1 -ExpandProperty DriveLetter)
+        } catch {
+            throw ("The ISO was mounted but its drive letter could not be determined: $_`n" +
+                   'The file may be corrupted or not a valid Windows ISO.')
+        }
         if (-not $isoDriveLetter) {
             throw 'Could not determine the drive letter of the mounted ISO. The file may be corrupted or not a valid Windows ISO.'
         }
