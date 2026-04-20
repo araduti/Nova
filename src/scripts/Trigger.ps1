@@ -1170,7 +1170,7 @@ function New-BootableUSB {
     }
     Write-Host ''
 
-    $sel = Read-Host "  ${script:AnsiCyan}›${script:AnsiReset} Enter drive number (or press Enter to skip)"
+    $sel = Read-Host "  ${script:AnsiCyan}›${script:AnsiReset} Select drive number (or press Enter to skip)"
     if ([string]::IsNullOrWhiteSpace($sel) -or $sel -notmatch '^\d+$') {
         Write-Step 'USB creation skipped.'
         return
@@ -1257,7 +1257,8 @@ exit
         $usbDriveLetter = $null
         $newPartitions  = Get-Partition -DiskNumber $targetDisk.Number -ErrorAction SilentlyContinue
         foreach ($part in $newPartitions) {
-            if ($part.DriveLetter -and ([int][char]$part.DriveLetter) -gt 64) {
+            # A valid drive letter is an uppercase letter (char code 65–90).
+            if ($part.DriveLetter -and $part.DriveLetter -match '^[A-Z]$') {
                 $usbDriveLetter = "$($part.DriveLetter):"
                 break
             }

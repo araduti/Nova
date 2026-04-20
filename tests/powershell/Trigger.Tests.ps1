@@ -243,10 +243,10 @@ Describe 'New-BootableUSB' {
         Mock Write-Step {}
         Mock Write-Warn {}
         # First Read-Host call returns drive selection '1'; second returns 'no'
-        $callCount = 0
+        $script:usbCallCount = 0
         Mock Read-Host {
-            $callCount++
-            if ($callCount -eq 1) { '1' } else { 'no' }
+            $script:usbCallCount++
+            if ($script:usbCallCount -eq 1) { '1' } else { 'no' }
         }
 
         New-BootableUSB -BootWim 'C:\fake\boot.wim' -MediaDir 'C:\fake\media'
