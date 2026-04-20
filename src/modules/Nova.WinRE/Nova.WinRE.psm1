@@ -199,8 +199,8 @@ function Get-WinREPathFromWindowsISO {
             # GB; if the file is very small it is almost certainly an HTML error
             # page, a redirect stub, or a truncated download.
             $isoFileSize = (Get-Item -LiteralPath $isoPath).Length
-            $minISOBytes = 500MB   # 500 MB -- any real Windows ISO exceeds this
-            if ($isoFileSize -lt $minISOBytes) {
+            $minIsoBytes = 500MB   # 500 MB -- any real Windows ISO exceeds this
+            if ($isoFileSize -lt $minIsoBytes) {
                 $sizeMB = [math]::Round($isoFileSize / 1MB, 1)
                 throw ("The downloaded file is only ${sizeMB} MB, which is too small to be a valid Windows ISO. " +
                        "The download URL may have returned an error page or the download was truncated.`n" +
