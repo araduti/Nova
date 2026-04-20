@@ -158,3 +158,99 @@ Describe 'Invoke-RepoRestMethod' {
         } | Should -Not -BeNullOrEmpty
     }
 }
+
+Describe 'New-BootableUSB' {
+    It 'is defined and accepts expected parameters' {
+        $cmd = Get-Command New-BootableUSB -ErrorAction SilentlyContinue
+        $cmd | Should -Not -BeNullOrEmpty
+        $cmd.Parameters.Keys | Should -Contain 'BootWim'
+        $cmd.Parameters.Keys | Should -Contain 'MediaDir'
+        $cmd.Parameters.Keys | Should -Contain 'Architecture'
+        $cmd.Parameters.Keys | Should -Contain 'ADKRoot'
+    }
+
+    It 'BootWim is a mandatory parameter' {
+        $cmd = Get-Command New-BootableUSB
+        $p = $cmd.Parameters['BootWim']
+        $p.Attributes | Where-Object {
+            $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory
+        } | Should -Not -BeNullOrEmpty
+    }
+
+    It 'MediaDir is a mandatory parameter' {
+        $cmd = Get-Command New-BootableUSB
+        $p = $cmd.Parameters['MediaDir']
+        $p.Attributes | Where-Object {
+            $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory
+        } | Should -Not -BeNullOrEmpty
+    }
+
+    It 'Architecture only accepts amd64 or x86' {
+        $cmd = Get-Command New-BootableUSB
+        $p = $cmd.Parameters['Architecture']
+        $validateSet = $p.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] }
+        $validateSet | Should -Not -BeNullOrEmpty
+        $validateSet.ValidValues | Should -Contain 'amd64'
+        $validateSet.ValidValues | Should -Contain 'x86'
+        $validateSet.ValidValues.Count | Should -Be 2
+    }
+
+    It 'ADKRoot is an optional string parameter' {
+        $cmd = Get-Command New-BootableUSB
+        $p = $cmd.Parameters['ADKRoot']
+        $p | Should -Not -BeNullOrEmpty
+        $p.ParameterType | Should -Be ([string])
+        $mandatory = $p.Attributes | Where-Object {
+            $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory
+        }
+        $mandatory | Should -BeNullOrEmpty
+    }
+
+    It 'warns and returns early when no USB drives are detected' -Skip:(-not (Get-Command Get-Disk -ErrorAction SilentlyContinue)) {
+        Mock Get-Disk { @() }
+        Mock Write-Warn {}
+        Mock Write-Section {}
+
+        New-BootableUSB -BootWim 'C:\fake\boot.wim' -MediaDir 'C:\fake\media'
+
+        Assert-MockCalled Write-Warn -ParameterFilter {
+            $Message -like '*No writable USB*'
+        } -Times 1
+    }
+
+    It 'returns early without prompting when selection is empty' -Skip:(-not (Get-Command Get-Disk -ErrorAction SilentlyContinue)) {
+        Mock Get-Disk {
+            @([PSCustomObject]@{ Number = 1; BusType = 'USB'; IsReadOnly = $false;
+                FriendlyName = 'Test USB'; PartitionStyle = 'MBR'; Size = 8GB })
+        }
+        Mock Write-Section {}
+        Mock Write-Host {}
+        Mock Write-Step {}
+        Mock Read-Host { '' }   # user presses Enter (skip)
+
+        New-BootableUSB -BootWim 'C:\fake\boot.wim' -MediaDir 'C:\fake\media'
+
+        Assert-MockCalled Read-Host -Times 1
+    }
+
+    It 'returns early when user does not type YES to confirm' -Skip:(-not (Get-Command Get-Disk -ErrorAction SilentlyContinue)) {
+        Mock Get-Disk {
+            @([PSCustomObject]@{ Number = 1; BusType = 'USB'; IsReadOnly = $false;
+                FriendlyName = 'Test USB'; PartitionStyle = 'MBR'; Size = 8GB })
+        }
+        Mock Write-Section {}
+        Mock Write-Host {}
+        Mock Write-Step {}
+        Mock Write-Warn {}
+        # First Read-Host call returns drive selection '1'; second returns 'no'
+        $callCount = 0
+        Mock Read-Host {
+            $callCount++
+            if ($callCount -eq 1) { '1' } else { 'no' }
+        }
+
+        New-BootableUSB -BootWim 'C:\fake\boot.wim' -MediaDir 'C:\fake\media'
+
+        Assert-MockCalled Read-Host -Times 2
+    }
+}
