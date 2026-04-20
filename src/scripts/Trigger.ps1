@@ -1105,6 +1105,220 @@ X:\Windows\System32\cmd.exe, /k X:\Windows\System32\nova-start.cmd
     return $paths
 }
 
+function New-BootableUSB {
+    <#
+    .SYNOPSIS  Creates a bootable WinPE USB drive from the build output.
+    .DESCRIPTION
+        Lists writable USB drives, asks the user to select one, formats it as
+        FAT32, copies the WinPE media files onto it, and installs the Windows
+        boot sector (bootsect.exe) for legacy BIOS support.  UEFI boot is
+        enabled automatically via the EFI folder already present in the media
+        directory.
+
+        When the media directory lacks the full WinPE structure (e.g. when a
+        cloud-downloaded boot image is used), the ADK media tree is copied to a
+        temporary directory and the boot.wim is overlaid before copying to the
+        USB.
+    .PARAMETER BootWim
+        Path to the boot.wim to place under \sources\ on the USB drive.
+    .PARAMETER MediaDir
+        WinPE media directory.  For local builds this is $paths.MediaDir which
+        already contains EFI, bootmgr, and boot/boot.sdi.  For cloud-download
+        paths it is the download directory; the ADKRoot parameter is then
+        required to supplement the missing boot-manager files.
+    .PARAMETER Architecture
+        Target architecture (amd64 or x86).  Used when MediaDir needs
+        supplementing from the ADK.  Defaults to amd64.
+    .PARAMETER ADKRoot
+        ADK installation root.  Required when MediaDir lacks the EFI and boot
+        manager structure.  When not supplied and the structure is incomplete,
+        Assert-ADKInstalled is called automatically.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $BootWim,
+
+        [Parameter(Mandatory)]
+        [string] $MediaDir,
+
+        [ValidateSet('amd64', 'x86')]
+        [string] $Architecture = 'amd64',
+
+        [string] $ADKRoot = ''
+    )
+
+    Write-Section 'Create Bootable USB'
+
+    # ── 1. Find writable USB drives ─────────────────────────────────────────
+    $usbDisks = @(Get-Disk -ErrorAction SilentlyContinue |
+        Where-Object { $_.BusType -eq 'USB' -and $_.IsReadOnly -eq $false })
+
+    if ($usbDisks.Count -eq 0) {
+        Write-Warn 'No writable USB drives detected. Insert a USB drive and try again (non-fatal).'
+        return
+    }
+
+    # ── 2. Display available drives ──────────────────────────────────────────
+    Write-Host ''
+    Write-Host '  Available USB drives:' -ForegroundColor Cyan
+    for ($i = 0; $i -lt $usbDisks.Count; $i++) {
+        $d      = $usbDisks[$i]
+        $sizeMB = '{0:N0}' -f ($d.Size / 1MB)
+        $style  = if ($d.PartitionStyle -ne 'RAW') { " [$($d.PartitionStyle)]" } else { '' }
+        Write-Host "    [$($i + 1)] Disk $($d.Number): $($d.FriendlyName)$style — $sizeMB MB"
+    }
+    Write-Host ''
+
+    $sel = Read-Host "  ${script:AnsiCyan}›${script:AnsiReset} Select drive number (or press Enter to skip)"
+    if ([string]::IsNullOrWhiteSpace($sel) -or $sel -notmatch '^\d+$') {
+        Write-Step 'USB creation skipped.'
+        return
+    }
+    $idx = [int]$sel - 1
+    if ($idx -lt 0 -or $idx -ge $usbDisks.Count) {
+        Write-Warn 'Invalid selection -- USB creation skipped.'
+        return
+    }
+    $targetDisk = $usbDisks[$idx]
+    $diskSizeMB = '{0:N0}' -f ($targetDisk.Size / 1MB)
+
+    # ── 3. Confirm destructive operation ─────────────────────────────────────
+    Write-Host ''
+    Write-Host "  ${script:ESC}[33;1m[!] WARNING: All data on Disk $($targetDisk.Number) ($($targetDisk.FriendlyName), $diskSizeMB MB) will be ERASED.${script:AnsiReset}" -ForegroundColor Yellow
+    Write-Host ''
+    $confirm = Read-Host "  ${script:AnsiCyan}›${script:AnsiReset} Type YES to confirm"
+    if ($confirm -ne 'YES') {
+        Write-Step 'USB creation cancelled.'
+        return
+    }
+
+    # ── 4. Ensure MediaDir has a full WinPE structure ────────────────────────
+    # For cloud-downloaded images the directory only contains boot.wim and
+    # boot\boot.sdi.  Copy the ADK media tree to a temp dir and overlay the
+    # custom boot.wim and boot.sdi so the USB has EFI boot managers.
+    $tempMediaDir   = $null
+    $sourceMediaDir = $MediaDir
+
+    if (-not (Test-Path (Join-Path $MediaDir 'EFI'))) {
+        Write-Step 'Supplementing media structure from ADK...'
+        if (-not $ADKRoot) {
+            $ADKRoot = Assert-ADKInstalled -Architecture $Architecture
+        }
+        $adkMediaSrc = Join-Path $ADKRoot `
+            "Assessment and Deployment Kit\Windows Preinstallation Environment\$Architecture\Media"
+        if (-not (Test-Path $adkMediaSrc)) {
+            throw "ADK WinPE media not found at: $adkMediaSrc"
+        }
+        $tempMediaDir   = Join-Path $env:TEMP "Nova_USB_$([System.Guid]::NewGuid().ToString('N'))"
+        $sourceMediaDir = $tempMediaDir
+        $null = New-Item -Path $tempMediaDir -ItemType Directory -Force
+        Copy-Item -Path "$adkMediaSrc\*" -Destination $tempMediaDir -Recurse -Force
+
+        # Overlay boot.wim in the sources subdirectory
+        $tmpSrcDir = Join-Path $tempMediaDir 'sources'
+        $null = New-Item -Path $tmpSrcDir -ItemType Directory -Force
+        Copy-Item $BootWim (Join-Path $tmpSrcDir 'boot.wim') -Force
+
+        # Overlay boot.sdi if present in the original MediaDir
+        $sdiSrc = Join-Path $MediaDir 'boot\boot.sdi'
+        if (Test-Path $sdiSrc) {
+            $tmpBootDir = Join-Path $tempMediaDir 'boot'
+            $null = New-Item -Path $tmpBootDir -ItemType Directory -Force
+            Copy-Item $sdiSrc (Join-Path $tmpBootDir 'boot.sdi') -Force
+        }
+        Write-Success 'Media structure supplemented from ADK.'
+    }
+
+    try {
+        # ── 5. Format the USB drive with diskpart ────────────────────────────
+        Write-Step "Formatting Disk $($targetDisk.Number) as FAT32 (this will erase all data)..."
+        $dpScript = Join-Path $env:TEMP "nova_dp_$([System.Guid]::NewGuid().ToString('N')).txt"
+        @"
+select disk $($targetDisk.Number)
+clean
+create partition primary
+select partition 1
+format fs=fat32 quick label="NOVA_PE"
+assign
+active
+exit
+"@ | Set-Content -Path $dpScript -Encoding Ascii
+        $dpResult = & diskpart.exe /s $dpScript 2>&1
+        Remove-Item $dpScript -Force -ErrorAction SilentlyContinue
+        if ($LASTEXITCODE -ne 0) {
+            throw "diskpart failed (exit $LASTEXITCODE):`n$dpResult"
+        }
+        Write-Success 'USB formatted as FAT32.'
+
+        # ── 6. Resolve the drive letter assigned by diskpart ─────────────────
+        # Allow Windows a moment to register the new volume before querying.
+        Start-Sleep -Seconds 2
+        $usbDriveLetter = $null
+        $newPartitions  = Get-Partition -DiskNumber $targetDisk.Number -ErrorAction SilentlyContinue
+        foreach ($part in $newPartitions) {
+            # A valid drive letter is an uppercase letter (char code 65–90).
+            if ($part.DriveLetter -and $part.DriveLetter -match '^[A-Z]$') {
+                $usbDriveLetter = "$($part.DriveLetter):"
+                break
+            }
+        }
+        if (-not $usbDriveLetter) {
+            throw 'Could not determine the USB drive letter after formatting. Assign a drive letter manually and retry.'
+        }
+        Write-Step "USB drive: $usbDriveLetter"
+
+        # ── 7. Copy WinPE media files to the USB ─────────────────────────────
+        Write-Step 'Copying WinPE files to USB...'
+        Copy-Item -Path "$sourceMediaDir\*" -Destination "$usbDriveLetter\" -Recurse -Force
+
+        # Ensure boot.wim is present under sources\ on the USB.
+        # For local builds $BootWim is already inside $sourceMediaDir\sources\
+        # so the copy above covers it; for supplemented media it was placed there
+        # in step 4.  This guard catches any edge case where it is still absent.
+        $usbSrcDir  = Join-Path $usbDriveLetter 'sources'
+        $null = New-Item -Path $usbSrcDir -ItemType Directory -Force
+        $usbBootWimDest = Join-Path $usbSrcDir 'boot.wim'
+        if (-not (Test-Path $usbBootWimDest)) {
+            Write-Step 'Copying boot.wim to USB\sources...'
+            Copy-Item $BootWim $usbBootWimDest -Force
+        }
+        Write-Success 'WinPE files copied to USB.'
+
+        # ── 8. Install BIOS boot sector with bootsect.exe ────────────────────
+        if ($ADKRoot) {
+            # bootsect.exe lives under Deployment Tools (not WinPE).
+            $bootsectPath = Join-Path $ADKRoot `
+                "Assessment and Deployment Kit\Deployment Tools\$Architecture\BCDBoot\bootsect.exe"
+            if (-not (Test-Path $bootsectPath)) {
+                # amd64 bootsect.exe can target any drive, so fall back to it.
+                $bootsectPath = Join-Path $ADKRoot `
+                    "Assessment and Deployment Kit\Deployment Tools\amd64\BCDBoot\bootsect.exe"
+            }
+            if (Test-Path $bootsectPath) {
+                Write-Step 'Installing Windows boot sector for BIOS support...'
+                $bsResult = & $bootsectPath /nt60 $usbDriveLetter /force /mbr 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Success 'BIOS boot sector installed.'
+                } else {
+                    Write-Warn "bootsect.exe returned exit $LASTEXITCODE (non-fatal -- USB will still boot on UEFI systems): $bsResult"
+                }
+            } else {
+                Write-Warn "bootsect.exe not found in ADK ($bootsectPath) -- USB will boot on UEFI systems only."
+            }
+        } else {
+            Write-Warn 'ADK root unavailable -- BIOS boot sector not installed. USB will boot on UEFI systems only.'
+        }
+
+        Write-Success "Bootable USB created successfully on $usbDriveLetter"
+    } finally {
+        # Remove any temporary media directory created for cloud-path supplementing.
+        if ($tempMediaDir -and (Test-Path $tempMediaDir)) {
+            Remove-Item $tempMediaDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 #endregion
 
 #region ── BCD Ramdisk ──────────────────────────────────────────────────────────
@@ -1209,6 +1423,12 @@ try {
         if ($choice -ne '2') { $useCloud = $true }
     }
 
+    # Shared variables populated in both the cloud and local-build paths below.
+    # Used by the optional USB creation step that follows both paths.
+    $usbBootWim  = $null
+    $usbMediaDir = $null
+    $usbAdkRoot  = $null
+
     if ($useCloud) {
         # ── Cloud path: download pre-built boot image ─────────────────────────
         $cloudDir   = Join-Path $WorkDir 'Cloud'
@@ -1243,6 +1463,7 @@ try {
             } else {
                 Write-Warn "boot.sdi not found at $sdiSrc -- ramdisk boot will likely fail."
             }
+            $usbAdkRoot = $adkRoot
         }
 
         # ── BCD ───────────────────────────────────────────────────────────────
@@ -1250,6 +1471,9 @@ try {
             -BootWim    $bootWimPath `
             -RamdiskDir $script:RamdiskDir `
             -MediaDir   $cloudDir
+
+        $usbBootWim  = $bootWimPath
+        $usbMediaDir = $cloudDir
 
     } else {
         # ── Local build path ──────────────────────────────────────────────────
@@ -1390,6 +1614,35 @@ try {
             -BootWim    $paths.BootWim `
             -RamdiskDir $script:RamdiskDir `
             -MediaDir   $paths.MediaDir
+
+        $usbBootWim  = $paths.BootWim
+        $usbMediaDir = $paths.MediaDir
+        $usbAdkRoot  = $adkRoot
+    }
+
+    # ── Offer bootable USB creation ──────────────────────────────────────────
+    # Presented after both the cloud and local-build paths so the user can
+    # optionally flash a USB key in addition to (or instead of) the ramdisk
+    # BCD boot entry that was just created.
+    if (-not $AcceptDefaults -and $usbBootWim -and $usbMediaDir) {
+        Write-Host ''
+        Write-Host '  ╔════════════════════════════════════════════════════════════╗' -ForegroundColor Cyan
+        Write-Host '  ║         Create Bootable USB (Optional)                   ║' -ForegroundColor Cyan
+        Write-Host '  ╚════════════════════════════════════════════════════════════╝' -ForegroundColor Cyan
+        Write-Host ''
+        Write-Host '    Create a bootable USB drive from the boot image just built.' -ForegroundColor White
+        Write-Host '    The USB will boot the same WinPE environment on any machine.' -ForegroundColor White
+        Write-Host ''
+        $usbChoice = Read-Host "  ${script:AnsiCyan}›${script:AnsiReset} Create a bootable USB now? (y/N)"
+        if ($usbChoice -match '^[Yy]') {
+            $usbParams = @{
+                BootWim      = $usbBootWim
+                MediaDir     = $usbMediaDir
+                Architecture = $arch
+            }
+            if ($usbAdkRoot) { $usbParams['ADKRoot'] = $usbAdkRoot }
+            New-BootableUSB @usbParams
+        }
     }
 
     Write-Section 'Build Complete'
